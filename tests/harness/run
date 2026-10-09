@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Runs the real widget in a real Quickshell instance with the installed shell
+# modules on the import path. This exercises the fetch, the seen-state file and
+# the panel for real, which the portable checks cannot do.
+#
+# The state directory is redirected to a temporary one so a harness run cannot
+# touch real user state, and notifications are disabled by the harness settings
+# so a run cannot fire a desktop notification.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+
+if [[ ! -d "$shell_dir/Ui" ]]; then
+  echo "SKIP: $shell_dir/Ui not found; is Omarchy 4 installed?" >&2
+  exit 0
+fi
+
+shim="$(mktemp -d)"
+state="$(mktemp -d)"
+trap 'rm -rf "$shim" "$state"' EXIT
+mkdir -p "$shim/qs"
+ln -s "$shell_dir/Ui" "$shim/qs/Ui"
+ln -s "$shell_dir/Commons" "$shim/qs/Commons"
+
+QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
+LOOT_LIGHTNING_HARNESS=1 \
+LOOT_LIGHTNING_DIR="$root" \
+LOOT_LIGHTNING_STATE="$state" \
+  exec quickshell -p "$here/shell.qml" "$@"

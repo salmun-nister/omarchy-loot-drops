@@ -1,0 +1,318 @@
+// Model.js is a QML pragma library, so it is loaded here as plain JavaScript
+// by stripping the directive. Every test drives the real parser, the real URL
+// allowlist and the real seen-state diff.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const here = new URL('./', import.meta.url);
+const root = new URL('../', here);
+const source = readFileSync(new URL('Model.js', root), 'utf8')
+  .replace(/^\.pragma\s+library\s*$/m, '');
+const Model = new Function(`${source}\nreturn {
+  STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, STALE_AFTER_MS,
+  scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
+  normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
+  parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
+  notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
+  storeStateLabel, freshnessLabel, ageLabel,
+};`)();
+
+const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
+
+test('URL allowlist accepts only the store host over https', () => {
+  assert.equal(Model.safeUrl('steam', 'https://store.steampowered.com/app/405640/'),
+    'https://store.steampowered.com/app/405640/');
+  assert.equal(Model.safeUrl('epic', 'https://store.epicgames.com/p/terra-1'),
+    'https://store.epicgames.com/p/terra-1');
+
+  // Everything below must resolve to the search page fallback instead.
+  for (const hostile of [
+    'https://evil.example/app/1',
+    'http://store.steampowered.com/app/1',       // not https
+    'https://store.steampowered.com.evil.test/x', // suffix confusion
+    'https://user@store.steampowered.com/x',      // credentials in authority
+    'https://store.steampowered.com:8443/x',      // alternate port
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'https://evil.test/?x=https://store.steampowered.com',
+    '',
+    null,
+    'https://store.steampowered.com/' + 'x'.repeat(400),
+  ]) {
+    assert.equal(Model.safeUrl('steam', hostile), '', `hostile URL leaked: ${hostile}`);
+  }
+
+  // A URL for one store must not pass another's allowlist.
+  assert.equal(Model.safeUrl('gog', 'https://store.steampowered.com/app/1'), '');
+});
+
+test('titles are scrubbed before they reach any sink', () => {
+  assert.equal(Model.scrubTitle('<b>Bold</b> Game'), 'Bold Game');
+  assert.equal(Model.scrubTitle('RTL \u202eoverridden'), 'RTL overridden');
+  assert.equal(Model.scrubTitle('bell\u0007\u009f'), 'bell');
+  assert.equal(Model.scrubTitle('&#60;script&#62;'), 'script');
+  assert.equal(Model.scrubTitle('&#x202e;'), '', 'entity-encoded bidi must be dropped');
+  assert.equal(Model.scrubTitle('&#xD800;'), '', 'surrogate entity must be dropped');
+  assert.ok(Model.scrubTitle('x'.repeat(500)).length <= Model.MAX_TITLE);
+});
+
+test('ids are constrained to a safe character set', () => {
+  assert.equal(Model.scrubId('abc-123_x.y'), 'abc-123_x.y');
+  for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(41), null]) {
+    assert.equal(Model.scrubId(bad), '', `unsafe id accepted: ${bad}`);
+  }
+});
+
+test('steam fixture parses into real rows', () => {
+  const result = Model.parseSteam(fixture('steam-free.json'));
+  assert.equal(result.ok, true);
+  assert.equal(result.games.length, 2);
+  assert.equal(result.games[0].id, '405640');
+  assert.equal(result.games[0].store, 'steam');
+  // The href from the response is dropped; the URL is rebuilt from a
+  // digits-only id, so there is nothing left to allowlist.
+  assert.equal(result.games[0].url, 'https://store.steampowered.com/app/405640/');
+  assert.ok(result.games.every(g => /^https:\/\/store\.steampowered\.com\/app\/\d+\/$/.test(g.url)));
+});
+
+test('steam rejects a body that is not the search payload', () => {
+  for (const body of ['', 'not json', '{}', '[]', '{"results_html":123}', '<html>nope</html>']) {
+    const result = Model.parseSteam(body);
+    assert.equal(result.ok, false, `accepted ${body}`);
+    assert.equal(result.error, 'invalid-response');
+    assert.deepEqual(result.games, []);
+  }
+});
+
+test('epic lists only live zero-discount offers', () => {
+  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  assert.equal(result.ok, true);
+  const titles = result.games.map(g => g.title);
+  assert.ok(titles.includes('Out of Sight'));
+  assert.ok(titles.includes('TerraScape Bundle'), 'bundle should still be listed');
+
+  // The three cases that must not appear.
+  assert.ok(!titles.includes('Expired Free Game'), 'expired window was listed');
+  assert.ok(!titles.includes('Paid Sale'), 'paid promotion was listed');
+  assert.ok(!titles.includes('Bad Cheese'), 'upcoming game was listed');
+  assert.ok(!titles.includes('Plain Old Game'), 'game with no promotions was listed');
+});
+
+test('epic builds links from the catalog mapping, with urlSlug fallback', () => {
+  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const byTitle = Object.fromEntries(result.games.map(g => [g.title, g]));
+
+  assert.equal(byTitle['Out of Sight'].url,
+    'https://store.epicgames.com/p/out-of-sight-b96ca8');
+  assert.equal(byTitle['TerraScape Bundle'].url,
+    'https://store.epicgames.com/bundles/terrascape-2b12b1',
+    'a BUNDLE offer uses the /bundles/ path');
+  assert.equal(byTitle['No Mapping Game'].url,
+    'https://store.epicgames.com/p/nomapping-slug',
+    'an empty catalogNs falls back to urlSlug');
+});
+
+test('epic scrubs markup-shaped titles', () => {
+  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const hostile = result.games.find(g => g.id === 'id-markup');
+  assert.ok(hostile, 'the markup title should still be listed');
+  assert.ok(!hostile.title.includes('<'), 'angle brackets survived');
+  assert.ok(!hostile.title.includes('\u202e'), 'bidi override survived');
+});
+
+test('epic rejects a payload without the expected shape', () => {
+  for (const body of ['', 'nope', '{}', '{"data":{}}', '{"data":{"Catalog":{}}}',
+    '{"data":{"Catalog":{"searchStore":{}}}}', '[]']) {
+    const result = Model.parseEpic(body);
+    assert.equal(result.ok, false, `accepted ${body}`);
+    assert.equal(result.error, 'invalid-response');
+  }
+});
+
+test('gog reports a running giveaway', () => {
+  const result = Model.parseGog(fixture('gog-giveaway.json'));
+  assert.equal(result.ok, true);
+  assert.equal(result.games.length, 1);
+  assert.equal(result.games[0].title, 'Giveaway Game');
+  assert.equal(result.games[0].store, 'gog');
+  assert.equal(result.games[0].url, 'https://www.gog.com/game/giveaway_game');
+});
+
+test('gog rejects a body that is not an object', () => {
+  for (const body of ['', 'null', '[]', '"str"', '{"id":"a b","title":"x"}',
+    '{"id":"../../etc/passwd","title":"x"}']) {
+    const result = Model.parseGog(body);
+    assert.equal(result.ok, false, `accepted ${body}`);
+    assert.equal(result.error, 'invalid-response');
+    assert.deepEqual(result.games, []);
+  }
+  // A well-formed giveaway with an unusable title is a valid response that
+  // simply has nothing to show, which is not the same as a malformed one.
+  assert.deepEqual(Model.parseGog('{"id":"123","title":""}'),
+    { ok: true, games: [] });
+});
+
+test('parseStore routes each store and refuses an unknown one', () => {
+  assert.equal(Model.parseStore('steam', fixture('steam-free.json')).ok, true);
+  assert.equal(Model.parseStore('epic', fixture('epic-free-games.json')).ok, true);
+  assert.equal(Model.parseStore('gog', fixture('gog-giveaway.json')).ok, true);
+  const unknown = Model.parseStore('nintendo', '{}');
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.error, 'invalid-response');
+});
+
+test('first fetch is silent for every store', () => {
+  for (const store of Model.STORES) {
+    const games = [{ store, id: 'a', title: 'A' }, { store, id: 'b', title: 'B' }];
+    const out = Model.diffStore(Model.emptySeen(), store, games, true, true);
+    assert.deepEqual(out.alerts, [], `${store} alerted on its first fetch`);
+    assert.equal(out.state.stores[store].ids.length, 2);
+  }
+});
+
+test('a new game after the baseline alerts once, then goes quiet', () => {
+  const first = Model.diffStore(Model.emptySeen(), 'steam',
+    [{ id: 'a', title: 'A' }], true, true);
+  assert.deepEqual(first.alerts, []);
+
+  const second = Model.diffStore(first.state, 'steam',
+    [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], true, true);
+  assert.equal(second.alerts.length, 1);
+  assert.equal(second.alerts[0].id, 'b');
+
+  const third = Model.diffStore(second.state, 'steam',
+    [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], true, true);
+  assert.deepEqual(third.alerts, [], 'an unchanged list must not re-alert');
+});
+
+test('a muted store records without alerting', () => {
+  const first = Model.diffStore(Model.emptySeen(), 'epic', [{ id: 'a', title: 'A' }], true, false);
+  assert.deepEqual(first.alerts, []);
+  const second = Model.diffStore(first.state, 'epic',
+    [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], true, false);
+  assert.deepEqual(second.alerts, [], 'a muted store must stay silent');
+  // The baseline still moved, so unmuting does not replay a backlog.
+  const unmuted = Model.diffStore(second.state, 'epic',
+    [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], true, true);
+  assert.deepEqual(unmuted.alerts, [], 'unmuting must not replay what it already saw');
+});
+
+test('re-enabling a store re-records silently instead of flooding', () => {
+  const on = Model.diffStore(Model.emptySeen(), 'gog', [{ id: 'a', title: 'A' }], true, true);
+  const off = Model.diffStore(on.state, 'gog', [{ id: 'a', title: 'A' }], false, true);
+  assert.deepEqual(off.alerts, []);
+
+  // While disabled the store is never fetched, so games come back different.
+  const back = Model.diffStore(off.state, 'gog',
+    [{ id: 'a', title: 'A' }, { id: 'z', title: 'Z' }], true, true);
+  assert.deepEqual(back.alerts, [], 're-enabling flooded with backfill alerts');
+  assert.equal(back.state.stores.gog.ids.length, 2, 'baseline should re-record');
+});
+
+test('toggling one store never disturbs another store baseline', () => {
+  let state = Model.diffStore(Model.emptySeen(), 'steam', [{ id: 's1', title: 'S' }], true, true).state;
+  state = Model.diffStore(state, 'epic', [{ id: 'e1', title: 'E' }], true, true).state;
+
+  // Disable steam, change epic.
+  let next = Model.diffStore(state, 'steam', [], false, true);
+  next = Model.diffStore(next.state, 'epic', [{ id: 'e1', title: 'E' }, { id: 'e2', title: 'E2' }], true, true);
+  assert.equal(next.alerts.length, 1);
+  assert.equal(next.alerts[0].store, 'epic');
+  assert.deepEqual(next.state.stores.steam.ids, ['s1'], 'steam baseline was lost');
+});
+
+test('seen state round-trips and survives a corrupt file', () => {
+  const state = Model.diffStore(Model.emptySeen(), 'steam',
+    [{ id: '405640', title: 'Pony Island' }], true, true).state;
+  const round = Model.parseSeen(Model.serializeSeen(state));
+  assert.deepEqual(round.stores.steam.ids, ['405640']);
+  assert.equal(round.stores.steam.primed, true);
+
+  // A primed store with recorded ids derives priming from the ids, so a
+  // hand-edited file cannot silence the first alert forever.
+  const handEdited = JSON.parse(Model.serializeSeen(state));
+  handEdited.stores.steam.primed = false;
+  assert.equal(Model.parseSeen(JSON.stringify(handEdited)).stores.steam.primed, true);
+
+  for (const bad of ['', 'garbage', '[]', '"str"', 'null',
+    '{"stores":{"steam":{"ids":["a b","../../etc/passwd"]}}}']) {
+    const parsed = Model.parseSeen(bad);
+    assert.equal(parsed.primed, false);
+    for (const store of Model.STORES) {
+      assert.ok(parsed.stores[store].ids.every(id => Model.scrubId(id) === id),
+        `unsafe id survived: ${bad}`);
+    }
+  }
+});
+
+test('notification args are safe for the notification server', () => {
+  const alerts = [{ id: 'a', title: '<b>Bold</b> Game', url: 'https://evil.test/x' }];
+  const argv = Model.notificationArgs('steam', alerts);
+  assert.equal(argv[0], 'omarchy-notification-send');
+  assert.ok(!argv.includes('<'), 'markup survived into the notification');
+  assert.ok(!argv.includes('evil.test'), 'a non-Steam host reached the exec');
+
+  // The headline occupies an option position, so leading dashes must go.
+  const flagged = Model.notificationArgs('steam',
+    [{ id: 'a', title: '--exec', url: 'https://store.steampowered.com/app/1/' }]);
+  const headline = flagged[flagged.indexOf('-t') + 2];
+  assert.ok(!headline.startsWith('-'), `headline still looks like a flag: ${headline}`);
+
+  assert.equal(Model.notificationArgs('steam', []), null);
+  const many = Model.notificationArgs('epic',
+    Array.from({ length: 7 }, (_, i) => ({ id: String(i), title: 'G' + i, url: '' })));
+  // The headline is followed by the body, which is followed by --exec.
+  const body = many[many.indexOf('--exec') - 1];
+  assert.ok(body.includes('and 3 more'), `long list should summarise, got: ${body}`);
+});
+
+test('per-store states stay distinct instead of collapsing to a fallback', () => {
+  const errors = { gog: { message: 'Could not reach GOG' } };
+  const buckets = {
+    steam: { games: [{ id: 'a', title: 'A' }] },
+    gog: { games: [] },
+  };
+  assert.equal(Model.storeStateLabel('gog', buckets.gog, errors), 'Could not reach GOG');
+  assert.equal(Model.storeStateLabel('steam', buckets.steam, errors), '1 free game');
+  // An empty GOG is a healthy empty store, not an error and not "not checked".
+  assert.equal(Model.storeStateLabel('gog', buckets.gog, {}), 'No giveaway running');
+  assert.equal(Model.storeStateLabel('steam', buckets.steam, {}), '1 free game');
+  assert.equal(Model.storeStateLabel('epic', undefined, {}), 'Not checked yet');
+});
+
+test('status copy reflects only the enabled stores', () => {
+  const all = { steam: true, epic: true, gog: true };
+  const games = { steam: { games: [{ id: 'a' }, { id: 'b' }] }, epic: { games: [] }, gog: { games: [] } };
+  assert.equal(Model.statusTitle(games, all, false), '2 games free to keep');
+  assert.equal(Model.statusTitle(games, { steam: true, epic: false, gog: false }, false),
+    '2 games free to keep');
+  assert.equal(Model.totalGames(games), 2);
+  assert.equal(Model.statusTitle(games, { steam: false, epic: false, gog: false }, false),
+    'No stores watched');
+  assert.equal(Model.activeStores(all).length, 3);
+});
+
+test('freshness labels cross the stale threshold', () => {
+  const now = 1000000000;
+  assert.equal(Model.freshnessLabel(0, now, false), 'Not checked yet');
+  assert.equal(Model.freshnessLabel(now, now, false), 'Updated just now');
+  assert.equal(Model.freshnessLabel(now - 60000, now, false), 'Updated 1m ago');
+  assert.equal(Model.freshnessLabel(now - Model.STALE_AFTER_MS, now, false).startsWith('Stale'), true);
+});
+
+test('settings are normalised into safe ranges', () => {
+  assert.equal(Model.normalizeRefreshMinutes(180), 180);
+  assert.equal(Model.normalizeRefreshMinutes(0), 5);
+  assert.equal(Model.normalizeRefreshMinutes(99999), 180);
+  assert.equal(Model.normalizeRefreshMinutes('nonsense'), 180);
+  assert.equal(Model.normalizeCountry(' de '), 'DE');
+  assert.equal(Model.normalizeCountry('USA'), '', 'a two-letter code is required');
+  assert.equal(Model.normalizeCountry('d3'), '');
+
+  const on = Model.enabled({ steamEnabled: false });
+  assert.equal(on.steam, false);
+  assert.equal(on.epic, true, 'an absent setting keeps its default');
+  assert.equal(Model.enabled(undefined).gog, true);
+});

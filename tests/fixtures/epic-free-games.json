@@ -1,0 +1,244 @@
+{
+ "data": {
+  "Catalog": {
+   "searchStore": {
+    "elements": [
+     {
+      "title": "Out of Sight",
+      "id": "id-out-of-sight",
+      "urlSlug": "out-of-sight-b96ca8",
+      "productSlug": "out-of-sight-b96ca8",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "out-of-sight-b96ca8",
+         "pageType": "productHome"
+        }
+       ]
+      }
+     },
+     {
+      "title": "TerraScape Bundle",
+      "id": "id-terrascape",
+      "urlSlug": "terrascape-2b12b1",
+      "productSlug": "terrascape-2b12b1",
+      "offerType": "BUNDLE",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "terrascape-2b12b1",
+         "pageType": "productHome"
+        }
+       ]
+      }
+     },
+     {
+      "title": "Expired Free Game",
+      "id": "id-expired",
+      "urlSlug": "expired-free",
+      "productSlug": "expired-free",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-09-01T15:00:00.000Z",
+           "endDate": "2026-09-08T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "expired-free"
+        }
+       ]
+      }
+     },
+     {
+      "title": "Paid Sale",
+      "id": "id-paidsale",
+      "urlSlug": "paid-sale",
+      "productSlug": "paid-sale",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 50
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "paid-sale"
+        }
+       ]
+      }
+     },
+     {
+      "title": "Bad Cheese",
+      "id": "id-badcheese",
+      "urlSlug": "bad-cheese-4256d9",
+      "productSlug": "bad-cheese-4256d9",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [],
+       "upcomingPromotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-22T15:00:00.000Z",
+           "endDate": "2026-10-29T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ]
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "bad-cheese-4256d9"
+        }
+       ]
+      }
+     },
+     {
+      "title": "No Mapping Game",
+      "id": "id-nomapping",
+      "urlSlug": "nomapping-slug",
+      "productSlug": "nomapping-slug",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": []
+      }
+     },
+     {
+      "title": "<b>Bold</b> \u202eGame\u0007",
+      "id": "id-markup",
+      "urlSlug": "markup-game",
+      "productSlug": "markup-game",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "markup-game"
+        }
+       ]
+      }
+     },
+     {
+      "title": "Plain Old Game",
+      "id": "id-plain",
+      "urlSlug": "plain-old",
+      "productSlug": "plain-old",
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [],
+       "upcomingPromotionalOffers": []
+      }
+     }
+    ]
+   }
+  }
+ }
+}

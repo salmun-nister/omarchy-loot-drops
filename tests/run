@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Portable checks only. A pass here does not establish live desktop
+# acceptance, which the acceptance document records separately.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+node scripts/check.mjs
+node --test tests/*.test.mjs
+tests/qml/lint
+tests/vendor

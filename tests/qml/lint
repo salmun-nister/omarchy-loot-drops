@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# qmllint cannot resolve qs.Commons and qs.Ui on its own, so they are exposed
+# through a shim of symlinks pointing at the installed shell modules.
+#
+# The `qmllint` on PATH is a stub that reports nothing, so the real Qt tool is
+# used directly. Under the shim, qmllint cannot resolve the `bar` context
+# object or the Style singleton, so it reports missing-property warnings for
+# every themed token. Those are the same warnings the reviewed Steam Sniper
+# plugin produces under the identical shim, so the baseline is the error count:
+# this must be zero. The lint pass covers syntax and local type errors only; it
+# does not exercise the widget in a live shell.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+lint_bin="${QMLLINT:-/usr/lib/qt6/bin/qmllint}"
+
+if [ ! -x "$lint_bin" ]; then
+  echo "SKIP: no Qt qmllint at $lint_bin" >&2
+  exit 0
+fi
+if [ ! -d "$shell_dir/Ui" ] || [ ! -d "$shell_dir/Commons" ]; then
+  echo "SKIP: no shell modules at $shell_dir; set OMARCHY_PATH" >&2
+  exit 0
+fi
+
+shim="$(mktemp -d)"
+trap 'rm -rf "$shim"' EXIT
+mkdir -p "$shim/qs"
+ln -s "$shell_dir/Ui" "$shim/qs/Ui"
+ln -s "$shell_dir/Commons" "$shim/qs/Commons"
+
+report="$("$lint_bin" -I "$shim" "$root/BarWidget.qml" 2>&1 || true)"
+status=$("$lint_bin" -I "$shim" "$root/BarWidget.qml" >/dev/null 2>&1; echo $?)
+
+errors="$(printf '%s\n' "$report" | grep -c '^Error:' || true)"
+# qmllint reports a syntax error as a [syntax] warning and exits 255, so the
+# exit status is checked as well rather than trusting the warning categories.
+syntax="$(printf '%s\n' "$report" | grep -c '\[syntax\]$' || true)"
+
+if [ "$errors" -ne 0 ] || [ "$syntax" -ne 0 ] || [ "$status" -ne 0 ]; then
+  printf '%s\n' "$report" | grep -A3 -E '^Error:|\[syntax\]$' >&2 || true
+  echo "FAIL: QML errors=$errors syntax=$syntax exit=$status" >&2
+  exit 1
+fi
+
+warnings="$(printf '%s\n' "$report" | grep -c '^Warning:' || true)"
+echo "PASS: BarWidget.qml has no QML errors ($warnings shim warnings, same categories as Steam Sniper)"

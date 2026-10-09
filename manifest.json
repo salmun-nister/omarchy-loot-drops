@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "id": "salmun-nister.loot-lightning",
+  "name": "Loot Lightning",
+  "version": "0.1.0",
+  "author": "salmun-nister",
+  "license": "MIT",
+  "description": "Watch Steam, Epic and GOG for games that are free to keep, and get a desktop notification when one appears.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "BarWidget.qml"},
+  "barWidget": {
+    "displayName": "Loot Lightning",
+    "description": "Watch Steam, Epic and GOG for games that are free to keep, and get a desktop notification when one appears.",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshMinutes": 180,
+      "steamEnabled": true,
+      "epicEnabled": true,
+      "gogEnabled": true,
+      "steamNotify": true,
+      "epicNotify": true,
+      "gogNotify": true,
+      "steamCountry": ""
+    },
+    "schema": [
+      {
+        "key": "refreshMinutes",
+        "type": "integer",
+        "label": "Refresh interval (minutes)",
+        "min": 5,
+        "max": 180,
+        "step": 5,
+        "defaultValue": 180,
+        "description": "How often to check the enabled stores. Free giveaways last for days, so a long interval is deliberate. The range matches the schema used by Steam Sniper."
+      },
+      {
+        "key": "steamEnabled",
+        "type": "boolean",
+        "label": "Steam",
+        "defaultValue": true,
+        "description": "Watch Steam. A disabled store is not fetched at all, is hidden from the panel and does not notify."
+      },
+      {
+        "key": "epicEnabled",
+        "type": "boolean",
+        "label": "Epic Games Store",
+        "defaultValue": true,
+        "description": "Watch the Epic Games Store. A disabled store is not fetched at all, is hidden from the panel and does not notify."
+      },
+      {
+        "key": "gogEnabled",
+        "type": "boolean",
+        "label": "GOG",
+        "defaultValue": true,
+        "description": "Watch GOG. A disabled store is not fetched at all, is hidden from the panel and does not notify."
+      },
+      {
+        "key": "steamNotify",
+        "type": "boolean",
+        "label": "Steam notifications",
+        "defaultValue": true,
+        "description": "Notify when a newly free game appears on Steam. Turn this off to keep watching a store without notifications; the panel shows a crossed-out bell."
+      },
+      {
+        "key": "epicNotify",
+        "type": "boolean",
+        "label": "Epic notifications",
+        "defaultValue": true,
+        "description": "Notify when a newly free game appears on Epic. Turn this off to keep watching a store without notifications; the panel shows a crossed-out bell."
+      },
+      {
+        "key": "gogNotify",
+        "type": "boolean",
+        "label": "GOG notifications",
+        "defaultValue": true,
+        "description": "Notify when a newly free game appears on GOG. Turn this off to keep watching a store without notifications; the panel shows a crossed-out bell."
+      },
+      {
+        "key": "steamCountry",
+        "type": "string",
+        "label": "Steam country code",
+        "defaultValue": "",
+        "description": "Optional two-letter Steam store country (US, DE, GB). Leave empty to let Steam choose from your network."
+      }
+    ]
+  }
+}

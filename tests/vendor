@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# The vendored helpers carry the plugin's process and file boundaries, so their
+# behaviour is asserted here rather than assumed from the upstream copy.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+capped="vendor/capped-run"
+store="vendor/seen-store"
+failures=0
+
+check() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then
+    echo "  ok   $label"
+  else
+    echo "  FAIL $label"
+    failures=$((failures + 1))
+  fi
+}
+
+expect_fails() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then
+    echo "  FAIL $label (unexpectedly succeeded)"
+    failures=$((failures + 1))
+  else
+    echo "  ok   $label"
+  fi
+}
+
+echo "capped-run"
+check "passes a small payload through" "$capped" 100 printf 'hello\n'
+check "passes output at exactly the cap" "$capped" 5 printf 'hello'
+
+# The cap is a bound on what the collector keeps, so exceeding it must fail
+# rather than truncate silently.
+expect_fails "refuses output past the cap" "$capped" 4 printf 'hello\n'
+expect_fails "refuses a non-integer cap" "$capped" abc printf 'hello\n'
+expect_fails "refuses a negative cap" "$capped" -1 printf 'hello\n'
+expect_fails "refuses missing arguments" "$capped" 10
+
+echo "seen-store"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+check "saves and reads back a record" "$store" save "$work" <<<'{"primed":false}'
+readback="$(printf '{"primed":false}' | "$store" save "$work" && "$store" load "$work")"
+check "round-trips the payload" test "$readback" = '{"primed":false}'
+
+# A group-writable state dir is tightened to 0700 rather than refused, so the
+# check is that it ends up private.
+shared="$work/shared"
+mkdir -p "$shared"
+chmod 0775 "$shared"
+"$store" load "$shared" >/dev/null 2>&1 || true
+check "tightens a group-writable state dir to 0700" test "$(stat -c %a "$shared")" = "700"
+
+# Missing parents are created, so the check is that the dir is private.
+"$store" load "$work/nested/a/b" >/dev/null 2>&1 || true
+check "creates a missing state dir privately" test "$(stat -c %a "$work/nested/a/b")" = "700"
+
+# A FIFO planted at the file's name must not block waiting for a writer.
+expect_fails "refuses a FIFO in place of the file" env sh -c \
+  "mkdir -p '$work/fifo' && mkfifo '$work/fifo/seen.json' && '$store' load '$work/fifo'"
+
+# A symlink pointing outside the state dir must not be followed.
+expect_fails "refuses a symlinked seen.json" env sh -c \
+  "mkdir -p '$work/link' && echo secret > '$work/outside.json' \
+   && ln -s '$work/outside.json' '$work/link/seen.json' && '$store' load '$work/link'"
+
+echo "vendored helpers"
+for file in "$capped" "$store"; do
+  check "$file is executable" test -x "$file"
+  check "$file carries its upstream attribution" grep -q "nille/omarchy-steam-sniper" "$file"
+  check "$file parses as python" python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$file"
+done
+
+if [ "$failures" -ne 0 ]; then
+  echo "FAIL: $failures vendored-helper check(s) failed"
+  exit 1
+fi
+echo "PASS: vendored helpers"

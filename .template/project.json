@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "templateVersion": "0.1.0",
+  "kind": "plugin",
+  "owner": "salmun-nister",
+  "repo": "omarchy-loot-lightning",
+  "slug": "loot-lightning",
+  "name": "Loot Lightning",
+  "author": "salmun-nister",
+  "id": "salmun-nister.loot-lightning",
+  "description": "Watch Steam, Epic and GOG for games that are free to keep, and get a desktop notification when one appears.",
+  "year": "2026",
+  "inspiration": "https://github.com/nille/omarchy-steam-sniper",
+  "initialized": true
+}
