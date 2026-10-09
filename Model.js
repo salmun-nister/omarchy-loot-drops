@@ -113,8 +113,13 @@ function safeUrl(store, value) {
   return url
 }
 
-function searchUrl(store) {
-  return SEARCH_URLS[store] || ""
+// The page to open when a row's own link is unusable, or when right-clicking
+// the bar mark with no particular store in mind. Falls back to the first
+// enabled store rather than to nothing, so it always returns a real URL for a
+// store this plugin knows about.
+function searchUrl(store, firstEnabled) {
+  var target = HOSTS[store] ? store : (HOSTS[firstEnabled] ? firstEnabled : "")
+  return target ? SEARCH_URLS[target] : ""
 }
 
 function enabled(settings) {
@@ -233,15 +238,25 @@ function parseSteamRow(block) {
   }
 }
 
+// Steam's row attributes are digits only, so a short anchored scan is enough.
+// The value is bounded before it is returned because it is concatenated into a
+// URL further down.
 function firstId(value) {
-  var match = String(value || "").match(/\d{1,10}/)
-  return match ? match[0] : ""
+  var match = String(value == null ? "" : value).match(/^\s*(\d{1,10})\s*$/)
+  return match ? match[1] : ""
 }
 
+// Reads one quoted attribute out of a tag fragment. The name is escaped because
+// it comes from the caller, and the captured value is length-bounded so a
+// hostile page cannot make this return a megabyte.
 function matchAttr(text, name) {
-  var match = String(text || "").match(
-    new RegExp(name + '\\s*=\\s*["\']([^"\']*)["\']', "i"))
-  return match ? match[1] : ""
+  var attribute = String(name == null ? "" : name).replace(/[^\w-]/g, "")
+  if (!attribute) return ""
+  var pattern = new RegExp(
+    "(?:^|\\s)" + attribute + "\\s*=\\s*(?:\"([^\"]{0,512})\"|'([^']{0,512})')", "i")
+  var match = String(text == null ? "" : text).match(pattern)
+  if (!match) return ""
+  return match[1] !== undefined ? match[1] : match[2]
 }
 
 function matchSteamTitle(text) {
@@ -620,12 +635,22 @@ function freshnessLabel(lastSuccessAt, nowMs, busy) {
   return "Updated " + ageLabel(age) + " ago"
 }
 
+// The furthest-back date worth showing. Anything older reads better as days,
+// and an unbounded year count would be noise in a tooltip.
+var MAX_AGE_DAYS = 365
+
 function ageLabel(ms) {
-  var seconds = Math.max(0, Math.floor(Number(ms) / 1000))
+  var value = Number(ms)
+  // A non-numeric or negative age is treated as "just happened" rather than
+  // rendered as NaN, which is how this read before.
+  if (!isFinite(value) || value <= 0) return "0s"
+  var seconds = Math.floor(value / 1000)
   if (seconds < 60) return seconds + "s"
   var minutes = Math.floor(seconds / 60)
   if (minutes < 60) return minutes + "m"
   var hours = Math.floor(minutes / 60)
   if (hours < 24) return hours + "h"
-  return Math.floor(hours / 24) + "d"
+  var days = Math.floor(hours / 24)
+  if (days > MAX_AGE_DAYS) return MAX_AGE_DAYS + "d+"
+  return days + "d"
 }

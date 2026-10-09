@@ -14,7 +14,7 @@ and explicit.
 | Kind | Detail |
 | --- | --- |
 | Network | Three hosts, one GET each per refresh. No credentials, no accounts, no `sudo`. |
-| Processes | `python3` (vendored helper), `curl`, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
+, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
 | Files | One: `~/.local/state/salmun-nister.loot-lightning/seen.json`, written atomically through a no-follow helper. |
 | Privileged operations | None. |
 | Credentials read | None. |
@@ -51,14 +51,15 @@ because the notification server advertises body markup and body hyperlinks.
 occupies an option position that is parsed before the positional argument and a
 title of exactly `--exec` would otherwise be read as a flag.
 
-**Response size.** Every response is read through `vendor/capped-run`, which kills
+**Response size.** Every response is read through `lib/capped-run`, which kills
 a child that exceeds its cap, so a hostile or broken endpoint cannot stream
 unbounded data into the shell process.
 
-**State file.** `vendor/seen-store` opens the directory and file with
+**State file.** `lib/seen-state` opens the directory and file with
 `O_NOFOLLOW`, refuses anything that is not a regular file owned by you, caps the
 read, and replaces the file by rename so a reader never sees a partial write.
-`tests/vendor` asserts that a planted FIFO and a planted symlink are both refused.
+`tests/helpers` asserts that a planted FIFO and a planted symlink are both
+refused, and that a failed write leaves the previous file whole.
 
 ## What is deliberately absent
 

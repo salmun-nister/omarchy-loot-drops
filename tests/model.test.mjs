@@ -16,7 +16,7 @@ const Model = new Function(`${source}\nreturn {
   normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
   parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
-  storeStateLabel, freshnessLabel, ageLabel,
+  storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -63,6 +63,55 @@ test('ids are constrained to a safe character set', () => {
   for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(41), null]) {
     assert.equal(Model.scrubId(bad), '', `unsafe id accepted: ${bad}`);
   }
+});
+
+test('steam attribute reads are anchored and bounded', () => {
+  assert.equal(Model.firstId('405640'), '405640');
+  assert.equal(Model.firstId('  77 '), '77');
+  // The id is concatenated into a URL, so a value that is not *only* digits
+  // is refused rather than truncated to the digits it happens to contain.
+  assert.equal(Model.firstId('12ab34'), '');
+  assert.equal(Model.firstId('99999999999999'), '');
+  assert.equal(Model.firstId(''), '');
+  assert.equal(Model.firstId(null), '');
+
+  assert.equal(Model.matchAttr('<a data-ds-appid="405640" href="/x">', 'data-ds-appid'),
+    '405640');
+  assert.equal(Model.matchAttr("<a data-ds-appid='405640'>", 'data-ds-appid'), '405640');
+  // A suffixed attribute must not satisfy a shorter name.
+  assert.equal(Model.matchAttr('<a xdata-ds-appid="9">', 'data-ds-appid'), '');
+  assert.equal(Model.matchAttr('<a data-ds-appid=405640>', 'data-ds-appid'), '');
+  // An attribute name carrying regex metacharacters cannot escape its role.
+  assert.equal(Model.matchAttr('<a a.*="x">', 'a.*'), '');
+  assert.equal(Model.matchAttr('<a x="y">', ''), '');
+
+  // A hostile page cannot make an attribute read return an unbounded string.
+  const huge = '<a data-ds-appid="' + '9'.repeat(5000) + '">';
+  assert.ok(Model.matchAttr(huge, 'data-ds-appid').length <= 512);
+});
+
+test('age labels never render NaN and stay bounded', () => {
+  assert.equal(Model.ageLabel(0), '0s');
+  assert.equal(Model.ageLabel(59000), '59s');
+  assert.equal(Model.ageLabel(60000), '1m');
+  assert.equal(Model.ageLabel(3600000), '1h');
+  assert.equal(Model.ageLabel(86399000), '23h');
+  // Nonsense input used to render as the string "NaNd" in a tooltip.
+  for (const bad of ['x', NaN, undefined, null, {}, -5]) {
+    const label = Model.ageLabel(bad);
+    assert.ok(!/NaN|Infinity|undefined/.test(label), `bad age rendered as: ${label}`);
+  }
+  assert.ok(Model.ageLabel(1e15).endsWith('d+'), 'an absurd age should be capped');
+});
+
+test('the search page falls back to an enabled store', () => {
+  assert.equal(Model.searchUrl('steam'),
+    'https://store.steampowered.com/search/?maxprice=free&specials=1');
+  assert.equal(Model.searchUrl('gog'), 'https://www.gog.com/giveaways');
+  assert.equal(Model.searchUrl(''), '');
+  assert.equal(Model.searchUrl('', 'epic'), 'https://store.epicgames.com/free-games');
+  assert.equal(Model.searchUrl('nintendo', 'steam'),
+    'https://store.steampowered.com/search/?maxprice=free&specials=1');
 });
 
 test('steam fixture parses into real rows', () => {

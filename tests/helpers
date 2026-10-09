@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Behavioural checks for the two helpers this plugin owns.
+#
+# lib/capped-run and lib/seen-state carry the plugin's process and file
+# boundaries, so what is asserted here is the property, not the code: the cap
+# holds, a planted FIFO or symlink is refused rather than followed, the state
+# directory ends up private, and a failed write never damages the file that was
+# already there.
+#
+# These run against a temporary directory. Nothing here touches real user state.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python_bin="${LOOT_LIGHTNING_PYTHON:-/usr/bin/python3}"
+capped="lib/capped-run"
+store="lib/seen-state"
+failures=0
+
+if [ ! -x "$python_bin" ]; then
+  echo "SKIP: no interpreter at $python_bin" >&2
+  exit 0
+fi
+
+ok()   { echo "  ok   $1"; }
+bad()  { echo "  FAIL $1"; failures=$((failures + 1)); }
+
+# expect_ok LABEL CMD...   - the command must succeed
+expect_ok() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
+}
+
+# expect_fail LABEL CMD...  - the command must be refused
+expect_fail() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then bad "$label (unexpectedly succeeded)"; else ok "$label"; fi
+}
+
+# expect_eq LABEL EXPECTED ACTUAL
+expect_eq() {
+  if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected '$2', got '$3')"; fi
+}
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+echo "capped-run"
+expect_ok  "forwards a small payload"            "$capped" 100 printf 'hello\n'
+expect_eq  "forwards exactly the cap"            "hello"   "$("$capped" 5 printf 'hello')"
+expect_fail "refuses one byte past the cap"      "$capped" 4 printf 'hello\n'
+expect_fail "refuses a zero cap with output"     "$capped" 0 printf 'hello\n'
+expect_fail "refuses a non-numeric cap"          "$capped" abc printf 'hello\n'
+expect_fail "refuses a negative cap"             "$capped" -5 printf 'hello\n'
+expect_fail "refuses missing arguments"          "$capped" 10
+expect_fail "refuses a nonexistent program"      "$capped" 10 /nonexistent/program-xyz
+
+# A child's own exit status is forwarded, so a failed fetch is still a failure.
+if "$capped" 100 sh -c 'exit 7' >/dev/null 2>&1; then
+  bad "forwards the child's exit status"
+else
+  expect_eq "forwards the child's exit status" "7" "$?"
+fi
+
+# The cap holds even when the child ignores the pipe and keeps writing.
+expect_fail "holds the cap against a flood"      "$capped" 512 sh -c 'yes x | head -c 100000'
+
+# --kill-group is what the widget's watchdog uses. A child that ignores SIGTERM
+# survives Process.kill() as an orphan holding the pipe, so the whole group must
+# be signalled and escalated to KILL.
+stubborn="$work/stubborn-child.py"
+cat > "$stubborn" <<'PY'
+import os, signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+sys.stderr.write("up %d\n" % os.getpid())
+sys.stderr.flush()
+time.sleep(300)
+PY
+"$python_bin" - "$capped" "$stubborn" <<'PY' > "$work/child-status" 2>/dev/null
+import subprocess, sys, time
+capped, stub = sys.argv[1], sys.argv[2]
+child = subprocess.Popen(["/usr/bin/python3", stub],
+                         stderr=subprocess.PIPE, start_new_session=True)
+child.stderr.readline()
+time.sleep(0.3)
+subprocess.run(["/usr/bin/python3", capped, "--kill-group", str(child.pid)])
+# A negative return code means the child was ended by a signal; -9 is the KILL
+# escalation. A child that survived would poll() as still running.
+print(child.poll())
+PY
+sleep 1
+status="$(cat "$work/child-status")"
+if [ "$status" = "-9" ] || [ "$status" = "-15" ]; then
+  ok "--kill-group reaps a SIGTERM-ignoring child (poll=$status)"
+else
+  bad "--kill-group did not reap a SIGTERM-ignoring child (poll=$status)"
+fi
+expect_ok "--kill-group ignores a nonsense pgid" "$capped" --kill-group notanumber
+expect_ok "--kill-group ignores an absent pgid" "$capped" --kill-group 0
+
+echo "seen-state"
+expect_ok "saves a record"                       "$store" save "$work/basic" <<<'{"primed":true}'
+expect_eq "round-trips the payload"              '{"primed":true}' "$("$store" load "$work/basic")"
+expect_eq "reads nothing when there is no file"  "" "$("$store" load "$work/never-written")"
+
+# A group-readable directory is tightened rather than refused: the user's umask
+# should not be able to stop the plugin working.
+mkdir -p "$work/shared"
+chmod 0775 "$work/shared"
+"$store" load "$work/shared" >/dev/null 2>&1 || true
+expect_eq "tightens a group-writable directory"  "700" "$(stat -c %a "$work/shared")"
+# Missing parents are created for us, so the check is that the leaf ends private.
+"$store" load "$work/nested/a/b" >/dev/null 2>&1 || true
+expect_eq "creates a missing directory privately" "700" "$(stat -c %a "$work/nested/a/b" 2>/dev/null || echo missing)"
+
+# A FIFO must be refused at once rather than blocking the shell on a read.
+fifo="$work/fifo"
+mkdir -p "$fifo"
+mkfifo "$fifo/seen.json"
+start=$SECONDS
+expect_fail "refuses a FIFO planted at the file's name" timeout 5 "$store" load "$fifo"
+if [ $((SECONDS - start)) -lt 5 ]; then ok "refuses the FIFO without hanging"; else bad "hung on the FIFO"; fi
+
+# A symlink pointing outside the directory must not be followed.
+link="$work/link"
+mkdir -p "$link"
+echo "secret" > "$work/outside.json"
+ln -s "$work/outside.json" "$link/seen.json"
+expect_fail "refuses a symlinked seen.json" "$store" load "$link"
+expect_eq "leaves the symlink target untouched" "secret" "$(cat "$work/outside.json")"
+
+# A symlink on the state directory itself must be refused, not walked through.
+ln -s "$work/outside.json" "$work/dirlink"
+expect_fail "refuses a symlinked state directory" "$store" load "$work/dirlink"
+
+# An oversized payload is refused before anything is written.
+head -c 70000 /dev/zero | tr '\0' 'x' | "$store" save "$work/basic" >/dev/null 2>&1 \
+  && bad "refuses an oversized payload" || ok "refuses an oversized payload"
+expect_eq "leaves the old file whole after an oversized write" \
+  '{"primed":true}' "$("$store" load "$work/basic")"
+
+# A failed write must leave the previous file intact and no temporary behind.
+printf '{"primed":false}' | "$store" save "$work/basic" >/dev/null
+expect_eq "replaces the payload on a good write" \
+  '{"primed":false}' "$("$store" load "$work/basic")"
+
+# Concurrent writers must race by rename, never interleave: the result is one
+# whole payload and no stray temporary file.
+concurrent="$work/concurrent"
+printf '{"primed":true}' | "$store" save "$concurrent" >/dev/null
+for _ in 1 2 3 4 5 6 7 8; do
+  printf '{"primed":false}' | "$store" save "$concurrent" >/dev/null 2>&1 &
+done
+wait
+final="$("$store" load "$concurrent")"
+if [ "$final" = '{"primed":true}' ] || [ "$final" = '{"primed":false}' ]; then
+  ok "leaves one whole payload after concurrent writes"
+else
+  bad "concurrent writes produced a partial file: '$final'"
+fi
+expect_eq "leaves no temporary file behind" "1" "$(find "$concurrent" -maxdepth 1 -type f | wc -l)"
+
+echo "helpers are present and sound"
+expect_ok "capped-run is executable"  test -x "$capped"
+expect_ok "seen-state is executable"  test -x "$store"
+expect_ok "capped-run parses as python"  "$python_bin" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$capped"
+expect_ok "seen-state parses as python"  "$python_bin" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$store"
+# No /tmp, and no shell string: both are load-bearing claims in SECURITY.md.
+expect_ok "capped-run references no shell interpreter" bash -c \
+  "! grep -qE '\b(shell=True|os\.system)\b' '$capped'"
+expect_ok "seen-state references no shell interpreter" bash -c \
+  "! grep -qE '\b(shell=True|os\.system)\b' '$store'"
+
+if [ "$failures" -ne 0 ]; then
+  echo "FAIL: $failures helper check(s) failed"
+  exit 1
+fi
+echo "PASS: helpers"

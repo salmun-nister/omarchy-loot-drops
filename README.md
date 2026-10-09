@@ -13,8 +13,8 @@ pages, and it never writes anything outside its own state directory.
 
 **Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)**,
 which does this for Steam alone. This adds Epic and GOG, per-store switches and
-bells, and keeps a separate baseline for each store. Provenance and licence
-details are in [credits](CREDITS.md).
+bells, and keeps a separate baseline for each store. It is an independent work
+with no third-party code vendored — see [credits](CREDITS.md) for the lineage.
 
 **Preview:** a real on-device screenshot is pending. No screenshot or desktop
 acceptance is claimed.
@@ -149,8 +149,8 @@ actual tests in [acceptance evidence](docs/ACCEPTANCE.json).
 ## Credits
 
 Built from [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins)
-guidance and the Omarchy template set. Vendored MIT helpers and their origin are
-recorded in [CREDITS.md](CREDITS.md).
+guidance and the Omarchy template set. No third-party code is vendored; lineage
+is recorded in [CREDITS.md](CREDITS.md).
 
 ## Licence
 

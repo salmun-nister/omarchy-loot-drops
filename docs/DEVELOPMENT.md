@@ -3,7 +3,7 @@
 ## Checks
 
 ```bash
-./tests/run          # portable: structure, model, QML lint, vendored helpers
+./tests/run          # portable: structure, model, QML lint, helper behaviour
 ./tests/harness/run  # live: the real widget against the three real stores
 ```
 

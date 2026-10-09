@@ -1,0 +1,121 @@
+#!/usr/bin/python3
+"""Run a command and forward at most MAX bytes of its stdout.
+
+Loot Lightning's own helper. Usage:
+
+    capped-run MAX cmd [args...]
+    capped-run --kill-group PGID
+
+stdout is capped so a hostile or broken endpoint cannot stream unbounded data
+into the long-lived omarchy-shell process. On reaching the cap the child is
+killed and the exit status is 1; otherwise the child's own status is returned
+and only the bytes within the cap are forwarded.
+
+The child leads a new session, so a kill reaches anything it spawned rather
+than orphaning a grandchild that still holds the pipe. --kill-group is the same
+idea for a child started by the widget, addressed by its group id.
+"""
+
+import os
+import signal
+import subprocess
+import sys
+import time
+
+
+def fail(message):
+    print("capped-run: %s" % message, file=sys.stderr)
+    raise SystemExit(2)
+
+
+def kill_group(proc):
+    """End the child's whole process group, escalating if it ignores TERM."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            break
+        try:
+            proc.wait(timeout=2)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def kill_group_by_id(pgid):
+    """End a process group started earlier, addressed by its leader's pid.
+
+    Used by the widget's watchdog. Process.kill() only signals the direct child,
+    and a child that ignores SIGTERM survives it as an orphan holding the pipe,
+    so the whole group is signalled here instead: TERM first, then KILL.
+    """
+    try:
+        pid = int(pgid)
+    except (TypeError, ValueError):
+        return
+    if pid <= 0:
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            break
+        # Give the group a moment to go quietly before escalating.
+        try:
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(pid, 0)
+                except OSError:
+                    break
+                time.sleep(0.05)
+            else:
+                continue
+        except OSError:
+            pass
+        break
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--kill-group":
+        kill_group_by_id(sys.argv[2])
+        raise SystemExit(0)
+
+    if len(sys.argv) < 3:
+        fail("usage: capped-run MAX cmd [args...]")
+
+    raw = sys.argv[1]
+    if not raw.isdigit():
+        fail("MAX must be a non-negative integer")
+    limit = int(raw)
+    if limit < 0:
+        fail("MAX must be a non-negative integer")
+
+    command = sys.argv[2:]
+    try:
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            start_new_session=True,  # new session, so killpg reaches descendants
+        )
+    except OSError as error:
+        fail("cannot start %s: %s" % (command[0], error.strerror or error))
+
+    try:
+        # Read one byte past the cap: if it arrives, the cap was exceeded.
+        data = proc.stdout.read(limit + 1)
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+
+    if len(data) > limit:
+        kill_group(proc)
+        raise SystemExit(1)
+
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    raise SystemExit(proc.wait())
+
+
+if __name__ == "__main__":
+    main()

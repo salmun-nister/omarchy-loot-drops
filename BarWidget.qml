@@ -26,10 +26,22 @@ Panel {
     || ((Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state"))
         + "/salmun-nister.loot-lightning")
 
+  // The interpreter is named absolutely rather than taken from PATH: a user
+  // with a version manager on PATH would otherwise run the helpers under a
+  // different Python than the one they were tested on.
+  readonly property string python: "/usr/bin/python3"
+
   // Helpers are addressed through the shell so a symlinked plugin directory
   // resolves to its real path, matching how the bar launches them.
-  readonly property string cappedRun: pluginFile("vendor/capped-run")
-  readonly property string seenStore: pluginFile("vendor/seen-store")
+  readonly property string cappedRun: pluginFile("lib/capped-run")
+  readonly property string seenStatePath: pluginFile("lib/seen-state")
+
+  // curl is told to give up at 20s; the watchdog fires a little later so a
+  // child that ignores its own deadline is still ended rather than left to
+  // sit inside the long-lived shell process. fetchDeadlineMs is what the fetch
+  // is allowed to take; fetchWatchdogMs is when we stop believing it returns.
+  readonly property int fetchDeadlineMs: 20000
+  readonly property int fetchWatchdogMs: 25000
 
   function pluginFile(relative) {
     var url = String(Qt.resolvedUrl(relative))
@@ -156,20 +168,56 @@ Panel {
   function startFetch(store) {
     setBucket(store, { busy: true })
     var proc = fetchProcs[store]
-    proc.command = ["python3", root.cappedRun, String(Model.MAX_BYTES)]
+    proc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
       .concat(fetchArgs(store))
     proc.running = true
+    armWatchdog(store)
     updateBusy()
   }
 
+  // One watchdog per store, armed when a fetch starts. A fetch that overruns is
+  // killed and recorded as unreachable, so a wedged child cannot leave a store
+  // spinning forever or delay the next refresh.
+  //
+  // The kill goes through the helper rather than Process.kill(), because that
+  // only signals the direct child: a child ignoring SIGTERM survives as an
+  // orphan still holding the pipe. Signalling the group reaches all of it.
+  function armWatchdog(store) {
+    var timer = watchdogs[store]
+    timer.interval = fetchWatchdogMs
+    timer.storeName = store
+    timer.restart()
+  }
+
+  function onWatchdogFired(store) {
+    var proc = fetchProcs[store]
+    if (!proc.running) return
+    var pgid = proc.processId
+    proc.running = false
+    if (pgid > 0) {
+      killProc.command = [root.python, root.cappedRun, "--kill-group", String(pgid)]
+      killProc.running = true
+    }
+    fail(store, "Timed out waiting for " + storeLabel(store))
+  }
+
+  function storeLabel(store) {
+    return Model.STORE_LABELS[store] || store
+  }
+
   function fetchArgs(store) {
+    var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     return [
-      "curl", "-fsS", "--max-time", "20",
+      "curl", "-fsS", "--max-time", String(deadlineSeconds),
+      // --max-filesize is only honoured against a declared Content-Length, so
+      // capped-run is what actually bounds a response that streams.
       "--max-filesize", String(Model.MAX_BYTES),
       "-A", Model.USER_AGENT,
       "-H", "Accept: application/json,text/html;q=0.9",
       // Steam's search endpoint only answers with JSON for an XHR.
       "-H", "X-Requested-With: XMLHttpRequest",
+      // The status code is appended so GOG's 404 can be told apart from a
+      // network failure; curl -f alone would make both a non-zero exit.
       "--write-out", "\n%{http_code}",
       sourceUrl(store)
     ]
@@ -219,6 +267,7 @@ Panel {
   }
 
   function succeed(store, games) {
+    watchdogs[store].stop()
     var now = Date.now()
     setBucket(store, {
       games: games,
@@ -247,6 +296,7 @@ Panel {
   // A failed fetch never overwrites the last good list: the bucket keeps its
   // games and simply gains an error, so the panel shows stale-with-error.
   function fail(store, message) {
+    watchdogs[store].stop()
     var bucketNow = bucket(store)
     setBucket(store, {
       games: bucketNow.games,
@@ -338,7 +388,7 @@ Panel {
 
   Process {
     id: loadSeenProc
-    command: ["python3", root.seenStore, "load", root.stateDir]
+    command: [root.python, root.seenStatePath, "load", root.stateDir]
     running: true
     stdout: StdioCollector {
       waitForEnd: true
@@ -355,7 +405,7 @@ Panel {
   Process {
     id: saveSeenProc
     property string payload: ""
-    command: ["python3", root.seenStore, "save", root.stateDir]
+    command: [root.python, root.seenStatePath, "save", root.stateDir]
     stdinEnabled: true
     onStarted: write(payload)
   }
@@ -399,6 +449,13 @@ Panel {
     }
   }
 
+  // Ends a fetch's whole process group when the watchdog fires. Deliberately
+  // short-lived and never awaited: the store is already recorded as timed out.
+  Process {
+    id: killProc
+    running: false
+  }
+
   readonly property var fetchProcs: ({
     "steam": steamProc,
     "epic": epicProc,
@@ -406,6 +463,38 @@ Panel {
   })
 
   // --- Timers ------------------------------------------------------------
+
+  // One watchdog per store. Each is idle until a fetch arms it, so the three
+  // do not interfere and a store that is switched off never fires one.
+  Timer {
+    id: steamWatchdog
+    property string storeName: "steam"
+    interval: root.fetchWatchdogMs
+    repeat: false
+    onTriggered: root.onWatchdogFired(storeName)
+  }
+
+  Timer {
+    id: epicWatchdog
+    property string storeName: "epic"
+    interval: root.fetchWatchdogMs
+    repeat: false
+    onTriggered: root.onWatchdogFired(storeName)
+  }
+
+  Timer {
+    id: gogWatchdog
+    property string storeName: "gog"
+    interval: root.fetchWatchdogMs
+    repeat: false
+    onTriggered: root.onWatchdogFired(storeName)
+  }
+
+  readonly property var watchdogs: ({
+    "steam": steamWatchdog,
+    "epic": epicWatchdog,
+    "gog": gogWatchdog
+  })
 
   Timer {
     id: refreshTimer

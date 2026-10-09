@@ -1,0 +1,174 @@
+#!/usr/bin/python3
+"""Read and write Loot Lightning's private seen.json.
+
+Loot Lightning's own helper. Usage:
+
+    seen-state load DIR
+    seen-state save DIR        # payload on stdin
+
+The state records which free games have already been seen, so the plugin can
+tell a genuinely new giveaway from one that was already running. Losing it is
+harmless — the next fetch simply records silently — so this helper fails closed
+rather than ever widening what it touches.
+
+Every path is reached by opening one directory descriptor at a time from DIR
+downward, with O_NOFOLLOW on each open, and every check is an fstat on the
+descriptor just opened rather than a check on the name. A link planted anywhere
+along the way is therefore refused instead of followed, and a file swapped
+between the check and the use cannot be caught out. There is no /tmp involved:
+the only path used is DIR.
+"""
+
+import os
+import stat
+import sys
+
+NAME = "seen.json"
+TEMP = ".seen.json.tmp"
+MAX_BYTES = 65536
+
+# O_NONBLOCK on the read is what makes a planted FIFO open-and-refuse instead
+# of blocking the shell waiting for a writer that never comes.
+DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+READ_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+TEMP_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+def fail(message):
+    print("seen-state: %s" % message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def open_private_dir(path):
+    """Open DIR as a private directory descriptor, creating and tightening it."""
+    if not path or "\0" in path:
+        fail("invalid state directory")
+    path = os.path.abspath(path)
+    parent = os.path.dirname(path)
+    if parent:
+        try:
+            os.makedirs(parent, exist_ok=True)
+        except OSError:
+            fail("cannot create the state directory's parent")
+    try:
+        os.mkdir(path, 0o700)
+    except FileExistsError:
+        pass
+    except OSError:
+        fail("cannot create the state directory")
+
+    try:
+        fd = os.open(path, DIR_FLAGS)
+    except OSError:
+        fail("cannot open the state directory")
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            fail("the state directory is not ours")
+        # Tighten it rather than refusing: a directory the user's umask made
+        # group-readable is not a reason for the plugin to stop working.
+        os.fchmod(fd, 0o700)
+        info = os.fstat(fd)
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            fail("the state directory is not private")
+        return fd
+    except OSError:
+        os.close(fd)
+        fail("cannot make the state directory private")
+
+
+def read_seen(dirfd):
+    """Return the stored bytes, or b"" when there is nothing readable to use."""
+    try:
+        fd = os.open(NAME, READ_FLAGS, dir_fd=dirfd)
+    except FileNotFoundError:
+        return b""
+    except OSError:
+        # A symlink, a directory or a device at this name. Refused, not followed.
+        fail("seen.json is not a plain file we can read")
+
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            fail("seen.json is not a plain file of ours")
+        if info.st_size > MAX_BYTES:
+            fail("seen.json is larger than expected")
+        os.fchmod(fd, 0o600)
+        data = os.read(fd, MAX_BYTES + 1)
+        if len(data) > MAX_BYTES:
+            fail("seen.json is larger than expected")
+        return data
+    finally:
+        os.close(fd)
+
+
+def write_seen(dirfd, data):
+    """Replace seen.json atomically, leaving the old file whole on any error."""
+    if len(data) > MAX_BYTES:
+        fail("payload is too large")
+
+    try:
+        os.unlink(TEMP, dir_fd=dirfd)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        fail("cannot clear a previous temporary file")
+
+    try:
+        fd = os.open(TEMP, TEMP_FLAGS, 0o600, dir_fd=dirfd)
+    except OSError:
+        fail("cannot create the temporary file")
+
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            fail("the temporary file is not ours")
+        os.fchmod(fd, 0o600)
+        written = 0
+        while written < len(data):
+            written += os.write(fd, data[written:])
+        os.fsync(fd)
+    except OSError:
+        os.close(fd)
+        discard_temp(dirfd)
+        fail("cannot write the state file")
+    except BaseException:
+        os.close(fd)
+        discard_temp(dirfd)
+        raise
+
+    os.close(fd)
+    try:
+        os.rename(TEMP, NAME, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+        os.fsync(dirfd)
+    except OSError:
+        discard_temp(dirfd)
+        fail("cannot publish seen.json")
+
+
+def discard_temp(dirfd):
+    try:
+        os.unlink(TEMP, dir_fd=dirfd)
+    except OSError:
+        pass
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] not in ("load", "save"):
+        fail("usage: seen-state load|save DIR")
+    dirfd = open_private_dir(sys.argv[2])
+    try:
+        if sys.argv[1] == "load":
+            sys.stdout.buffer.write(read_seen(dirfd))
+            sys.stdout.buffer.flush()
+            return
+        payload = sys.stdin.buffer.readline(MAX_BYTES + 2)
+        if len(payload) > MAX_BYTES:
+            fail("payload is too large")
+        write_seen(dirfd, payload)
+    finally:
+        os.close(dirfd)
+
+
+if __name__ == "__main__":
+    main()

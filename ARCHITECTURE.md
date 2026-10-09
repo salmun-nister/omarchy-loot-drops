@@ -17,14 +17,14 @@ while notifications must continue, and document the shutdown path when you do.
 | --- | --- |
 | `BarWidget.qml` | Entry point. Transport, persistence, panel rendering, lifecycle. |
 | `Model.js` | Pure functions: parse, allowlist, diff, notify, copy. No I/O. |
-| `vendor/capped-run` | Byte cap on a child's stdout. Vendored from Steam Sniper. |
-| `vendor/seen-store` | Private, atomic, no-follow read/write of `seen.json`. Vendored. |
+| `lib/capped-run` | Byte cap on a child's stdout, and process-group teardown for the watchdog. |
+| `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json`. |
 | `tests/` | Portable checks, plus a live harness. |
 
 ## State
 
 One durable file, `~/.local/state/salmun-nister.loot-lightning/seen.json`,
-written through `vendor/seen-store`. It holds a baseline per store:
+written through `lib/seen-state`. It holds a baseline per store:
 
 ```json
 { "primed": true, "stores": { "steam": { "ids": ["405640"], "primed": true } } }
@@ -42,7 +42,7 @@ on return rather than announcing what it missed.
 
 `curl` per enabled store, each in its own `Process`, so a slow or hanging store
 cannot delay the others and one failure cannot mask the rest. Output is capped by
-`vendor/capped-run` before anything is parsed.
+`lib/capped-run` before anything is parsed.
 
 Steam has no clean giveaway API, so its infinite-scroll search endpoint is read
 and the HTML rows parsed. Epic returns JSON, filtered to zero-discount windows
@@ -89,8 +89,9 @@ the URL allowlist, the title scrub and the three silencing rules are pinned.
 `qs.Ui`. The `qmllint` on `PATH` is a stub that reports nothing; the script uses
 `/usr/lib/qt6/bin/qmllint` and fails on any error or syntax warning.
 
-`tests/vendor` asserts the vendored helpers still cap, still refuse a FIFO or a
-symlink, and still carry their upstream attribution.
+`tests/helpers` asserts the byte cap holds, that a FIFO or symlink planted at
+the state file is refused rather than followed, that the directory ends up
+private, and that the watchdog reaps a child that ignores SIGTERM.
 
 `tests/harness/run` loads the real widget into a real Quickshell instance against
 the live stores, with a stubbed bar and a temporary state directory. It is the

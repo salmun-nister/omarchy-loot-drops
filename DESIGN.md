@@ -8,14 +8,18 @@ remaining work are at the bottom.
 
 - **ID**: `salmun-nister.loot-lightning`. Permanent once published.
 - **Inspiration**: [nille/omarchy-steam-sniper](https://github.com/nille/omarchy-steam-sniper)
-  (MIT, (c) 2026 nille). Single-store Steam giveaway watcher, already installed on
-  the development machine and already hardened by marketplace review.
+  (MIT, (c) 2026 nille). Single-store Steam giveaway watcher, installed on the
+  development machine. No code from it is used here; see
+  [Ownership and attribution](#ownership-and-attribution).
 - **Prior-art search**: no marketplace plugin aggregates Steam, Epic and GOG.
   The nearest published plugins are single-purpose — Steam Sniper (Steam
   giveaways), `Unr3leas3d/omarchy-steam-recent` (local library, no network),
   `gigasolo/omarchy-fizzy` (polling and notification shape). A new build is
-  justified; the Steam half reuses MIT code with attribution rather than
-  reimplementation.
+  justified. Every one of the installed plugins that both fetches and keeps
+  state ships its own helper script — `yuters.flight-radar` in bash,
+  `com.omastorm.radar` and `fred.tides` in bash, `omaproton-vpn` in Python — and
+  none outsource to a shared plumbing library, which is the local convention
+  followed here.
 - **Distribution**: personal first, then published to `salmun-nister/omarchy-loot-lightning`
   and submitted to the marketplace. Publication is not a prerequisite for
   building, and no submission is authorized by this record.
@@ -68,9 +72,11 @@ feature from "notify me when a game goes free to keep" and are deferred.
 - **Per widget instance**: in-memory game list, per-store status and last-success
   timestamp, selected row.
 - **Durable, plugin-owned**: `seen.json` in
-  `$XDG_STATE_HOME/salmun-nister.loot-lightning`, written through the reused
-  store helper. Shape is `{primed, stores:{steam:{ids},epic:{ids},gog:{ids}}}`,
+  `$XDG_STATE_HOME/salmun-nister.loot-lightning`, written through the plugin's own
+  `lib/seen-state` helper. Shape is
+  `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed}}}`,
   keyed per store so toggling one store never disturbs another store's baseline.
+  Measured worst case is 3,929 bytes against a 65,536-byte cap.
 - **Durable user configuration**: inline in `shell.json` as booleans plus one
   string. The settings UI has no object or enum type for this; booleans are what
   it renders.
@@ -121,9 +127,12 @@ stale-with-error rather than empty.
 
 ## External commands
 
-`python3` (interpreter for the reused helpers; already an Omarchy desktop
-dependency), `curl`, `omarchy-notification-send`, `omarchy-launch-browser`.
-**No credentials. No privilege. No `sudo`.**
+`/usr/bin/python3` (interpreter for this plugin's own helpers; already an
+Omarchy desktop dependency, pulled in by `uwsm`), `curl`,
+`omarchy-notification-send`, `omarchy-launch-browser`. The interpreter is named
+absolutely rather than taken from `PATH`, so a user with a version manager
+installed does not run the helpers under a different Python than the one they
+were tested against. **No credentials. No privilege. No `sudo`.**
 
 ## Security invariants
 
@@ -144,23 +153,67 @@ These are properties of the plugin, not policy. Callers cannot bypass them.
 All three feeds are attacker-controlled if a store is compromised or the
 connection is intercepted.
 
-## Reuse and attribution
+## Ownership and attribution
 
-`capped-run` and `seen-store` (MIT, (c) 2026 nille) plus the Steam
-fetch/parse/sanitise approach are copied into the plugin with their licence
-headers intact, credited in `LICENSE` and `CREDITS.md`. This is the code a
-reviewer already hardened. Evaluate `omakit add run` and `omakit add store` as
-alternatives: Run 0.2.1 passes the marketplace baseline clean, whereas
-hand-rolled `Process` blocks draw findings — and this plugin is a
-`review-required` candidate because it makes network calls.
+This plugin ships its own code. `lib/capped-run`, `lib/seen-state`, `Model.js`
+and `BarWidget.qml` were written for it, informed by
+[Steam Sniper](https://github.com/nille/omarchy-steam-sniper), which watches
+Steam alone. No third-party code is vendored, so there is no licence obligation
+beyond this repository's own MIT licence. `CREDITS.md` records the lineage and
+the rule for any code vendored later.
+
+The file-plumbing primitives in `lib/seen-state` — descriptor-relative opens with
+`O_NOFOLLOW`, checks by `fstat` on the descriptor just opened, an exclusive
+`0600` staging file, replacement by rename — are a conventional way to write a
+small private state file safely on Linux. They are implemented here
+independently, and `tests/helpers` asserts the properties that make them safe
+rather than the implementation.
+
+### Omakit considered and declined
+
+[omakit](https://github.com/mtolhuys/omakit)'s Run and Store blocks were
+evaluated. `omakit inspect` measured the current tree at roughly 20% of
+sampled review findings in "process lifecycle" (processes with no observable
+deadline) and 19% in "unbounded buffering", and Run addresses both.
+
+Declined, for reasons worth recording:
+
+- **It is not dev-only tooling.** `omakit add` copies `Run.qml` and
+  `run-supervisor.py` into the plugin's `omakit/` directory; they ship and run
+  inside `omarchy-shell` at runtime. Adopting them takes on Maarten Tolhuijs's
+  MIT notice, which reintroduces the vendored-code obligation this plugin
+  deliberately dropped.
+- **Store brings a support cliff.** It refuses a group-writable XDG base. A
+  `~/.local/state` at mode 775 would silently stop the state file working, and
+  most users would not diagnose that. Our own helper tightens the directory to
+  `0700` and continues.
+- **The marketplace submission is eventual, not urgent**, so the review
+  clearance Run buys is not needed yet.
+- **No installed plugin uses omakit**, so there is no local precedent to follow
+  (`omakit inspect` over all 32 installed plugins reports no blocks).
+
+The two findings Run would have addressed are instead handled directly: every
+fetch has a real deadline (`fetchDeadlineMs`, passed to `curl --max-time`) and a
+watchdog at `fetchWatchdogMs`, and output is capped by `lib/capped-run`. The
+watchdog signals the whole process group rather than calling `Process.kill()`,
+because `Process.kill()` only reaches the direct child and a child that ignores
+SIGTERM survives it as an orphan holding the pipe.
+
+What remains is that `omakit inspect` still reports the deadline and buffering
+classes, because a static scanner cannot see a deadline expressed in QML. That
+is a recorded, accepted tradeoff for an eventual submission, not an oversight.
 
 ## Verification plan
 
 - Parser unit tests against saved fixtures for all three shapes, including
   GOG's 404 and Epic's expired-promotion case.
-- Diff tests proving first-run silence and re-enable silence.
-- Store and cap tests, and a QML harness, following Steam Sniper's layout.
-- Live shell check of the panel.
+- Diff tests proving first-run silence, mute silence and re-enable silence.
+- Helper behaviour tests: byte cap, FIFO and symlink refusal, private directory,
+  atomic replacement under concurrent writers, and process-group teardown.
+- A QML lint pass against the real Qt `qmllint`, which fails on any error or
+  syntax warning.
+- A live harness that loads the real widget into a real Quickshell instance
+  against all three stores.
 
 **GOG's success-path parser is fixture-only until a real giveaway is captured.**
 GOG had nothing running on 9 October 2026, so the 200 shape is implemented from
@@ -177,7 +230,7 @@ and free-to-play catalogues, and region selection beyond Steam's `country`.
 
 Accepted: ID, single `bar-widget` kind, three store sources, per-store toggles
 and bells, 3-hour refresh with stale-on-open and middle-click manual refresh,
-silent first run, MIT reuse of Steam Sniper with attribution.
+silent first run, and own-code helpers with a single linked credit line.
 
 Completed evidence:
 
@@ -188,18 +241,27 @@ Completed evidence:
   template's ID validator relaxed to accept it (verified: two-segment accepted,
   single-segment, `omarchy.*`, uppercase and trailing-dot still rejected).
 - `Model.js` implemented: three parsers, host allowlist, title scrub, per-store
-  seen-state diff. 23 model tests pass. Three of them caught real defects during
-  development — entity decoding happening after tag stripping, an empty Steam
-  object being read as "no free games", and GOG accepting an id containing a
-  space.
+  seen-state diff. Three tests caught real defects during development — entity
+  decoding happening after tag stripping, an empty Steam object being read as
+  "no free games", and GOG accepting an id containing a space.
 - `BarWidget.qml` implemented and lint-clean against the real Qt `qmllint`.
   Verified in a live Quickshell harness on 9 October 2026: Steam returned Pony
   Island and Fireside Feelings, Epic returned Out of Sight and TerraScape with
   correctly built links, and GOG's 404 was read as a healthy empty store. No
   errors on any store.
-- Vendored helpers tested: byte cap enforced, FIFO and symlink refused, state dir
-  tightened to 0700, attribution headers asserted present.
-- `./tests/run` and `omarchy plugin validate` both pass.
+- Helpers written for this plugin (`lib/capped-run`, `lib/seen-state`) and tested:
+  byte cap enforced at the boundary, planted FIFO and symlink refused without
+  following, group-writable directory tightened to 0700, oversized payload
+  refused with the old file left whole, concurrent writers leaving one whole
+  payload and no temporary residue.
+- The interpreter is pinned to `/usr/bin/python3`. A bare `python3` resolved
+  through mise on this machine (3.15) against the system 3.14, which would have
+  made the helpers run under a different Python on any other machine.
+- The fetch watchdog was verified against a child that ignores SIGTERM:
+  `Process.kill()` left it running as an orphan holding the pipe, so the kill
+  signals the whole process group and escalates to SIGKILL.
+- `./tests/run` (31 tests plus the lint and helper suites) and
+  `omarchy plugin validate` both pass.
 
 Remaining:
 
@@ -210,5 +272,6 @@ Remaining:
   avoid firing one).
 - Marketplace listing and screenshot not started; **submission is not
   authorized**.
-- Consider `omakit add run` / `omakit add store` in place of the hand-rolled
-  `Process` and helper blocks, since this is a `review-required` candidate.
+- `omakit inspect` still reports the deadline and buffering classes, because a
+  static scanner cannot see a deadline expressed in QML. Accepted for an
+  eventual submission; revisit if a reviewer flags it.
