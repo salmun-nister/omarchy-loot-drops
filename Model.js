@@ -21,7 +21,7 @@ var STORE_LABELS = {
 // icon that is not its own.
 var STORE_GLYPHS = {
   "steam": "\u{F04D3}",
-  "epic": "E",
+  "epic": "\u{F04DC}",
   "gog": "\u{F0BA1}"
 }
 

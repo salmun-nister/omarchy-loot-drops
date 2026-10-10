@@ -79,6 +79,23 @@ if not data.get("laidOut"):
           "render blank" % rows, file=sys.stderr)
     raise SystemExit(1)
 
+# The hero must sit outside the scrolling list, directly above it. It used to
+# be the header of that list, so it scrolled away with the rows.
+pinned_bottom = metrics.get("pinnedBottom")
+list_y = metrics.get("listY")
+if pinned_bottom is None or list_y is None:
+    print("FAIL: the harness cannot see the pinned hero", file=sys.stderr)
+    raise SystemExit(1)
+if (metrics.get("pinnedHeight") or 0) <= 0:
+    print("FAIL: the pinned hero has no height; the panel would render blank",
+          file=sys.stderr)
+    raise SystemExit(1)
+if abs(pinned_bottom - list_y) > 1.5:
+    print("FAIL: the hero is not pinned directly above the list "
+          "(hero bottom %s, list top %s); it would scroll with the rows"
+          % (pinned_bottom, list_y), file=sys.stderr)
+    raise SystemExit(1)
+
 # Every row is at least a caption tall, so a list of N rows cannot legitimately
 # be shorter than N pixels. A blank panel measured 18px for 7 rows.
 content_height = metrics.get("contentHeight") or 0

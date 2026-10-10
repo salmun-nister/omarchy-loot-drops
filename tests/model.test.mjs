@@ -490,11 +490,14 @@ test('every store has a header mark, and the real logos are private-use', () => 
   assert.equal(steam, 0xf04d3, 'the steam mark moved between Nerd Fonts releases');
   assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
 
-  // Nerd Fonts ships no Epic mark, so Epic borrows its initial instead of
-  // wearing a storefront icon that is not its own. The real Epic shield was
-  // tried at this size and turned into a solid blob: it carries "EPIC GAMES"
-  // lettering inside the outline, and none of that survives 11 pixels.
-  assert.equal(Model.STORE_GLYPHS.epic, 'E');
+  // Nerd Fonts ships no Epic mark. The real Epic shield was tried here and is
+  // unusable at eleven pixels: carrying "EPIC GAMES" lettering inside the
+  // outline it fills into a blob, and stripped to just the outer edge it is
+  // still a featureless silhouette. So Epic gets the one generic mark that
+  // still reads as a shop at that size.
+  const epic = Model.STORE_GLYPHS.epic.codePointAt(0);
+  assert.ok(privateUse(epic), `the epic mark U+${epic.toString(16)} is not private-use`);
+  assert.equal(epic, 0xf04dc, 'the epic mark moved between Nerd Fonts releases');
 
   // No store may be left without a mark.
   for (const store of Model.STORES) {

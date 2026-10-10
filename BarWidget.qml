@@ -98,6 +98,11 @@ Panel {
 
   readonly property bool stale: lastSuccessAt > 0
     && nowMs - lastSuccessAt >= Model.STALE_AFTER_MS
+  // The footer's ink, shared by the freshness text and both buttons so the two
+  // cannot drift apart. The text drops to `dim` once the data is stale; the
+  // buttons deliberately hold this colour, so they stay equally usable when the
+  // numbers behind them are old.
+  readonly property color footerInk: Qt.darker(foreground, 1.5)
   readonly property string freshness: Model.freshnessLabel(
     lastSuccessAt, nowMs, anyBusy)
   readonly property var activeStores: Model.activeStores(storesOn)
@@ -121,7 +126,10 @@ Panel {
     return {
       count: panelList.count,
       contentHeight: panelList.contentHeight,
-      height: panelList.height
+      height: panelList.height,
+      pinnedHeight: pinned.height,
+      pinnedBottom: pinned.y + pinned.height,
+      listY: panelList.y,
     }
   }
 
@@ -674,7 +682,10 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(panelList.contentHeight,
+    // The hero is no longer part of the list's content, so it is added back in
+    // to keep the card tall enough to hold both.
+    contentHeight: panel.fittedContentHeight(pinned.height
+                                             + panelList.contentHeight,
                                              Style.space(620))
 
     PanelKeyCatcher {
@@ -700,6 +711,85 @@ Panel {
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
+      // The hero is pinned above the rows and stays put while they scroll.
+      // It used to be the ListView's header, which meant a wrapping subtitle
+      // could settle taller after the panel was sized and leave the list with a
+      // few pixels of permanent scroll range.
+      Column {
+        id: pinned
+        width: parent.width
+        spacing: Style.spacing.panelGap
+        // Stated rather than derived. The hero is an Item with an explicit
+        // height and no implicitHeight, and this Column reports zero for itself
+        // while that is true, which would leave the list starting on top of it.
+        height: hero.height + pinnedRule.height + Style.spacing.panelGap
+        // The gap the ListView spacing used to put under its header.
+        bottomPadding: Style.spacing.xs
+
+        // The plugin's name, and underneath it how much is free and which
+        // stores that came from.
+        Item {
+          id: hero
+          readonly property color tint: root.hasGames
+            ? root.foreground
+            : (root.bucket("steam").error || root.bucket("epic").error
+                || root.bucket("gog").error ? root.urgent : root.dim)
+          width: parent.width
+          height: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
+
+          Text {
+            id: heroIcon
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: Model.BAR_ICON
+            color: hero.tint
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+          }
+
+          Column {
+            id: heroLabels
+            anchors.left: heroIcon.right
+            anchors.leftMargin: Style.space(14)
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: Model.heroTitle()
+              color: hero.tint
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+              elide: Text.ElideRight
+            }
+
+            // Wraps rather than elides: the count sentence is a full clause.
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              visible: text !== ""
+              text: Model.heroDetail(root.buckets, root.storesOn).toUpperCase()
+              color: Qt.darker(hero.tint, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.2
+              wrapMode: Text.WordWrap
+            }
+          }
+        }
+
+        PanelSeparator {
+          id: pinnedRule
+          width: parent.width
+          foreground: root.foreground
+        }
+      }
+
+      // Only the rows scroll. The hero above stays put.
       // A ListView rather than a Column of Repeater rows. A Repeater builds its
       // items but never lays them out, so every row sat at y = 0 with the
       // enclosing Column reporting an implicit height of zero: the panel rendered
@@ -707,81 +797,23 @@ Panel {
       // positionViewAtIndex, which is what keeps the cursor visible.
       ListView {
         id: panelList
-        anchors.fill: parent
+        anchors.top: pinned.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         clip: true
         model: root.visibleGames
         boundsBehavior: Flickable.StopAtBounds
         spacing: Style.spacing.xs
+        // The wheel must not move a list that already fits. Rounding and late
+        // layout can leave contentHeight a hair over height, and a few pixels of
+        // drift reads as the whole panel scrolling when it should not. This is
+        // the same pairing the shell uses for its own panel menus.
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
 
         ScrollBar.vertical: ScrollBar {
           policy: ScrollBar.AsNeeded
-        }
-
-        // --- Above the list ---------------------------------------------
-        header: Column {
-          width: panelList.width
-          spacing: Style.spacing.panelGap
-
-          // The plugin's name, and underneath it how much is free and which
-          // stores that came from.
-          Item {
-            id: hero
-            readonly property color tint: root.hasGames
-              ? root.foreground
-              : (root.bucket("steam").error || root.bucket("epic").error
-                  || root.bucket("gog").error ? root.urgent : root.dim)
-            width: parent.width
-            height: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
-
-            Text {
-              id: heroIcon
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              text: Model.BAR_ICON
-              color: hero.tint
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
-            }
-
-            Column {
-              id: heroLabels
-              anchors.left: heroIcon.right
-              anchors.leftMargin: Style.space(14)
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(2)
-
-              Text {
-                width: parent.width
-                textFormat: Text.PlainText
-                text: Model.heroTitle()
-                color: hero.tint
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-                elide: Text.ElideRight
-              }
-
-              // Wraps rather than elides: the count sentence is a full clause.
-              Text {
-                width: parent.width
-                textFormat: Text.PlainText
-                visible: text !== ""
-                text: Model.heroDetail(root.buckets, root.storesOn).toUpperCase()
-                color: Qt.darker(hero.tint, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1.2
-                wrapMode: Text.WordWrap
-              }
-            }
-          }
-
-          PanelSeparator {
-            width: parent.width
-            foreground: root.foreground
-          }
         }
 
         // --- One row: a store header, or a game --------------------------
@@ -1039,7 +1071,7 @@ Panel {
               horizontalAlignment: Text.AlignHCenter
               elide: Text.ElideRight
               text: root.freshness
-              color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
+              color: root.stale ? root.dim : root.footerInk
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
@@ -1048,9 +1080,9 @@ Panel {
               id: refreshButton
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "\u{F04E6}"
+              text: "\u{F021}"
               bordered: true
-              foreground: root.foreground
+              foreground: root.footerInk
               accent: Commons.Color.accent
               fontFamily: root.fontFamily
               onClicked: root.refresh()
@@ -1062,7 +1094,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               text: "?"
               bordered: true
-              foreground: root.foreground
+              foreground: root.footerInk
               accent: Commons.Color.accent
               fontFamily: root.fontFamily
               onClicked: root.showShortcuts = !root.showShortcuts
