@@ -15,8 +15,8 @@ const Model = new Function(`${source}\nreturn {
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
   normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
   parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
-  notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
-  storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
+  notificationArgs, totalGames, activeStores, statusTitle,
+  storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
   acknowledge, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
 };`)();
@@ -319,18 +319,15 @@ test('notification args are safe for the notification server', () => {
   assert.ok(body.includes('and 3 more'), `long list should summarise, got: ${body}`);
 });
 
-test('per-store states stay distinct instead of collapsing to a fallback', () => {
+test('a store row says only why it failed, and nothing otherwise', () => {
   const errors = { gog: { message: 'Could not reach GOG' } };
-  const buckets = {
-    steam: { games: [{ id: 'a', title: 'A' }] },
-    gog: { games: [] },
-  };
-  assert.equal(Model.storeStateLabel('gog', buckets.gog, errors), 'Could not reach GOG');
-  assert.equal(Model.storeStateLabel('steam', buckets.steam, errors), '1 free game');
-  // An empty GOG is a healthy empty store, not an error and not "not checked".
-  assert.equal(Model.storeStateLabel('gog', buckets.gog, {}), 'No giveaway running');
-  assert.equal(Model.storeStateLabel('steam', buckets.steam, {}), '1 free game');
-  assert.equal(Model.storeStateLabel('epic', undefined, {}), 'Not checked yet');
+  assert.equal(Model.storeErrorLabel('gog', errors), 'Could not reach GOG');
+  // A healthy empty store and a store with games both say nothing at all.
+  assert.equal(Model.storeErrorLabel('gog', {}), '');
+  assert.equal(Model.storeErrorLabel('steam', {}), '');
+  assert.equal(Model.storeErrorLabel('epic', undefined), '');
+  // A 404 from GOG is a healthy empty store, so it must not surface as an error.
+  assert.equal(Model.storeErrorLabel('gog', { gog: { httpStatus: 404, message: '' } }), '');
 });
 
 test('status copy reflects only the enabled stores', () => {
@@ -494,7 +491,9 @@ test('every store has a header mark, and the real logos are private-use', () => 
   assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
 
   // Nerd Fonts ships no Epic mark, so Epic borrows its initial instead of
-  // wearing a storefront icon that is not its own.
+  // wearing a storefront icon that is not its own. The real Epic shield was
+  // tried at this size and turned into a solid blob: it carries "EPIC GAMES"
+  // lettering inside the outline, and none of that survives 11 pixels.
   assert.equal(Model.STORE_GLYPHS.epic, 'E');
 
   // No store may be left without a mark.

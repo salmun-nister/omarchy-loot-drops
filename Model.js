@@ -752,37 +752,15 @@ function heroDetail(perStore, on) {
   return total + " " + noun + " FROM " + watched
 }
 
-function statusDetail(perStore, on, busy, errors) {
-  if (activeStores(on).length === 0) return "Turn a store on to start watching"
-  var first = ""
-  for (var i = 0; i < STORES.length; i++) {
-    var store = STORES[i]
-    if (!on || !on[store]) continue
-    var bucket = errors && errors[store]
-    if (bucket && bucket.message) {
-      first = (STORE_LABELS[store] || store) + ": " + bucket.message
-      break
-    }
-  }
-  if (first) return first
-  if (busy) return "Looking for games that are free to keep"
-  return "I will notify you when one appears"
+
+// The only thing a store row still says: that its fetch failed. The empty and
+// "N free games" states are gone, because the panel's subtitle already counts
+// the games and an empty store needs no explanation.
+function storeErrorLabel(store, errors) {
+  var error = errors && errors[store]
+  return error && error.message ? error.message : ""
 }
 
-// Per-store row copy. The five states stay distinct on purpose: a GOG 404 is
-// not an error, and an unreachable store is not the same as an empty one.
-function storeStateLabel(store, bucket, errors) {
-  var error = errors && errors[store]
-  if (error && error.message) return error.message
-  if (!bucket || bucket.neverChecked) return "Not checked yet"
-  if (bucket.busy && (!bucket.games || bucket.games.length === 0)) return "Checking"
-  if (!bucket.games || bucket.games.length === 0) {
-    return store === "gog" ? "No giveaway running" : "Nothing free right now"
-  }
-  return bucket.games.length === 1
-    ? "1 free game"
-    : (bucket.games.length + " free games")
-}
 
 function freshnessLabel(lastSuccessAt, nowMs, busy) {
   if (!lastSuccessAt) return busy ? "Checking the stores" : "Not checked yet"

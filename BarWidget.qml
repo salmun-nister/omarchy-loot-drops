@@ -181,7 +181,7 @@ Panel {
         enabled: on,
         empty: on && (!current.games || current.games.length === 0),
         failed: on && !!current.error,
-        stateLabel: on ? Model.storeStateLabel(store, current, errorsByStore()) : ""
+        errorLabel: on ? Model.storeErrorLabel(store, errorsByStore()) : ""
       })
       if (!on) continue
       for (var j = 0; j < current.games.length; j++) {
@@ -798,8 +798,8 @@ Panel {
           // spacing, which put it against the rule at the bottom.
           implicitHeight: isHeader
             ? Style.space(30)
-              + (modelData && modelData.empty
-                ? emptyNote.implicitHeight + Style.space(8) : 0)
+              + (modelData && modelData.errorLabel
+                ? storeError.implicitHeight + Style.space(8) : 0)
             : gameTitle.implicitHeight + Style.spacing.sm
 
           // Store header: mark, name, bell, switch.
@@ -908,20 +908,20 @@ Panel {
             }
           }
 
-          // Why an enabled store has nothing to show.
+          // Only a failure earns a line of its own. A store with no games just
+          // shows its name, which is all the toggle needs.
           Text {
-            id: emptyNote
+            id: storeError
             anchors.top: parent.top
             anchors.topMargin: Style.space(30)
             anchors.left: parent.left
-            // Same indent as a game row, so "no giveaway running" lines up with
-            // the rows it stands in for.
             anchors.leftMargin: Style.space(22)
             width: parent.width - Style.space(22) - Style.spacing.sm
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            text: row.modelData.stateLabel || ""
-            color: row.modelData.failed ? root.urgent : root.dim
+            visible: text !== ""
+            text: row.modelData.errorLabel || ""
+            color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
@@ -1048,7 +1048,7 @@ Panel {
               id: refreshButton
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              iconText: "\u{F021}"
+              text: "\u{F04E6}"
               bordered: true
               foreground: root.foreground
               accent: Commons.Color.accent
@@ -1060,7 +1060,7 @@ Panel {
               id: helpButton
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              iconText: "?"
+              text: "?"
               bordered: true
               foreground: root.foreground
               accent: Commons.Color.accent
