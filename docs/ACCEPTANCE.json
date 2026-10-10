@@ -1,116 +1,105 @@
 {
   "status": "passed",
-  "input_commit": "3143f856954f14963ec596b8b1b37f1386c221ac",
+  "input_commit": "e809ccf9cc645d045759f31f307eeab7e79ebb6d",
   "date": "2026-10-10",
-  "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the link and notification paths. Portable checks are separate and are listed for completeness.",
-  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, then omarchy-shell shell rescanPlugins and omarchy plugin enable salmun-nister.loot-drops right. A plain directory is sufficient; no git remote was needed.",
+  "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the attribution-trailer rewrite and after the project.json description fix. Portable checks are separate and are listed for completeness.",
+  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section, then omarchy-shell shell rescanPlugins. A plain directory is sufficient; no git remote was needed. The manifest, the bar-widget block and .template/project.json all carry the same description at this commit, so configure() no longer rewrites the repository description back to the old wording.",
   "commands": [
     "./tests/run",
     "./tests/qml/lint",
     "./tests/harness/run",
     "omarchy plugin validate .",
     "omarchy-shell shell rescanPlugins",
-    "omarchy plugin enable salmun-nister.loot-drops right",
-    "omarchy-shell salmun-nister.loot-drops open",
+    "omarchy-shell shell listPlugins",
+    "omarchy-shell shell debugBarGeometry",
+    "omarchy-shell shell summon salmun-nister.loot-drops '\"\"'",
+    "omarchy-shell -q shell hide salmun-nister.loot-drops",
     "omarchy-shell salmun-nister.loot-drops refresh",
-    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 12000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open"
+    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 12000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open",
+    "grim -s 1 <capture>; magick <capture> -crop <region> +repage <evidence>"
   ],
   "results": [
     {
       "check": "Bar widget loads on the real bar",
       "result": "pass",
-      "detail": "Shell restart recorded the plugin loading with no Loot Drops errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
+      "detail": "omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget'], and shell debugBarGeometry places salmun-nister.loot-drops in the right section at x=2183, 27x25, visible:true and itemVisible:true. rescanPlugins reloaded it with no Loot Drops errors in the Quickshell log."
     },
     {
       "check": "Panel opens and renders the three stores",
       "result": "pass",
-      "detail": "Hero read 'Loot Drops' with the chest glyph over '4 FREE GAMES FROM STEAM, EPIC, AND GOG'. Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG showed its header row and nothing else. Captured from the live desktop as preview.png."
+      "detail": "summon returned ok and mapped the omarchy-keyboard-panel layer. Captured from the live desktop: hero read 'Loot Drops' with the chest glyph over '4 FREE GAMES FROM STEAM, EPIC, AND GOG'; Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG showed its header row and nothing else; the footer held the refresh glyph, 'Updated 3m ago' and the ? button."
     },
     {
       "check": "Empty store shows only its name",
       "result": "pass",
-      "detail": "GOG with no giveaway renders a bare header row, keeping its bell and switch, and no 'No giveaway running' line. The per-store state line was removed; it had been rendering unconditionally, which put '2 free games' over the first game of Steam's and Epic's lists."
-    },
-    {
-      "check": "Store marks are distinct and legible",
-      "result": "pass",
-      "detail": "Steam U+F04D3, Epic U+F04DC (storefront), GOG U+F0BA1, verified in a magnified crop of preview.png at the 11px the panel draws them. The real Epic shield was tried and is unusable at that size: with its EPIC GAMES lettering it fills into a blob, and as a bare silhouette it is featureless. A test pins all three codepoints."
+      "detail": "GOG with no giveaway rendered a bare header row, keeping its bell and switch, with no empty-store line. Same behaviour as the previous run."
     },
     {
       "check": "Hero is pinned and a fitting list does not scroll",
       "result": "pass",
-      "detail": "The hero sits outside the ListView so rows scroll beneath it. The harness asserts pinnedHeight is positive and that the hero's bottom edge equals the list's top edge, which fails if it is ever moved back to a header. flickableDirection is paired with interactive: contentHeight > height, so a list that fits cannot be moved by the wheel at all. The permanent few-pixel scroll range this fixed came from the subtitle wrapping and settling taller after the card had been sized."
+      "detail": "The offscreen harness against the three live stores reported rowCount 7, gameRows 4, headers steam/epic/gog, pinnedHeight 41, pinnedBottom 41 and listY 41, with contentHeight 172 equal to height 172, so the fitting list has no scroll range."
     },
     {
       "check": "Footer controls share one colour",
       "result": "pass",
-      "detail": "The freshness text and both buttons read one footerInk value. They had drifted: the text was darkened while the buttons stayed at full foreground, which is what made the refresh glyph look brighter than the question mark beside it. Buttons hold that colour even when data goes stale; only the freshness text dims."
-    },
-    {
-      "check": "Game links open in the last used browser window",
-      "result": "pass",
-      "detail": "Confirmed on the live desktop by the user. Rows hand the URL to xdg-open, which lets the browser pick its own window. They previously went through omarchy-launch-browser, whose trailing focus step selects by position in hyprctl's client array rather than focus order, so the tab landed in whichever browser window happened to be first; that array reshuffles as windows open and close."
+      "detail": "Observed in the live capture: the freshness text, the refresh glyph and the ? button read as one ink. No layout or colour code changed since the change that unified them, so this is a visual re-check rather than a fresh measurement."
     },
     {
       "check": "Desktop notification opens the panel",
       "result": "pass",
-      "detail": "Two toasts were fired through the real notificationArgs argv and confirmed on the live desktop by the user. The click action is omarchy-shell -q salmun-nister.loot-drops open, which opens the panel and clears the unseen dot through acknowledgeCurrent. Both sides read the target from Model.IPC_TARGET. A test asserts the argv carries no URL at all."
+      "detail": "A toast fired through the real notificationArgs argv appeared with the Loot Drops app name and chest glyph, and clicking it opened the panel on the live desktop. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the per-widget open handler answers. A test asserts the argv carries no URL at all."
     },
     {
       "check": "All three endpoints resolve live",
       "result": "pass",
-      "detail": "Steam search endpoint returned 2 rows; Epic freeGamesPromotions returned 2 zero-discount offers still inside their endDate; GOG giveaway/api/get returned 404, which the panel renders as an empty store rather than an error."
+      "detail": "Steam search/results returned HTTP 200 with 56,736 bytes; Epic freeGamesPromotions returned HTTP 200 with 49,858 bytes; GOG giveaway/api/get returned HTTP 404, which the panel renders as an empty store rather than an error. The harness parsed the same live responses into 2 Steam rows and 2 zero-discount Epic offers."
     },
     {
       "check": "Private state file is created and readable",
       "result": "pass",
-      "detail": "~/.local/state/salmun-nister.loot-drops created mode 0700 with seen.json mode 0600, containing per-store id baselines."
-    },
-    {
-      "check": "First fetch after install is silent",
-      "result": "pass",
-      "detail": "The initial fetch recorded the Steam and Epic baselines and fired no notification, so installing does not announce games that were already free."
+      "detail": "~/.local/state/salmun-nister.loot-drops mode 0700 with seen.json mode 0600, holding per-store id baselines for Steam and Epic. The file was byte-identical before and after the notification test."
     },
     {
       "check": "Desktop notification fires for a newly free game",
       "result": "pass",
-      "detail": "With the Steam baseline reduced to a single id, the next fetch produced a real desktop notification reading 'Fireside Feelings is free on Steam' with the Loot Drops app name and chest glyph."
+      "detail": "The Steam baseline was reduced to a single id and the plugin rescanned so the widget re-read the file, then refresh fetched live: a real desktop notification read 'Fireside Feelings is free on Steam'. The widget holds seen state in memory and persists it on every fetch, so editing seen.json alone does not change what the next fetch compares against; the rescan is what loads the reduced baseline."
     },
     {
       "check": "Notification does not repeat for an unchanged list",
       "result": "pass",
-      "detail": "The baseline re-recorded the new id; a second refresh produced no further notification."
+      "detail": "A second refresh against the same list produced no further notification and re-recorded both Steam ids in the baseline."
     },
     {
       "check": "Switching a store off stops it and hides it",
       "result": "pass",
-      "detail": "With gogEnabled false the GOG section disappeared from the panel and no GOG request was made. Verified during development; not re-exercised after the hero, footer and pinned changes."
+      "detail": "Toggled on the live panel: the GOG section disappeared entirely, and toggling it back restored it. The change persisted to the shell config as gogEnabled, which confirms the switch writes a real setting rather than local UI state."
     },
     {
       "check": "Muting a bell keeps the store listed but silent",
       "result": "pass",
-      "detail": "With epicNotify false the Epic Games section stayed in the panel with its games and showed a crossed-out bell, distinct from a disabled store. Verified during development; not re-exercised after the hero, footer and pinned changes."
+      "detail": "Toggled on the live panel: the store stayed listed with its games and the bell showed crossed out, distinct from a disabled store. Both toggles persisted to the shell config as gogNotify and epicNotify and were restored to true."
     },
     {
       "check": "Stale is derived from the refresh interval",
       "result": "pass",
-      "detail": "Stale was a fixed four-hour constant that only lined up with the old 180-minute default (1.33x). It is now 1.5x refreshMinutes, so it keeps meaning 'we may have missed something' at any interval: 45 minutes at the 30-minute floor, 135 at the 90-minute default, 18 hours at the 720 maximum. Unit-tested across those bounds, including that a single missed poll never reads stale and that an out-of-range interval cannot produce a threshold the settings slider disagrees with. Default interval moved 180 -> 90 and the range 5-180 -> 30-720, so the default no longer sits on the slider's ceiling."
+      "detail": "Stale remains 1.5x refreshMinutes: 45 minutes at the 30-minute floor, 135 at the 90-minute default, 18 hours at the 720 maximum, recomputed from Model.staleAfterMs in this run. Unit-tested across those bounds, including that a single missed poll never reads stale and that an out-of-range interval cannot produce a threshold the settings slider disagrees with."
     },
     {
       "check": "Portable checks",
       "result": "pass",
-      "detail": "40 model and helper tests, QML lint against the real Qt qmllint with no errors, the helper behaviour suite, and the offscreen harness (7 rows, all three store headers, pinned-hero assertion) all pass."
+      "detail": "40 model and helper tests, QML lint against the real Qt qmllint with no errors, the helper behaviour suite, and the offscreen harness all pass. The plugin validator reports VALID and the security pass returns advisory capability findings only: negated sudo prose in SECURITY.md, the .template/blueprint AGENTS.md authoring file, and the installer and package-manager surfaces in docs/SETUP.md. Those are review prompts, not errors, and not a marketplace result."
     }
   ],
   "limitations": [
-    "GOG's success path is fixture-only. No giveaway was running during acceptance, so the 200 response shape has not been observed live; the 404 empty path has.",
+    "GOG's success path is fixture-only. GOG returned 404 during this run as it did last time, so the 200 response shape has still never been observed live.",
     "No vertical bar was observed. The tested bar was horizontal (position top).",
-    "The derived stale threshold is unit-tested but was not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out; the user confirmed the panel renders and behaves correctly with the new default instead.",
-    "Store switch and bell behaviour was verified during development and not re-exercised after the hero, footer, pinned-list, interval and stale changes.",
-    "preview.png shows the store data that was live at capture time and will not reflect what the panel shows later.",
-    "The notification click opens the panel rather than the store page, so no click-through to a store URL is exercised. That is the intended behaviour, but it means the notification path no longer covers URL opening; only the panel row does.",
-    "The documented install command 'omarchy plugin add <git-url>' was not exercised against a published repository at the time of recording; acceptance used a local symlink and a private GitHub remote.",
-    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin no longer depends on it, but other Omarchy panels and any notification that opens a URL still do. Already reported upstream."
+    "The derived stale threshold was recomputed and unit-tested but not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out.",
+    "Game rows were not clicked in this run. Rows still hand the URL to xdg-open so the browser picks its own window, but opening a store page and confirming which window received the tab was not re-exercised here; that behaviour was confirmed by the user on a previous run and no code covering it has changed since.",
+    "preview.png was not recaptured. No rendering or layout code changed after it was taken, and the live panel captured in this run matches it: same hero, same four games, same empty GOG row and same footer.",
+    "The notification click opens the panel rather than the store page, so the notification path does not cover URL opening; only a panel row does.",
+    "The documented install command 'omarchy plugin add <git-url>' was still not exercised. Acceptance used the local symlink that the plugin was already installed through.",
+    "The bar widget is loaded once per monitor, and only one monitor was exercised.",
+    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin does not depend on it, but other Omarchy panels and any notification that opens a URL still do. Already reported upstream."
   ]
 }
