@@ -14,6 +14,17 @@ var STORE_LABELS = {
   "gog": "GOG"
 }
 
+// Store marks beside each header. Steam and GOG are the real logos, taken from
+// the Material Design set in Nerd Fonts 3.5.1 (U+F04D3 and U+F0BA1; the latter
+// moves between releases, so the version matters). Nerd Fonts ships no Epic
+// mark at all, so Epic borrows its initial rather than wearing a storefront
+// icon that is not its own.
+var STORE_GLYPHS = {
+  "steam": "\u{F04D3}",
+  "epic": "E",
+  "gog": "\u{F0BA1}"
+}
+
 // Short forms, used only by the panel's subtitle. That line is uppercased and
 // letter-spaced, so "Epic Games" makes it long enough to wrap; the headers and
 // the notification headline keep the full names.

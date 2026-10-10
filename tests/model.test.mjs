@@ -18,7 +18,7 @@ const Model = new Function(`${source}\nreturn {
   notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
   storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
-  acknowledge, unseenIds, hasUnseen, acknowledgedOf,
+  acknowledge, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -471,4 +471,33 @@ test('acknowledged ids survive a round trip and ignore junk', () => {
 
   // A store that has never been acknowledged reports nothing seen.
   assert.deepEqual(Model.acknowledgedOf(Model.emptySeen(), 'gog'), []);
+});
+
+test('every store has a header mark, and the real logos are private-use', () => {
+  // Steam and GOG use the Material Design marks in Nerd Fonts 3.5.1. Both are
+  // private-use codepoints, so they render monochrome and take the theme colour;
+  // an emoji-presentation codepoint here would paint its own colour instead.
+  const steam = Model.STORE_GLYPHS.steam.codePointAt(0);
+  const gog = Model.STORE_GLYPHS.gog.codePointAt(0);
+  // Two private-use planes: BMP U+E000-F8FF, and Plane 15 at U+F0000-FFFFD.
+  // The Nerd Fonts Material Design block sits in the second of these.
+  const privateUse = c => (c >= 0xe000 && c <= 0xf8ff)
+    || (c >= 0xf0000 && c <= 0xffffd);
+  for (const [name, code] of [['steam', steam], ['gog', gog]]) {
+    assert.ok(privateUse(code),
+      `the ${name} mark U+${code.toString(16)} is not private-use`);
+  }
+  assert.equal(steam, 0xf04d3, 'the steam mark moved between Nerd Fonts releases');
+  assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
+
+  // Nerd Fonts ships no Epic mark, so Epic borrows its initial instead of
+  // wearing a storefront icon that is not its own.
+  assert.equal(Model.STORE_GLYPHS.epic, 'E');
+
+  // No store may be left without a mark.
+  for (const store of Model.STORES) {
+    const mark = Model.STORE_GLYPHS[store];
+    assert.equal(typeof mark, 'string', `${store} has no mark`);
+    assert.ok(mark.length > 0, `${store} has an empty mark`);
+  }
 });

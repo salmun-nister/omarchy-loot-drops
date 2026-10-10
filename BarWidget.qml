@@ -88,8 +88,11 @@ Panel {
   property int retryDelayMs: 30000
   property bool cursorActive: false
   property int selectedIndex: 0
-  // Remembered so the keyboard keeps targeting the store whose games just went away.
-  property string keyboardStore: ""
+  // Whichever store the e and n keys act on. It follows the pointer when the
+  // pointer is over a row, and the keyboard cursor otherwise, so pressing e
+  // acts on the store you are looking at rather than on whichever one happens
+  // to be first.
+  property string targetStore: ""
   // Whether the panel is currently showing the keyboard shortcuts.
   property bool showShortcuts: false
 
@@ -214,13 +217,13 @@ Panel {
   // Switching a store off stops it being fetched at all; switching it back on
   // re-records silently rather than announcing everything it missed.
   function toggleStore(store) {
-    keyboardStore = store
+    targetStore = store
     persist({ [enabledKey(store)]: !storesOn[store] })
     reanchorCursor()
   }
 
   function toggleBell(store) {
-    keyboardStore = store
+    targetStore = store
     persist({ [notifyKey(store)]: !notifyOn[store] })
   }
 
@@ -462,9 +465,9 @@ Panel {
     var next = at < 0 ? (step > 0 ? 0 : allowed.length - 1) : at + step
     next = Math.max(0, Math.min(allowed.length - 1, next))
     setCursor(next)
-    // Moving the cursor is what retargets the keyboard. Re-anchoring must not,
-    // or switching a store off would immediately retarget it elsewhere.
-    keyboardStore = visibleGames[allowed[next]].store
+    // Moving the cursor retargets the keyboard. Re-anchoring must not, or
+    // switching a store off would immediately retarget it elsewhere.
+    targetStore = visibleGames[allowed[next]].store
   }
 
   function selectedGame() {
@@ -482,9 +485,11 @@ Panel {
   // moves the cursor or clicks a row, which is what "twice on the same game"
   // has to mean.
   function cursorStore() {
-    if (keyboardStore) return keyboardStore
+    if (targetStore) return targetStore
     var row = selectedGame()
-    return row ? row.store : ""
+    if (!row) return ""
+    targetStore = row.store
+    return row.store
   }
 
   // Re-anchor the cursor after the row list changes underneath it.
@@ -505,7 +510,7 @@ Panel {
 
   function openGame(row) {
     if (!row || row.kind !== "game") return
-    keyboardStore = row.store
+    targetStore = row.store
     // safeUrl refuses anything off the store's own host, and the search page is
     // the fallback, so a row always opens somewhere legitimate.
     var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
@@ -794,17 +799,38 @@ Panel {
             ? Style.space(30) + (modelData && modelData.empty ? emptyNote.implicitHeight : 0)
             : gameTitle.implicitHeight + Style.spacing.sm
 
-          // Store header: name, bell, switch.
+          // Store header: mark, name, bell, switch.
           Item {
             anchors.fill: parent
             visible: row.isHeader
             // A store that is switched off reads as present but inactive.
             opacity: row.isHeader && row.modelData.enabled === false ? 0.45 : 1
 
+            // Behind the controls, and accepting no buttons, so hovering the
+            // header retargets the keyboard without eating the bell's clicks.
+            MouseArea {
+              anchors.fill: parent
+              acceptedButtons: Qt.NoButton
+              hoverEnabled: true
+              onEntered: root.targetStore = row.modelData.store
+            }
+
             Text {
-              id: headerLabel
+              id: headerMark
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: Model.STORE_GLYPHS[row.modelData.store] || ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Text {
+              id: headerLabel
+              anchors.left: headerMark.right
+              anchors.leftMargin: Style.spacing.xs
               anchors.verticalCenter: parent.verticalCenter
               // Room for the bell and the switch; the bell contributes nothing
               // when it is hidden.
@@ -918,7 +944,8 @@ Panel {
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              anchors.leftMargin: Style.spacing.sm
+              // Indented under the store name so the two levels read apart.
+              anchors.leftMargin: Style.space(22)
               anchors.rightMargin: Style.spacing.sm
               // Titles from the network are plain text, never markup. A header
               // row has no `game`, and hiding a row does not stop this binding
@@ -937,6 +964,9 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
+              // The pointer picks the store the keyboard acts on, so e and n do
+              // not depend on where the keyboard cursor happens to be.
+              onEntered: root.targetStore = row.modelData.store
               onClicked: root.openGame(row.modelData)
             }
           }
@@ -958,26 +988,29 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          // Refresh on the left, a help toggle on the right. The shortcut list
-          // is in the README; this is for the times you are in the panel and do
-          // not want to leave it to remember.
+          // A rule between the list and the controls, so the buttons are not
+          // read as part of a store's rows.
+          PanelSeparator {
+            width: parent.width
+            foreground: root.foreground
+          }
+
+          Button {
+            width: parent.width
+            text: "Refresh now"
+            iconText: "\u{F021}"
+            bordered: true
+            foreground: root.foreground
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            onClicked: root.refresh()
+          }
+
+          // Help sits alone on the last row, out of the way and right-aligned,
+          // which leaves Refresh now full width and centred.
           Item {
             width: parent.width
-            implicitHeight: Math.max(refreshButton.implicitHeight,
-                                     helpButton.implicitHeight)
-
-            Button {
-              id: refreshButton
-              anchors.left: parent.left
-              width: parent.width - helpButton.width - Style.spacing.sm
-              text: "Refresh now"
-              iconText: "\u{F021}"
-              bordered: true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              onClicked: root.refresh()
-            }
+            implicitHeight: helpButton.implicitHeight
 
             Button {
               id: helpButton
@@ -1021,7 +1054,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
-    keyboardStore = ""
+    targetStore = ""
     showShortcuts = false
     nowMs = Date.now()
     // Opening the panel refreshes when the data is missing or stale, which is

@@ -357,6 +357,16 @@ Completed evidence:
   Building it surfaced a bug where every refresh cleared the record, because the
   diff rebuilt each store's bucket without carrying the new field.
 
+- Five more on-device fixes. The keyboard now targets whichever store the pointer
+  is over, falling back to the keyboard cursor; before, it acted on whichever
+  store came first, which is why e and n only ever toggled Steam. A rule separates
+  the list from the controls, the help toggle moved to its own bottom-right row
+  so Refresh now is full width again, games are indented under their store name,
+  and each header carries its store mark. Steam and GOG use the real Material
+  Design marks from Nerd Fonts 3.5.1 (U+F04D3 and U+F0BA1); the latter moves
+  between Nerd Fonts releases, so the version is pinned and tested. Nerd Fonts
+  ships no Epic mark, so Epic borrows its initial.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

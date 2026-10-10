@@ -48,7 +48,7 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | Middle-click the bolt | Refresh now |
 | Click a game | Open its store page and close the panel |
 | `r` | Refresh now |
-| `e` | Enable or disable the selected game's store |
+| `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
 | `j` / `k` | Scroll down / up |
 | `?` | Show or hide the shortcut list |
@@ -65,11 +65,17 @@ muted store still shows a dot for something you have not looked at. Like the
 notification-center badge, it is drawn over the icon rather than beside it, so
 the bar does not change width as games arrive.
 
-Each enabled store gets its own section in the panel. Its header carries two
-controls: a **switch** that stops or resumes watching that store entirely, and a
-**bell** that mutes or unmutes its notifications. Both sit in a hit box the height
+Each enabled store gets its own section in the panel, headed by the store's mark
+— the real Steam and GOG logos, and an **E** for Epic, which Nerd Fonts has no
+mark for. The header carries two controls: a **switch** that stops or resumes
+watching that store entirely, and a **bell** that mutes or unmutes its
+notifications. Games sit slightly indented under their store name. Both sit in a hit box the height
 of the row and light up on hover, so they are easy to hit and read as controls.
 Both take effect immediately, and both are saved to your `shell.json`.
+
+`e` and `n` act on whichever store your **pointer is over**, falling back to
+whichever store the keyboard cursor last landed on. Hovering a store's name or any
+of its games retargets them, so you do not have to move the cursor first.
 
 Clicking the bell keeps the store listed but silent — a muted store is visibly
 different from one you have switched off. A store you have switched off collapses
