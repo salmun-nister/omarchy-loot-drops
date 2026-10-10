@@ -16,8 +16,12 @@ which does this for Steam alone. This adds Epic and GOG, per-store switches and
 bells, and keeps a separate baseline for each store. It is an independent work
 with no third-party code vendored — see [credits](CREDITS.md) for the lineage.
 
-**Preview:** a real on-device screenshot is pending. No screenshot or desktop
-acceptance is claimed.
+<p align="center"><img alt="Loot Lightning showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
+
+**Preview:** a real screenshot from Omarchy 4.0.4-1 on Hyprland, taken with the
+panel open. GOG reads "No giveaway running" because no giveaway was live when it
+was captured. Desktop acceptance evidence is in
+[docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
 
 ## Install
 
@@ -141,10 +145,16 @@ larger free catalogue.
 
 ## Compatibility
 
-Intended target: Omarchy 4 / Hyprland. Exact installed Omarchy versions tested:
-**none yet**. Portable validation covers structure, parsing, the URL allowlist and
-the notification diff; it does not establish live desktop compatibility. Record
-actual tests in [acceptance evidence](docs/ACCEPTANCE.json).
+Intended target: Omarchy 4 / Hyprland. Tested live on **Omarchy 4.0.4-1** with
+Hyprland on X11-less Wayland, kernel 7.2.5-3-omarchy: the widget loads on the bar,
+the panel opens and closes, all three stores resolve, a desktop notification
+fires on a newly free game and does not repeat, and the per-store switch and bell
+states render. GOG's success path is still fixture-only, because no giveaway was
+live when it was tested. A vertical bar has not been observed.
+
+Portable validation additionally covers parsing, the URL allowlist and the
+notification diff. See [acceptance evidence](docs/ACCEPTANCE.json) for the exact
+commands and results.
 
 ## Credits
 
