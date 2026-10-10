@@ -4,23 +4,20 @@
 Loot Lightning's own helper. Usage:
 
     capped-run MAX cmd [args...]
-    capped-run --kill-group PGID
 
 stdout is capped so a hostile or broken endpoint cannot stream unbounded data
 into the long-lived omarchy-shell process. On reaching the cap the child is
 killed and the exit status is 1; otherwise the child's own status is returned
 and only the bytes within the cap are forwarded.
 
-The child leads a new session, so a kill reaches anything it spawned rather
-than orphaning a grandchild that still holds the pipe. --kill-group is the same
-idea for a child started by the widget, addressed by its group id.
+The child leads a new session, so exceeding the cap kills anything it spawned
+rather than orphaning a grandchild that still holds the pipe.
 """
 
 import os
 import signal
 import subprocess
 import sys
-import time
 
 
 def fail(message):
@@ -42,45 +39,7 @@ def kill_group(proc):
             continue
 
 
-def kill_group_by_id(pgid):
-    """End a process group started earlier, addressed by its leader's pid.
-
-    Used by the widget's watchdog. Process.kill() only signals the direct child,
-    and a child that ignores SIGTERM survives it as an orphan holding the pipe,
-    so the whole group is signalled here instead: TERM first, then KILL.
-    """
-    try:
-        pid = int(pgid)
-    except (TypeError, ValueError):
-        return
-    if pid <= 0:
-        return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(pid, sig)
-        except (ProcessLookupError, PermissionError, OSError):
-            break
-        # Give the group a moment to go quietly before escalating.
-        try:
-            deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                try:
-                    os.killpg(pid, 0)
-                except OSError:
-                    break
-                time.sleep(0.05)
-            else:
-                continue
-        except OSError:
-            pass
-        break
-
-
 def main():
-    if len(sys.argv) == 3 and sys.argv[1] == "--kill-group":
-        kill_group_by_id(sys.argv[2])
-        raise SystemExit(0)
-
     if len(sys.argv) < 3:
         fail("usage: capped-run MAX cmd [args...]")
 

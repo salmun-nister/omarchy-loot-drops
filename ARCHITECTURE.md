@@ -17,7 +17,7 @@ while notifications must continue, and document the shutdown path when you do.
 | --- | --- |
 | `BarWidget.qml` | Entry point. Transport, persistence, panel rendering, lifecycle. |
 | `Model.js` | Pure functions: parse, allowlist, diff, notify, copy. No I/O. |
-| `lib/capped-run` | Byte cap on a child's stdout, and process-group teardown for the watchdog. |
+| `lib/capped-run` | Byte cap on a child's stdout, killing its process group when the cap is exceeded. |
 | `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json`. |
 | `tests/` | Portable checks, plus a live harness. |
 
@@ -91,7 +91,7 @@ the URL allowlist, the title scrub and the three silencing rules are pinned.
 
 `tests/helpers` asserts the byte cap holds, that a FIFO or symlink planted at
 the state file is refused rather than followed, that the directory ends up
-private, and that the watchdog reaps a child that ignores SIGTERM.
+private, and that the byte cap holds against a child that keeps writing.
 
 `tests/harness/run` loads the real widget into a real Quickshell instance against
 the live stores, with a stubbed bar and a temporary state directory. It is the

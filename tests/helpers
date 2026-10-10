@@ -64,39 +64,6 @@ fi
 # The cap holds even when the child ignores the pipe and keeps writing.
 expect_fail "holds the cap against a flood"      "$capped" 512 sh -c 'yes x | head -c 100000'
 
-# --kill-group is what the widget's watchdog uses. A child that ignores SIGTERM
-# survives Process.kill() as an orphan holding the pipe, so the whole group must
-# be signalled and escalated to KILL.
-stubborn="$work/stubborn-child.py"
-cat > "$stubborn" <<'PY'
-import os, signal, sys, time
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
-sys.stderr.write("up %d\n" % os.getpid())
-sys.stderr.flush()
-time.sleep(300)
-PY
-"$python_bin" - "$capped" "$stubborn" <<'PY' > "$work/child-status" 2>/dev/null
-import subprocess, sys, time
-capped, stub = sys.argv[1], sys.argv[2]
-child = subprocess.Popen(["/usr/bin/python3", stub],
-                         stderr=subprocess.PIPE, start_new_session=True)
-child.stderr.readline()
-time.sleep(0.3)
-subprocess.run(["/usr/bin/python3", capped, "--kill-group", str(child.pid)])
-# A negative return code means the child was ended by a signal; -9 is the KILL
-# escalation. A child that survived would poll() as still running.
-print(child.poll())
-PY
-sleep 1
-status="$(cat "$work/child-status")"
-if [ "$status" = "-9" ] || [ "$status" = "-15" ]; then
-  ok "--kill-group reaps a SIGTERM-ignoring child (poll=$status)"
-else
-  bad "--kill-group did not reap a SIGTERM-ignoring child (poll=$status)"
-fi
-expect_ok "--kill-group ignores a nonsense pgid" "$capped" --kill-group notanumber
-expect_ok "--kill-group ignores an absent pgid" "$capped" --kill-group 0
-
 echo "seen-state"
 expect_ok "saves a record"                       "$store" save "$work/basic" <<<'{"primed":true}'
 expect_eq "round-trips the payload"              '{"primed":true}' "$("$store" load "$work/basic")"

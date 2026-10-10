@@ -192,16 +192,58 @@ Declined, for reasons worth recording:
 - **No installed plugin uses omakit**, so there is no local precedent to follow
   (`omakit inspect` over all 32 installed plugins reports no blocks).
 
-The two findings Run would have addressed are instead handled directly: every
-fetch has a real deadline (`fetchDeadlineMs`, passed to `curl --max-time`) and a
-watchdog at `fetchWatchdogMs`, and output is capped by `lib/capped-run`. The
-watchdog signals the whole process group rather than calling `Process.kill()`,
-because `Process.kill()` only reaches the direct child and a child that ignores
-SIGTERM survives it as an orphan holding the pipe.
+The one finding Run would have addressed is instead handled directly: every
+fetch carries a real deadline through `fetchDeadlineMs`, passed to
+`curl --max-time`, and output is capped by `lib/capped-run`.
 
 What remains is that `omakit inspect` still reports the deadline and buffering
 classes, because a static scanner cannot see a deadline expressed in QML. That
 is a recorded, accepted tradeoff for an eventual submission, not an oversight.
+Making the argv a static per-store binding would let the scanner read the
+commands, but it would not remove the finding, since the scanner still cannot
+evaluate a QML timer. Not done.
+
+### Watchdog considered and declined
+
+A QML-side watchdog was written, verified in isolation, and then removed. The
+reasoning is worth keeping, because it is not obvious and the failure mode was
+silent.
+
+`curl --max-time` already bounds the only thing that can hang: curl's own I/O.
+A fetch that overruns exits non-zero, and the per-store `onExited` turns that
+into an unreachable store. The watchdog was added to cover curl ignoring its own
+timeout — and that is precisely the case it handled incorrectly.
+
+Quickshell's `Process.kill()` signals only the direct child, so a child ignoring
+SIGTERM survives as an orphan still holding the pipe. That was confirmed with a
+stubborn child, which was still running after the kill. The fix was to signal the
+process group by id instead, but the widget passed `Process.processId` — the pid
+of `capped-run`, which Quickshell spawned into its *own* process group rather
+than a new one. Its pid is therefore not a group id, and `killpg` targeted a
+group that does not exist. The `ProcessLookupError` was caught and treated as
+"already ended", so the kill was a silent no-op; worse, on a machine where such
+a group did exist, it would have signalled an unrelated one, potentially
+Quickshell's own.
+
+Two lessons recorded so this is not repeated:
+
+1. **The test verified the wrong thing.** `--kill-group` was tested directly
+   against a child started with `start_new_session=True`, where pid == pgid and
+   the code was correct. The widget never called it that way. A unit test proved
+   a capability the wiring did not use, and was reported as if it proved the
+   wiring. The lesson: for a boundary that crosses a process boundary, test the
+   path the caller actually takes, not the helper in isolation.
+2. **A kill that cannot fail loudly is worse than no kill.** The failure path
+   looked exactly like success, so nothing surfaced the problem. If a teardown
+   cannot be verified, removing it beats shipping it broken.
+
+`capped-run` keeps `start_new_session=True` and its own `kill_group`, which are
+correct where they matter: that process starts its own child, so pid == pgid, and
+the group kill runs when the byte cap is exceeded. The cross-process variant was
+the only broken part and is gone.
+
+What is lost: an ability to kill curl if curl ignores its own timeout. That
+ability never worked.
 
 ## Verification plan
 
@@ -257,10 +299,11 @@ Completed evidence:
 - The interpreter is pinned to `/usr/bin/python3`. A bare `python3` resolved
   through mise on this machine (3.15) against the system 3.14, which would have
   made the helpers run under a different Python on any other machine.
-- The fetch watchdog was verified against a child that ignores SIGTERM:
-  `Process.kill()` left it running as an orphan holding the pipe, so the kill
-  signals the whole process group and escalates to SIGKILL.
-- `./tests/run` (31 tests plus the lint and helper suites) and
+- A QML fetch watchdog was written, found to signal the wrong process group,
+  and removed. See [Watchdog considered and declined](#watchdog-considered-and-declined);
+  the deadline is now `curl --max-time` alone, which bounds the only thing that
+  can hang.
+- `./tests/run` (31 model tests plus the lint and helper suites) and
   `omarchy plugin validate` both pass.
 
 Remaining:
