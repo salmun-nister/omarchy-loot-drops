@@ -17,6 +17,7 @@ const Model = new Function(`${source}\nreturn {
   parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
   storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
+  storeList, heroTitle, heroDetail, BAR_ICON,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -364,4 +365,41 @@ test('settings are normalised into safe ranges', () => {
   assert.equal(on.steam, false);
   assert.equal(on.epic, true, 'an absent setting keeps its default');
   assert.equal(Model.enabled(undefined).gog, true);
+});
+
+test('the panel headline is the plugin name and the count is a subtitle', () => {
+  assert.equal(Model.heroTitle(), 'Loot Lightning');
+  const all = { steam: true, epic: true, gog: true };
+  const four = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
+                 epic: { games: [{ id: 'c' }, { id: 'd' }] }, gog: { games: [] } };
+  assert.equal(Model.heroDetail(four, all),
+    '4 games free to keep from Steam, Epic Games, and GOG');
+
+  // Singular, and a store with nothing free is still named as watched.
+  const one = { steam: { games: [{ id: 'a' }] }, gog: { games: [] } };
+  assert.equal(Model.heroDetail(one, all), '1 game free to keep from Steam, Epic Games, and GOG');
+  assert.equal(Model.heroDetail({ steam: { games: [] }, gog: { games: [] } }, all),
+    '0 games free to keep from Steam, Epic Games, and GOG');
+});
+
+test('the store list names only the stores being watched', () => {
+  assert.equal(Model.storeList({ steam: true, epic: true, gog: true }),
+    'Steam, Epic Games, and GOG');
+  assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, and GOG');
+  assert.equal(Model.storeList({ steam: true, epic: false, gog: false }), 'Steam');
+  assert.equal(Model.storeList({ steam: false, epic: false, gog: false }), '');
+  assert.equal(Model.storeList(null), '');
+  // With nothing watched the headline must not read "...from " with no list.
+  assert.equal(Model.heroDetail({ steam: { games: [{ id: 'a' }] } },
+    { steam: false, epic: false, gog: false }), 'Turn a store on to start watching');
+});
+
+test('the bar icon is a private-use glyph that takes a theme colour', () => {
+  const code = Model.BAR_ICON.codePointAt(0);
+  // U+26A1 (the plain bolt emoji) carries Emoji_Presentation=Yes, so Qt hands
+  // it to the colour emoji font and it ignores the palette. A private-use
+  // codepoint has no emoji presentation and renders monochrome.
+  assert.ok(code >= 0xe000 && code <= 0xf8ff,
+    `BAR_ICON U+${code.toString(16)} is not in the private use area`);
+  assert.notEqual(code, 0x26a1);
 });

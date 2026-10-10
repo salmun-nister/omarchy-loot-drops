@@ -5,6 +5,11 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+// Qt 6.12 added its own `Color` singleton to QtQuick, which shadows the
+// unqualified name the theme palette is read through. Every palette lookup here
+// is therefore written as `Commons.Color.*`, so colours keep resolving on 6.12
+// instead of falling back to black. Do not shorten these back to `Color`.
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -48,8 +53,8 @@ Panel {
     return decodeURIComponent(url)
   }
 
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -113,17 +118,79 @@ Panel {
 
   // Flat, store-ordered list for the single cursor. Reordered on every change
   // so the highlighted row stays on the same game when a refresh lands.
+  // Flat list of row entries: a header ahead of each enabled store, then that
+  // store's games. Headers are part of the same index space so the cursor is a
+  // plain index and a row can be fetched by position for scrolling.
   function visibleGameList() {
     var list = []
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
       if (!storesOn[store]) continue
-      var games = bucket(store).games
-      for (var j = 0; j < games.length; j++) {
-        list.push({ store: store, game: games[j] })
+      var current = bucket(store)
+      var label = Model.storeStateLabel(store, current, errorsByStore())
+      list.push({
+        kind: "header",
+        store: store,
+        empty: !current.games || current.games.length === 0,
+        failed: !!current.error,
+        stateLabel: label
+      })
+      for (var j = 0; j < current.games.length; j++) {
+        list.push({ kind: "game", store: store, game: current.games[j] })
       }
     }
     return list
+  }
+
+  // Index of the first and last game row, or -1 when there are none.
+  function firstGameRow() {
+    for (var i = 0; i < visibleGames.length; i++) {
+      if (visibleGames[i].kind === "game") return i
+    }
+    return -1
+  }
+
+  // Write a setting change back to this widget's entry in shell.json. Applied
+  // locally first so the switch moves on the click itself, then persisted; the
+  // bar feeds the same value back through settings a moment later. This is the
+  // same pattern Omarchy's own Tray and Clock widgets use.
+  function persist(patch) {
+    var entry = { id: root.moduleName }
+    var current = root.settings
+    if (current && typeof current === "object") {
+      for (var k in current) {
+        if (k !== "id") entry[k] = current[k]
+      }
+    }
+    for (var p in patch) entry[p] = patch[p]
+    root.settings = entry
+    if (root.bar && root.bar.shell
+        && typeof root.bar.shell.updateEntryInline === "function") {
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
+    }
+  }
+
+  function enabledKey(store) { return store + "Enabled" }
+  function notifyKey(store) { return store + "Notify" }
+
+  // Switching a store off stops it being fetched at all; switching it back on
+  // re-records silently rather than announcing everything it missed.
+  function toggleStore(store) {
+    persist({ [enabledKey(store)]: !storesOn[store] })
+  }
+
+  function toggleBell(store) {
+    persist({ [notifyKey(store)]: !notifyOn[store] })
+  }
+
+  function toggleSelectedStore() {
+    var row = selectedGame()
+    if (row) toggleStore(row.store)
+  }
+
+  function toggleSelectedBell() {
+    var row = selectedGame()
+    if (row) toggleBell(row.store)
   }
 
   function errorsByStore() {
@@ -286,13 +353,14 @@ Panel {
   // does not move the cursor onto a different row.
   function setCursorById(key) {
     if (!key) {
-      setCursor(selectedIndex)
+      setCursor(0)
       return
     }
-    for (var i = 0; i < visibleGames.length; i++) {
-      var row = visibleGames[i]
+    var allowed = gameRowIndexes()
+    for (var a = 0; a < allowed.length; a++) {
+      var row = visibleGames[allowed[a]]
       if (row.store + ":" + row.game.id === key) {
-        setCursor(i)
+        setCursor(a)
         return
       }
     }
@@ -307,37 +375,68 @@ Panel {
     anyBusy = busy
   }
 
+  // The cursor walks game rows only, skipping headers, and never leaves the
+  // viewport: the selected row is fetched from the Repeater and scrolled to.
+  function gameRowIndexes() {
+    var out = []
+    for (var i = 0; i < visibleGames.length; i++) {
+      if (visibleGames[i].kind === "game") out.push(i)
+    }
+    return out
+  }
+
   function setCursor(index) {
-    selectedIndex = Math.max(0, Math.min(Math.max(0, visibleGames.length - 1), index))
+    var allowed = gameRowIndexes()
+    if (allowed.length === 0) {
+      selectedIndex = -1
+      return
+    }
+    selectedIndex = allowed[Math.max(0, Math.min(allowed.length - 1, index))]
+    Qt.callLater(function() { scrollCursorIntoView() })
+  }
+
+  // Move by a step in games, not rows, so a header between two stores does not
+  // consume a keypress.
+  function moveCursor(step) {
+    var allowed = gameRowIndexes()
+    if (allowed.length === 0) return
+    var at = allowed.indexOf(selectedIndex)
+    var next = at < 0 ? 0 : at + step
+    setCursor(Math.max(0, Math.min(allowed.length - 1, next)))
   }
 
   function selectedGame() {
-    return selectedIndex >= 0 && selectedIndex < visibleGames.length
-      ? visibleGames[selectedIndex] : null
+    if (selectedIndex < 0 || selectedIndex >= visibleGames.length) return null
+    var row = visibleGames[selectedIndex]
+    return row && row.kind === "game" ? row : null
+  }
+
+  // Keep the highlighted row inside the visible area of the scroll view.
+  function scrollCursorIntoView() {
+    var area = rowRepeater && scrollArea
+    if (!area || !rowRepeater || selectedIndex < 0) return
+    var item = rowRepeater.itemAt(selectedIndex)
+    if (!item) return
+    var top = item.mapToItem(scrollArea.contentItem, 0, 0).y
+    var bottom = top + item.height
+    var view = scrollArea.height
+    if (top < scrollArea.contentY) scrollArea.contentY = top
+    else if (bottom > scrollArea.contentY + view) {
+      scrollArea.contentY = Math.max(0, bottom - view)
+    }
   }
 
   function openGame(row) {
-    if (!row) return
-    var store = row.store
-    // safeUrl refuses anything off the store's own host, and the search page
-    // is the fallback, so a row always opens somewhere legitimate.
-    var url = Model.safeUrl(store, row.game.url) || Model.searchUrl(store)
+    if (!row || row.kind !== "game") return
+    // safeUrl refuses anything off the store's own host, and the search page is
+    // the fallback, so a row always opens somewhere legitimate.
+    var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
     Quickshell.execDetached(["omarchy-launch-browser", url])
     close()
   }
 
-  function openStore(store) {
-    var url = Model.searchUrl(store || activeStores[0])
-    if (url) Quickshell.execDetached(["omarchy-launch-browser", url])
-  }
-
-  function quit() {
-    root.close()
-    if (Quickshell.env("LOOT_LIGHTNING_HARNESS") === "1") {
-      Qt.quit()
-      return
-    }
-    Quickshell.execDetached(["omarchy", "plugin", "disable", root.moduleName])
+  function openSelected() {
+    openGame(selectedGame())
   }
 
   // --- IPC ---------------------------------------------------------------
@@ -460,8 +559,9 @@ Panel {
       : Model.statusTitle(root.buckets, root.storesOn, root.anyBusy) + "\n" + root.freshness
 
     onPressed: function(buttonCode) {
+      // Left opens the panel, middle refreshes. Right-click is deliberately
+      // unused so it cannot open anything behind the user's back.
       if (buttonCode === Qt.MiddleButton) root.refresh()
-      else if (buttonCode === Qt.RightButton) root.openStore()
       else root.toggle()
     }
   }
@@ -475,7 +575,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentWidth: panel.fittedContentWidth(Style.space(430))
     contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight,
                                              Style.space(620))
 
@@ -488,19 +588,17 @@ Panel {
           root.cursorActive = true
           return
         }
-        if (dy !== 0) root.setCursor(root.selectedIndex + dy)
+        if (dy !== 0) root.moveCursor(dy)
       }
 
-      onActivateRequested: root.openGame(root.selectedGame())
+      onActivateRequested: root.openSelected()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
         var key = text.toLowerCase()
         if (key === "r") root.refresh()
-        else if (key === "q") root.quit()
-        else if (key === "1") root.openStore("steam")
-        else if (key === "2") root.openStore("epic")
-        else if (key === "3") root.openStore("gog")
+        else if (key === "e") root.toggleSelectedStore()
+        else if (key === "n") root.toggleSelectedBell()
       }
 
       ScrollView {
@@ -516,7 +614,8 @@ Panel {
           width: scrollArea.availableWidth
           spacing: Style.spacing.panelGap
 
-          // Hero: what is free, or why nothing is.
+          // Hero: the plugin's name, and underneath it how much is free and
+          // which stores that came from.
           Item {
             id: hero
             readonly property color tint: root.hasGames
@@ -533,7 +632,7 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               text: Model.BAR_ICON
               color: hero.tint
-              font.family: "JetBrainsMono Nerd Font"
+              font.family: root.fontFamily
               font.pixelSize: Style.font.display
             }
 
@@ -548,7 +647,7 @@ Panel {
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: Model.statusTitle(root.buckets, root.storesOn, root.anyBusy)
+                text: Model.heroTitle()
                 color: hero.tint
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -556,13 +655,12 @@ Panel {
                 elide: Text.ElideRight
               }
 
-              // Wraps rather than elides: the empty state is a full sentence.
+              // Wraps rather than elides: the count sentence is a full clause.
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
                 visible: text !== ""
-                text: Model.statusDetail(root.buckets, root.storesOn,
-                                         root.anyBusy, root.errorsByStore()).toUpperCase()
+                text: Model.heroDetail(root.buckets, root.storesOn).toUpperCase()
                 color: Qt.darker(hero.tint, 1.4)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -587,33 +685,38 @@ Panel {
             foreground: root.foreground
           }
 
-          // One section per enabled store: its state on the right, its games
-          // below, and a crossed-out bell when the store is muted.
+          // One flat list of headers and games. The grouped look is produced by
+          // a header entry ahead of each store's games, which keeps one index
+          // space: the cursor is a plain index, the highlight is a comparison,
+          // and the row can be scrolled into view by asking the Repeater for it.
           Repeater {
-            id: storeRepeater
-            model: root.activeStores
+            id: rowRepeater
+            model: root.rows
 
-            Column {
-              id: storeSection
-              required property string modelData
-              readonly property var storeBucket: root.bucket(modelData)
+            Item {
+              id: row
+              required property var modelData
+              required property int index
               width: panelColumn.width
-              spacing: Style.spacing.xs
 
+              readonly property bool isHeader: modelData.kind === "header"
+
+              // --- Store header: name, bell, switch ---------------------
               Item {
-                width: parent.width
-                implicitHeight: Math.max(storeLabel.implicitHeight,
-                                         storeBell.implicitHeight)
+                anchors.fill: parent
+                visible: row.isHeader
+                implicitHeight: Style.space(30)
 
                 Text {
-                  id: storeLabel
+                  id: headerLabel
                   anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
                   anchors.leftMargin: Style.spacing.sm
-                  width: parent.width - storeBell.width - Style.spacing.sm * 2
+                  anchors.verticalCenter: parent.verticalCenter
+                  // Room for the bell and the switch on the right.
+                  width: parent.width - headerBell.width - headerSwitch.width
+                         - Style.spacing.sm * 4
                   textFormat: Text.PlainText
-                  // Titles from the network are plain text, never markup.
-                  text: Model.STORE_LABELS[storeSection.modelData] || ""
+                  text: Model.STORE_LABELS[row.modelData.store] || ""
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -622,83 +725,109 @@ Panel {
                   elide: Text.ElideRight
                 }
 
+                // Clickable bell: mute or unmute this store's notifications.
                 Text {
-                  id: storeBell
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
+                  id: headerBell
+                  anchors.right: headerSwitch.left
                   anchors.rightMargin: Style.spacing.sm
-                  // A muted store shows a crossed-out bell rather than
-                  // disappearing, so muting is visibly different from off.
-                  text: root.notifyOn[storeSection.modelData]
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.notifyOn[row.modelData.store]
                     ? "\u{F0F3}" : "\u{F1F6}"
-                  color: root.notifyOn[storeSection.modelData]
+                  color: root.notifyOn[row.modelData.store]
                     ? root.dim : Qt.darker(root.dim, 1.4)
-                  font.family: "JetBrainsMono Nerd Font"
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
-                  opacity: root.notifyOn[storeSection.modelData] ? 1 : 0.6
-                }
-              }
-
-              Repeater {
-                model: storeSection.storeBucket.games
-
-                Rectangle {
-                  id: gameRow
-                  // A game is an object, not a string; declaring it as string
-                  // leaves the title undefined.
-                  required property var modelData
-                  width: storeSection.width
-                  implicitHeight: Math.max(Style.space(28),
-                                           gameTitle.implicitHeight + Style.spacing.sm)
-                  radius: Style.cornerRadius
-                  color: root.cursorActive
-                    && root.selectedIndex === root.rowIndexOf(storeSection.modelData, gameRow)
-                    ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Color.accent)
-                                : "transparent")
-                    : (rowMouse.containsMouse
-                      ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Color.accent)
-                                  : "transparent")
-                      : "transparent")
-
-                  Text {
-                    id: gameTitle
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin: Style.spacing.sm
-                    anchors.rightMargin: Style.spacing.sm
-                    textFormat: Text.PlainText
-                    text: gameRow.modelData.title
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    elide: Text.ElideRight
-                  }
+                  opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
 
                   MouseArea {
-                    id: rowMouse
+                    id: bellMouse
                     anchors.fill: parent
+                    anchors.margins: Style.space(4)
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.openGame({
-                      store: storeSection.modelData,
-                      game: gameRow.modelData
-                    })
+                    onClicked: root.toggleBell(row.modelData.store)
                   }
+
+                  Rectangle {
+                    anchors.fill: bellMouse
+                    anchors.margins: -Style.space(2)
+                    radius: Style.cornerRadius
+                    color: bellMouse.containsMouse
+                      ? Style.hoverFillFor(root.foreground, Commons.Color.accent)
+                      : "transparent"
+                  }
+                }
+
+                // Switch: stop or resume watching this store entirely.
+                ToggleSwitch {
+                  id: headerSwitch
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.spacing.sm
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.storesOn[row.modelData.store] === true
+                  foreground: root.foreground
+                  accent: Commons.Color.accent
+                  onToggled: root.toggleStore(row.modelData.store)
                 }
               }
 
+              // --- Empty-store note, under its header --------------------
               Text {
-                width: parent.width
+                anchors.top: parent.top
+                anchors.topMargin: Style.space(30)
+                anchors.left: parent.left
+                anchors.leftMargin: Style.spacing.sm
+                anchors.right: parent.right
+                width: parent.width - Style.spacing.sm * 2
+                visible: row.isHeader && row.modelData.empty
                 textFormat: Text.PlainText
-                visible: storeSection.storeBucket.games.length === 0
                 wrapMode: Text.WordWrap
-                text: Model.storeStateLabel(storeSection.modelData,
-                                            storeSection.storeBucket,
-                                            root.errorsByStore())
-                color: storeSection.storeBucket.error ? root.urgent : root.dim
+                text: row.modelData.stateLabel || ""
+                color: row.modelData.failed ? root.urgent : root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+
+              // --- A game ------------------------------------------------
+              Rectangle {
+                anchors.top: parent.top
+                anchors.topMargin: row.isHeader ? Style.space(30) : 0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: gameTitle.implicitHeight + Style.spacing.sm
+                visible: !row.isHeader
+                radius: Style.cornerRadius
+                color: root.cursorActive && root.selectedIndex === row.index
+                  ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
+                              : "transparent")
+                  : (gameMouse.containsMouse
+                    ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
+                                : "transparent")
+                    : "transparent")
+
+                Text {
+                  id: gameTitle
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.leftMargin: Style.spacing.sm
+                  anchors.rightMargin: Style.spacing.sm
+                  // Titles from the network are plain text, never markup.
+                  textFormat: Text.PlainText
+                  text: row.modelData.game.title
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
+
+                MouseArea {
+                  id: gameMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openGame(row.modelData)
+                }
               }
             }
           }
@@ -708,7 +837,7 @@ Panel {
             textFormat: Text.PlainText
             visible: root.activeStores.length === 0
             wrapMode: Text.WordWrap
-            text: "Every store is switched off. Turn one on in the Omarchy settings to start watching."
+            text: "Every store is switched off. Turn one on with the switch above to start watching."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -720,7 +849,7 @@ Panel {
             iconText: "\u{F021}"
             bordered: true
             foreground: root.foreground
-            accent: Color.accent
+            accent: Commons.Color.accent
             fontFamily: root.fontFamily
             onClicked: root.refresh()
           }
@@ -729,39 +858,14 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            text: "Left-click the icon for this list. Middle-click refreshes. Right-click opens the first enabled store. Keys: r refresh, 1/2/3 open Steam/Epic/GOG, q quit."
+            text: "Left-click the icon for this list. Middle-click refreshes. Keys: r refresh, e switch the store on or off, n mute or unmute it."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
-
-          Item {
-            width: parent.width
-            implicitHeight: quitButton.implicitHeight
-
-            Button {
-              id: quitButton
-              anchors.right: parent.right
-              text: "Quit"
-              bordered: true
-              foreground: root.foreground
-              accent: Color.accent
-              fontFamily: root.fontFamily
-              onClicked: root.quit()
-            }
-          }
         }
       }
     }
-  }
-
-  // Maps a (store, game id) pair to its index in the flat visible list, so the
-  // cursor highlight survives the grouped layout.
-  function rowIndexOf(store, id) {
-    for (var i = 0; i < visibleGames.length; i++) {
-      if (visibleGames[i].store === store && visibleGames[i].game.id === id) return i
-    }
-    return -1
   }
 
   onOpenedChanged: if (opened) {

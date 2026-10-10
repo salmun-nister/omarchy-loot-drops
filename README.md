@@ -46,16 +46,23 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | --- | --- |
 | Left-click the bolt | Open the panel |
 | Middle-click the bolt | Refresh now |
-| Right-click the bolt | Open the first enabled store |
 | Click a game | Open its store page and close the panel |
 | `r` | Refresh now |
-| `1` / `2` / `3` | Open Steam / Epic / GOG |
-| `q` | Disable the plugin |
+| `e` | Switch the selected game's store on or off |
+| `n` | Mute or unmute the selected game's store |
 | `Esc` | Close the panel |
 
-Each enabled store gets its own section in the panel: its name, a count or a
-reason, and its games. A store with its bell switched off shows a crossed-out
-bell, so a muted store is visibly different from a disabled one.
+Each enabled store gets its own section in the panel. Its header carries two
+controls: a **switch** that stops or resumes watching that store entirely, and a
+**bell** that mutes or unmutes its notifications. Both are clickable, both take
+effect immediately, and both are saved to your `shell.json`. Clicking the bell
+keeps the store listed but silent — a muted store is visibly different from one
+you have switched off, which disappears and is no longer fetched.
+
+Right-click does nothing, deliberately.
+
+The panel lists every free game, however many there are; it scrolls with the
+wheel, and the keyboard cursor scrolls itself into view.
 
 ## Settings
 
@@ -77,9 +84,11 @@ Omarchy settings UI. They hot-reload on save.
 { "id": "salmun-nister.loot-lightning", "refreshMinutes": 180, "gogNotify": false }
 ```
 
-Switching a store **off** stops it being fetched at all — no request, no rows, no
-notifications. Switching it back **on** re-records silently rather than announcing
-everything it missed while you had it off.
+The switches and bells in the panel write to the same keys, so you can also set
+them by hand while the plugin is off. Switching a store **off** stops it being
+fetched at all — no request, no rows, no notifications. Switching it back **on**
+re-records silently rather than announcing everything it missed while you had it
+off.
 
 ## How it decides
 

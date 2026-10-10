@@ -306,6 +306,19 @@ Completed evidence:
 - `./tests/run` (31 model tests plus the lint and helper suites) and
   `omarchy plugin validate` both pass.
 
+- Panel redesign from the owner's on-device review: a switch and a clickable bell
+  per store, written back through `bar.shell.updateEntryInline` as Omarchy's own
+  Tray and Clock do; the bolt changed from U+26A1 to U+F0E7 because U+26A1 has
+  Emoji_Presentation=Yes and so painted yellow in every theme instead of taking
+  the palette colour; right-click and the Quit control removed; the panel body
+  flattened to one row list so the cursor is a plain index, the highlight is a
+  comparison rather than a linear scan, and the selected row scrolls itself into
+  view when there are more games than fit.
+- Qt 6.12 compatibility: the palette is now read as `Commons.Color`, because Qt
+  6.12 adds a `Color` singleton to QtQuick that shadows the unqualified name.
+  Not reproducible on this machine, which runs Qt 6.11.2; taken from the owner's
+  Luna 0.2.2 fix on its merits.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

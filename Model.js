@@ -29,7 +29,12 @@ var SEARCH_URLS = {
   "gog": "https://www.gog.com/giveaways"
 }
 
-var BAR_ICON = "⚡"
+// U+F0E7, the Font Awesome bolt in the Nerd Font. Deliberately not U+26A1
+// (⚡): that codepoint has Emoji_Presentation=Yes, so Qt hands it to the colour
+// emoji font and it paints yellow in every theme, ignoring the palette. A
+// private-use codepoint has no emoji presentation, so this one renders
+// monochrome and takes the colour it is given, like every other bar icon.
+var BAR_ICON = ""
 var MAX_BYTES = 4000000
 var MAX_GAMES = 40
 var MAX_TITLE = 120
@@ -592,6 +597,32 @@ function statusTitle(perStore, on, busy) {
   if (total === 0) return busy ? "Checking the stores" : "Nothing free right now"
   if (total === 1) return "1 game free to keep"
   return total + " games free to keep"
+}
+
+// "Steam, Epic Games, and GOG" — the stores being watched, named so the panel
+// says where the list came from.
+function storeList(on) {
+  var names = []
+  for (var i = 0; i < STORES.length; i++) {
+    if (on && on[STORES[i]]) names.push(STORE_LABELS[STORES[i]] || STORES[i])
+  }
+  if (names.length === 0) return ""
+  if (names.length === 1) return names[0]
+  return names.slice(0, names.length - 1).join(", ") + ", and " + names[names.length - 1]
+}
+
+// The panel's headline. The plugin's name is the title and the count moves to
+// the subtitle, which names the stores being watched.
+function heroTitle() {
+  return "Loot Lightning"
+}
+
+function heroDetail(perStore, on) {
+  var watched = storeList(on)
+  if (watched === "") return "Turn a store on to start watching"
+  var total = totalGames(perStore)
+  var noun = total === 1 ? "game" : "games"
+  return total + " " + noun + " free to keep from " + watched
 }
 
 function statusDetail(perStore, on, busy, errors) {
