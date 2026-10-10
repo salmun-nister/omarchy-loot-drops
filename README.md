@@ -11,12 +11,29 @@ new one appears, you get a desktop notification.
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
 
-<p align="center"><img alt="Loot Drops showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing four games free to keep grouped by store" src="preview.png" width="410"></p>
 
-**Preview:** a real screenshot from Omarchy 4.0.4-1 on Hyprland, taken from the
-live desktop with the panel open. The stores and games in it were real at capture
-time, so it will not match what the panel shows later. Desktop acceptance
-evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
+**Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.4-1 on Hyprland,
+taken from the live desktop with the panel open. The stores and games in it were
+real at capture time, so it will not match what the panel shows later. Desktop
+acceptance evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
+
+## Theming
+
+The panel is built from the shell's own theme tokens, so it matches whatever
+theme you are running — there is no per-plugin styling to keep in sync. A few of
+them:
+
+<table align="center">
+<tr>
+<td align="center"><img alt="Loot Drops panel in the Aonagi theme" src="docs/themes/aonagi.png" width="320"><br><sub>Aonagi</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Sumi Day theme" src="docs/themes/sumi-day.png" width="320"><br><sub>Sumi Day</sub></td>
+</tr>
+<tr>
+<td align="center"><img alt="Loot Drops panel in the Outpost theme" src="docs/themes/outpost.png" width="320"><br><sub>Outpost</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Solitude theme" src="docs/themes/solitude.png" width="320"><br><sub>Solitude</sub></td>
+</tr>
+</table>
 
 ## Install
 
