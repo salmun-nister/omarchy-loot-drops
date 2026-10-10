@@ -1,12 +1,75 @@
 {
-  "status": "not-run",
-  "input_commit": null,
-  "date": null,
-  "platform": null,
-  "omarchy_version": null,
-  "commands": [],
-  "results": [],
+  "status": "passed",
+  "input_commit": "8aa37c34cee3f8d60237a7173a02160e00b85508",
+  "date": "2026-10-09",
+  "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches and the notification path. Portable checks are separate and are listed for completeness.",
+  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-lightning, then omarchy-shell shell rescanPlugins and omarchy plugin enable salmun-nister.loot-lightning right. A plain directory is sufficient; no git remote was needed.",
+  "commands": [
+    "./tests/run",
+    "./tests/harness/run",
+    "omarchy plugin validate .",
+    "omarchy-shell shell rescanPlugins",
+    "omarchy plugin enable salmun-nister.loot-lightning right",
+    "omarchy-shell salmun-nister.loot-lightning open",
+    "omarchy-shell salmun-nister.loot-lightning refresh"
+  ],
+  "results": [
+    {
+      "check": "Bar widget loads on the real bar",
+      "result": "pass",
+      "detail": "Shell log recorded 'Local plugin changed, reloading: salmun-nister.loot-lightning' with no errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
+    },
+    {
+      "check": "Panel opens and renders the three stores",
+      "result": "pass",
+      "detail": "Hero read '4 games free to keep'. Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG read 'No giveaway running'. Screenshot in preview.png."
+    },
+    {
+      "check": "All three endpoints resolve live",
+      "result": "pass",
+      "detail": "Steam search endpoint returned 2 rows; Epic freeGamesPromotions returned 2 zero-discount offers still inside their endDate; GOG giveaway/api/get returned 404, which the panel renders as an empty store rather than an error."
+    },
+    {
+      "check": "Private state file is created and readable",
+      "result": "pass",
+      "detail": "~/.local/state/salmun-nister.loot-lightning created mode 0700 with seen.json mode 0600, containing per-store id baselines."
+    },
+    {
+      "check": "First fetch after install is silent",
+      "result": "pass",
+      "detail": "The initial fetch recorded the Steam and Epic baselines and fired no notification, so installing does not announce games that were already free."
+    },
+    {
+      "check": "Desktop notification fires for a newly free game",
+      "result": "pass",
+      "detail": "With the Steam baseline reduced to a single id, the next fetch produced a real desktop notification reading 'Fireside Feelings is free on Steam' with the Loot Lightning app name and bolt glyph."
+    },
+    {
+      "check": "Notification does not repeat for an unchanged list",
+      "result": "pass",
+      "detail": "The baseline re-recorded the new id; a second refresh produced no further notification."
+    },
+    {
+      "check": "Switching a store off stops it and hides it",
+      "result": "pass",
+      "detail": "With gogEnabled false the GOG section disappeared from the panel and no GOG request was made."
+    },
+    {
+      "check": "Muting a bell keeps the store listed but silent",
+      "result": "pass",
+      "detail": "With epicNotify false the Epic Games section stayed in the panel with its games and showed a crossed-out bell, distinct from a disabled store."
+    },
+    {
+      "check": "Portable checks",
+      "result": "pass",
+      "detail": "31 model tests, QML lint against the real Qt qmllint with no errors, and the helper behaviour suite all pass."
+    }
+  ],
   "limitations": [
-    "No live Omarchy desktop acceptance recorded."
+    "GOG's success path is fixture-only. No giveaway was running during acceptance, so the 200 response shape has not been observed live; the 404 empty path has.",
+    "No vertical bar was observed. The tested bar was horizontal (position top).",
+    "Notification click-through to the store page was not exercised by hand; the argv is asserted in tests and the notification itself was observed.",
+    "The documented install command 'omarchy plugin add <git-url>' was not exercised, because no public repository exists yet. Acceptance used a local symlink instead."
   ]
 }
