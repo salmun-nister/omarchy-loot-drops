@@ -1,29 +1,61 @@
 {
   "status": "passed",
-  "input_commit": "8aa37c34cee3f8d60237a7173a02160e00b85508",
-  "date": "2026-10-09",
+  "input_commit": "f93632a25781f38e65010d1cb81439fa4d8b2886",
+  "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches and the notification path. Portable checks are separate and are listed for completeness.",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the link and notification paths. Portable checks are separate and are listed for completeness.",
   "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, then omarchy-shell shell rescanPlugins and omarchy plugin enable salmun-nister.loot-drops right. A plain directory is sufficient; no git remote was needed.",
   "commands": [
     "./tests/run",
+    "./tests/qml/lint",
     "./tests/harness/run",
     "omarchy plugin validate .",
     "omarchy-shell shell rescanPlugins",
     "omarchy plugin enable salmun-nister.loot-drops right",
     "omarchy-shell salmun-nister.loot-drops open",
-    "omarchy-shell salmun-nister.loot-drops refresh"
+    "omarchy-shell salmun-nister.loot-drops refresh",
+    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 12000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open"
   ],
   "results": [
     {
       "check": "Bar widget loads on the real bar",
       "result": "pass",
-      "detail": "Shell log recorded 'Local plugin changed, reloading: salmun-nister.loot-drops' with no errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
+      "detail": "Shell restart recorded the plugin loading with no Loot Drops errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
     },
     {
       "check": "Panel opens and renders the three stores",
       "result": "pass",
-      "detail": "Hero read '4 games free to keep'. Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG read 'No giveaway running'. Screenshot in preview.png."
+      "detail": "Hero read 'Loot Drops' with the chest glyph over '4 FREE GAMES FROM STEAM, EPIC, AND GOG'. Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG showed its header row and nothing else. Captured from the live desktop as preview.png."
+    },
+    {
+      "check": "Empty store shows only its name",
+      "result": "pass",
+      "detail": "GOG with no giveaway renders a bare header row, keeping its bell and switch, and no 'No giveaway running' line. The per-store state line was removed; it had been rendering unconditionally, which put '2 free games' over the first game of Steam's and Epic's lists."
+    },
+    {
+      "check": "Store marks are distinct and legible",
+      "result": "pass",
+      "detail": "Steam U+F04D3, Epic U+F04DC (storefront), GOG U+F0BA1, verified in a magnified crop of preview.png at the 11px the panel draws them. The real Epic shield was tried and is unusable at that size: with its EPIC GAMES lettering it fills into a blob, and as a bare silhouette it is featureless. A test pins all three codepoints."
+    },
+    {
+      "check": "Hero is pinned and a fitting list does not scroll",
+      "result": "pass",
+      "detail": "The hero sits outside the ListView so rows scroll beneath it. The harness asserts pinnedHeight is positive and that the hero's bottom edge equals the list's top edge, which fails if it is ever moved back to a header. flickableDirection is paired with interactive: contentHeight > height, so a list that fits cannot be moved by the wheel at all. The permanent few-pixel scroll range this fixed came from the subtitle wrapping and settling taller after the card had been sized."
+    },
+    {
+      "check": "Footer controls share one colour",
+      "result": "pass",
+      "detail": "The freshness text and both buttons read one footerInk value. They had drifted: the text was darkened while the buttons stayed at full foreground, which is what made the refresh glyph look brighter than the question mark beside it. Buttons hold that colour even when data goes stale; only the freshness text dims."
+    },
+    {
+      "check": "Game links open in the last used browser window",
+      "result": "pass",
+      "detail": "Confirmed on the live desktop by the user. Rows hand the URL to xdg-open, which lets the browser pick its own window. They previously went through omarchy-launch-browser, whose trailing focus step selects by position in hyprctl's client array rather than focus order, so the tab landed in whichever browser window happened to be first; that array reshuffles as windows open and close."
+    },
+    {
+      "check": "Desktop notification opens the panel",
+      "result": "pass",
+      "detail": "Two toasts were fired through the real notificationArgs argv and confirmed on the live desktop by the user. The click action is omarchy-shell -q salmun-nister.loot-drops open, which opens the panel and clears the unseen dot through acknowledgeCurrent. Both sides read the target from Model.IPC_TARGET. A test asserts the argv carries no URL at all."
     },
     {
       "check": "All three endpoints resolve live",
@@ -53,23 +85,25 @@
     {
       "check": "Switching a store off stops it and hides it",
       "result": "pass",
-      "detail": "With gogEnabled false the GOG section disappeared from the panel and no GOG request was made."
+      "detail": "With gogEnabled false the GOG section disappeared from the panel and no GOG request was made. Verified during development; not re-exercised after the hero, footer and pinned changes."
     },
     {
       "check": "Muting a bell keeps the store listed but silent",
       "result": "pass",
-      "detail": "With epicNotify false the Epic Games section stayed in the panel with its games and showed a crossed-out bell, distinct from a disabled store."
+      "detail": "With epicNotify false the Epic Games section stayed in the panel with its games and showed a crossed-out bell, distinct from a disabled store. Verified during development; not re-exercised after the hero, footer and pinned changes."
     },
     {
       "check": "Portable checks",
       "result": "pass",
-      "detail": "31 model tests, QML lint against the real Qt qmllint with no errors, and the helper behaviour suite all pass."
+      "detail": "39 model and helper tests, QML lint against the real Qt qmllint with no errors, the helper behaviour suite, and the offscreen harness (7 rows, all three store headers, pinned-hero assertion) all pass."
     }
   ],
   "limitations": [
     "GOG's success path is fixture-only. No giveaway was running during acceptance, so the 200 response shape has not been observed live; the 404 empty path has.",
     "No vertical bar was observed. The tested bar was horizontal (position top).",
-    "Notification click-through to the store page was not exercised by hand; the argv is asserted in tests and the notification itself was observed.",
-    "The documented install command 'omarchy plugin add <git-url>' was not exercised, because no public repository exists yet. Acceptance used a local symlink instead."
+    "preview.png shows the store data that was live at capture time and will not reflect what the panel shows later.",
+    "The notification click opens the panel rather than the store page, so no click-through to a store URL is exercised. That is the intended behaviour, but it means the notification path no longer covers URL opening; only the panel row does.",
+    "The documented install command 'omarchy plugin add <git-url>' was not exercised, because no public repository exists yet. Acceptance used a local symlink instead.",
+    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin no longer depends on it, but other Omarchy panels and any notification that opens a URL still do. Not reported upstream yet."
   ]
 }

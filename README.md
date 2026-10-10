@@ -18,10 +18,10 @@ with no third-party code vendored — see [credits](CREDITS.md) for the lineage.
 
 <p align="center"><img alt="Loot Drops showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
 
-**Preview:** a real screenshot from Omarchy 4.0.4-1 on Hyprland, taken with the
-panel open. GOG reads "No giveaway running" because no giveaway was live when it
-was captured. Desktop acceptance evidence is in
-[docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
+**Preview:** a real screenshot from Omarchy 4.0.4-1 on Hyprland, taken from the
+live desktop with the panel open. The stores and games in it were real at capture
+time, so it will not match what the panel shows later. Desktop acceptance
+evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
 
 ## Install
 
@@ -45,9 +45,9 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | Action | What happens |
 | --- | --- |
 | Left-click the chest | Open the panel |
-| Middle-click the chest | Refresh now |
+| Middle-click the chest | Refresh the three stores now |
 | Click a game | Open its store page and close the panel |
-| `r` | Refresh now |
+| `r` | Refresh the three stores now |
 | `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
 | `j` / `k` | Scroll down / up |
@@ -55,8 +55,8 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | `Esc` | Close the panel |
 
 The shortcut list lives in the README. If you have forgotten it while the panel
-is open, press `?` — or click the `?` beside **Refresh now** — and it appears
-below the buttons until you press it again.
+is open, press `?` — or click the `?` in the panel's bottom-right corner — and
+it appears above the buttons until you press it again.
 
 A coloured dot sits on the top right of the chest while there are free games you
 have not opened the panel to see. Opening the panel clears it; a game that turns
@@ -133,8 +133,7 @@ The states are kept apart rather than collapsed into one "no games" message:
 | --- | --- |
 | `N games free to keep` | Fetched, and there are some. |
 | `Nothing free right now` | Fetched, and there are none. |
-| `No giveaway running` | GOG answered: no giveaway today. Normal. |
-| `Not checked yet` | No successful check has happened yet. |
+| A store header on its own | That store is on and has nothing free today. Normal, and it can still be switched off from there. |
 | `Could not reach <store>` | The request failed; the old list is still shown. |
 | `Store returned an unexpected response` | The page did not look like what we expected. |
 

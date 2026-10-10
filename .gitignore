@@ -4,3 +4,4 @@
 *.pkg.tar.zst
 /pkgbuilds/*/src/
 /pkgbuilds/*/pkg/
+screenshot-*.png

@@ -129,7 +129,7 @@ stale-with-error rather than empty.
 
 `/usr/bin/python3` (interpreter for this plugin's own helpers; already an
 Omarchy desktop dependency, pulled in by `uwsm`), `curl`,
-`omarchy-notification-send`, `omarchy-launch-browser`. The interpreter is named
+`omarchy-notification-send`, `omarchy-shell`. The interpreter is named
 absolutely rather than taken from `PATH`, so a user with a version manager
 installed does not run the helpers under a different Python than the one they
 were tested against. **No credentials. No privilege. No `sudo`.**
@@ -138,9 +138,10 @@ were tested against. **No credentials. No privilege. No `sudo`.**
 
 These are properties of the plugin, not policy. Callers cannot bypass them.
 
-1. Every URL reaching `omarchy-launch-browser` or the notification `--exec`
-   passes a per-store canonical-host allowlist: `store.steampowered.com`,
-   `store.epicgames.com`, `www.gog.com`.
+1. Every URL the panel can open passes a per-store canonical-host allowlist
+   before it reaches `Qt.openUrlExternally`: `store.steampowered.com`,
+   `store.epicgames.com`, `www.gog.com`. The notification click carries no URL
+   at all — it opens the panel — so there is no second path to vet.
 2. Every title is stripped of `<`, `>`, C0/C1 and bidirectional controls and
    capped at 120 characters before reaching any sink. The notification server
    advertises body markup and body hyperlinks, and HTML decoding can revive a
