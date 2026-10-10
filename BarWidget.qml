@@ -975,7 +975,10 @@ Panel {
         // --- Below the list ---------------------------------------------
         footer: Column {
           width: panelList.width
-          spacing: Style.spacing.panelGap
+          // Tighter than the panel's usual gap: the footer is a block of small
+          // controls, and panelGap left a visible hole between Refresh and the
+          // freshness line.
+          spacing: Style.space(8)
 
           Text {
             width: parent.width
@@ -988,15 +991,10 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          // A spacer, so a store's last line — an empty-store note such as "No
-          // giveaway running" — does not sit against the rule.
-          Item {
-            width: parent.width
-            height: Style.space(8)
-          }
-
           // A rule between the list and the controls, so the buttons are not
-          // read as part of a store's rows.
+          // read as part of a store's rows. The gap above it is the list's own
+          // spacing, which is the same gap that separates Steam from the rule
+          // at the top, so both sides of the rule match.
           PanelSeparator {
             width: parent.width
             foreground: root.foreground
