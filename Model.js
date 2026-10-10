@@ -19,6 +19,12 @@ var STORE_LABELS = {
 // moves between releases, so the version matters). Nerd Fonts ships no Epic
 // mark at all, so Epic borrows its initial rather than wearing a storefront
 // icon that is not its own.
+// The IpcHandler target the bar widget registers and the notification's click
+// action addresses. Both sides read it from here so they cannot drift apart:
+// a notification that calls a target the widget no longer publishes would
+// silently do nothing.
+var IPC_TARGET = "salmun-nister.loot-drops"
+
 var STORE_GLYPHS = {
   "steam": "\u{F04D3}",
   "epic": "\u{F04DC}",
@@ -693,7 +699,13 @@ function notificationArgs(store, alerts) {
     "-t", "12000",
     String(headline).replace(/^-+/, "").trim() || ("Free on " + label),
     body,
-    "--exec", "omarchy-launch-browser", safeUrl(store, list[0].url) || searchUrl(store)
+    // The click opens the panel rather than the store page. Opening a URL from
+    // here went through omarchy-launch-browser, whose trailing focus step picks
+    // a window by position in hyprctl's client list rather than by focus order,
+    // so the tab landed in whichever window that happened to be first. Opening
+    // the panel also acknowledges the games, which is what a click on the toast
+    // means anyway. -q keeps a restarting shell from writing to stderr.
+    "--exec", "omarchy-shell", "-q", IPC_TARGET, "open"
   ]
 }
 

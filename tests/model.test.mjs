@@ -18,7 +18,7 @@ const Model = new Function(`${source}\nreturn {
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
-  acknowledge, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
+  acknowledge, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS, IPC_TARGET,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -298,12 +298,25 @@ test('seen state round-trips and survives a corrupt file', () => {
   }
 });
 
+test('the widget publishes the same IPC target the notification calls', async () => {
+  const widget = readFileSync(new URL('BarWidget.qml', root), 'utf8');
+  assert.ok(widget.includes('ipcTarget: Model.IPC_TARGET'),
+    'BarWidget.qml hardcodes its own ipcTarget instead of sharing Model.IPC_TARGET');
+  assert.ok(Model.IPC_TARGET.length > 0, 'the IPC target is empty');
+});
+
 test('notification args are safe for the notification server', () => {
   const alerts = [{ id: 'a', title: '<b>Bold</b> Game', url: 'https://evil.test/x' }];
   const argv = Model.notificationArgs('steam', alerts);
   assert.equal(argv[0], 'omarchy-notification-send');
   assert.ok(!argv.includes('<'), 'markup survived into the notification');
-  assert.ok(!argv.includes('evil.test'), 'a non-Steam host reached the exec');
+  // The click opens the panel, so no URL rides along at all: there is no longer
+  // a host to allow or reject, and nothing to leak into another application.
+  assert.ok(!argv.some(a => a.includes('https://') || a.includes('evil.test')),
+    'a URL reached the notification action');
+  const exec = argv.slice(argv.indexOf('--exec') + 1);
+  assert.deepEqual(exec, ['omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
+    'the notification no longer opens the panel');
 
   // The headline occupies an option position, so leading dashes must go.
   const flagged = Model.notificationArgs('steam',

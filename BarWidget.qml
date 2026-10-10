@@ -23,7 +23,7 @@ import "Model.js" as Model
 Panel {
   id: root
   moduleName: "salmun-nister.loot-drops"
-  ipcTarget: "salmun-nister.loot-drops"
+  ipcTarget: Model.IPC_TARGET
   manageIpc: false
 
   readonly property string stateDir:
@@ -522,7 +522,10 @@ Panel {
     // safeUrl refuses anything off the store's own host, and the search page is
     // the fallback, so a row always opens somewhere legitimate.
     var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
-    Quickshell.execDetached(["omarchy-launch-browser", url])
+    // Handed to xdg-open rather than launched directly: the browser then picks
+    // its own last-used window, instead of being second-guessed by
+    // omarchy-launch-browser's focus step.
+    Qt.openUrlExternally(url)
     close()
   }
 
