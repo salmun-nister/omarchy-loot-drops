@@ -54,7 +54,8 @@ API keys, no login, no privileged operations.
 - **GOG's 404 is a healthy empty store**, not a failure. It must never render as
   an error, or the panel looks broken most of the time.
 - **Steam has no clean API.** `search/results/` returns JSON wrapping an HTML
-  blob. The parse and sanitising approach is reused from Steam Sniper.
+  blob. The parse treats the embedded HTML as untrusted and sanitises before
+  rendering; see [Security invariants](#security-invariants).
 
 ### Rejected: GOG catalogue endpoint
 
@@ -86,19 +87,20 @@ feature from "notify me when a game goes free to keep" and are deferred.
 `refreshMinutes` (integer, 5–180, default 180), `steamEnabled`, `epicEnabled`,
 `gogEnabled`, `steamNotify`, `epicNotify`, `gogNotify`, `steamCountry`.
 
-The range and step are copied from Steam Sniper so muscle memory transfers. The
-**stale threshold is a constant (4 hours), not a setting** — it needs no user
-tuning, and Steam Sniper likewise holds `STALE_AFTER_MS` as a constant. Steam
-Sniper's 3x-interval ratio would put stale at 9 hours, too long for a giveaway
-list.
+The range is 30–720 with a 90-minute default, chosen so the slider has
+headroom above the default rather than starting at its ceiling. The **stale
+threshold is derived from the interval at 1.5x**, not a separate setting: it
+needs no user tuning, and tying it to the interval keeps "stale" meaning the same
+thing at any refresh rate. A fixed constant drifts out of proportion as soon as
+the interval is changed, which is how it ended up meaning different things at
+different settings.
 
 ## Refresh
 
 - Timer at `refreshMinutes`, default 180 (3 hours).
 - Refresh on panel open when data is absent or stale (older than 4 hours).
-- Manual refresh on **middle click** of the bar mark, matching Steam Sniper's
-  existing `Qt.MiddleButton` mapping. This is the plugin's only middle-click
-  action by design.
+- Manual refresh on **middle click** of the bar mark. This is the plugin's only
+  middle-click action by design.
 - No resume-catch-up timer: at a 3-hour interval, the stale check on open covers
   a suspend longer than the interval.
 

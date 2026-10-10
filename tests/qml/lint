@@ -5,10 +5,10 @@
 # The `qmllint` on PATH is a stub that reports nothing, so the real Qt tool is
 # used directly. Under the shim, qmllint cannot resolve the `bar` context
 # object or the Style singleton, so it reports missing-property warnings for
-# every themed token. Those are the same warnings the reviewed Steam Sniper
-# plugin produces under the identical shim, so the baseline is the error count:
-# this must be zero. The lint pass covers syntax and local type errors only; it
-# does not exercise the widget in a live shell.
+# every themed token. Those missing-property warnings are inherent to linting
+# host-dependent code outside the host, so the baseline is the error count: this
+# must be zero. The lint pass covers syntax and local type errors only; it does
+# not exercise the widget in a live shell.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,4 +46,4 @@ if [ "$errors" -ne 0 ] || [ "$syntax" -ne 0 ] || [ "$status" -ne 0 ]; then
 fi
 
 warnings="$(printf '%s\n' "$report" | grep -c '^Warning:' || true)"
-echo "PASS: BarWidget.qml has no QML errors ($warnings shim warnings, same categories as Steam Sniper)"
+echo "PASS: BarWidget.qml has no QML errors ($warnings shim warnings for host-dependent tokens)"

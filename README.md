@@ -1,6 +1,6 @@
 <h1 align="center">Loot Drops</h1>
 
-<p align="center">Watch Steam, Epic and GOG for games that are free to keep, and get a desktop notification the moment one appears.</p>
+<p align="center">Never miss a free game drop. Loot Drops watches Steam, Epic Games, and GOG for games that are free for a limited time, and alerts you the moment a new one appears.</p>
 
 <p align="center"><a href="https://github.com/tcballard/omarchy-badges"><img alt="Built for Omarchy: Plugin" height="20" src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg"></a></p>
 
@@ -10,11 +10,6 @@ new one appears, you get a desktop notification.
 
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
-
-**Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)**,
-which does this for Steam alone. This adds Epic and GOG, per-store switches and
-bells, and keeps a separate baseline for each store. It is an independent work
-with no third-party code vendored — see [credits](CREDITS.md) for the lineage.
 
 <p align="center"><img alt="Loot Drops showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
 
@@ -91,8 +86,8 @@ notification-center badge, it is drawn over the icon rather than beside it, so
 the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel, headed by the store's mark
-— the real Steam and GOG logos, and an **E** for Epic, which Nerd Fonts has no
-mark for. The header carries two controls: a **switch** that stops or resumes
+— the real Steam and GOG logos, and a storefront for Epic, which Nerd Fonts has
+no mark for. The header carries two controls: a **switch** that stops or resumes
 watching that store entirely, and a **bell** that mutes or unmutes its
 notifications. Games sit slightly indented under their store name. Both sit in a hit box the height
 of the row and light up on hover, so they are easy to hit and read as controls.
@@ -140,9 +135,9 @@ off.
 
 ## How it decides
 
-Free giveaways last for days, so three hours is long enough. The panel also
-refreshes itself when you open it and the data is more than four hours old, which
-covers a laptop that was asleep.
+The default interval trades freshness against how often the stores are asked.
+The panel also refreshes itself when you open it and the data is older than a
+stale interval, which covers a laptop that was asleep.
 
 The first run is deliberately quiet. It records what is already free without
 announcing it, so installing the plugin does not produce a wall of notifications
@@ -214,9 +209,14 @@ commands and results.
 
 ## Credits
 
+**Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)** by
+nille, which watches Steam alone for games that are free to keep. Loot Drops is
+an independent work: it adds Epic and GOG, per-store switches and bells, and
+keeps a separate baseline for each store.
+
 Built from [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins)
-guidance and the Omarchy template set. No third-party code is vendored; lineage
-is recorded in [CREDITS.md](CREDITS.md).
+guidance and the Omarchy template set. No third-party code is vendored; full
+lineage is recorded in [CREDITS.md](CREDITS.md).
 
 ## Licence
 
