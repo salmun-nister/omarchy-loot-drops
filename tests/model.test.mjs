@@ -11,7 +11,8 @@ const root = new URL('../', here);
 const source = readFileSync(new URL('Model.js', root), 'utf8')
   .replace(/^\.pragma\s+library\s*$/m, '');
 const Model = new Function(`${source}\nreturn {
-  STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, STALE_AFTER_MS,
+  STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE,
+  staleAfterMs, STALE_MULTIPLIER,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
   normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
   parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
@@ -357,17 +358,36 @@ test('status copy reflects only the enabled stores', () => {
 
 test('freshness labels cross the stale threshold', () => {
   const now = 1000000000;
-  assert.equal(Model.freshnessLabel(0, now, false), 'Not checked yet');
-  assert.equal(Model.freshnessLabel(now, now, false), 'Updated just now');
-  assert.equal(Model.freshnessLabel(now - 60000, now, false), 'Updated 1m ago');
-  assert.equal(Model.freshnessLabel(now - Model.STALE_AFTER_MS, now, false).startsWith('Stale'), true);
+  const staleAt = Model.staleAfterMs(90);
+  assert.equal(Model.freshnessLabel(0, now, false, staleAt), 'Not checked yet');
+  assert.equal(Model.freshnessLabel(now, now, false, staleAt), 'Updated just now');
+  assert.equal(Model.freshnessLabel(now - 60000, now, false, staleAt), 'Updated 1m ago');
+  assert.equal(Model.freshnessLabel(now - staleAt, now, false, staleAt).startsWith('Stale'), true);
+  // One tick short of the threshold is still fresh.
+  assert.equal(Model.freshnessLabel(now - staleAt + 1, now, false, staleAt).startsWith('Stale'), false);
+});
+
+test('stale tracks the refresh interval instead of a fixed constant', () => {
+  // The point of deriving it: at every interval, stale means "we may have
+  // missed something", not "more than four hours have passed".
+  for (const minutes of [30, 90, 180, 720]) {
+    const expected = minutes * Model.STALE_MULTIPLIER * 60 * 1000;
+    assert.equal(Model.staleAfterMs(minutes), expected,
+      `stale should be ${Model.STALE_MULTIPLIER}x of a ${minutes} minute interval`);
+    // Always later than one poll, so a single missed cycle does not read stale.
+    assert.ok(expected > minutes * 60 * 1000, `${minutes}: stale must exceed one interval`);
+  }
+  // An out-of-range interval is normalised first, so it cannot produce a stale
+  // threshold that disagrees with the settings slider.
+  assert.equal(Model.staleAfterMs(0), Model.staleAfterMs(Model.normalizeRefreshMinutes(0)));
+  assert.equal(Model.staleAfterMs('nonsense'), Model.staleAfterMs(90));
 });
 
 test('settings are normalised into safe ranges', () => {
-  assert.equal(Model.normalizeRefreshMinutes(180), 180);
-  assert.equal(Model.normalizeRefreshMinutes(0), 5);
-  assert.equal(Model.normalizeRefreshMinutes(99999), 180);
-  assert.equal(Model.normalizeRefreshMinutes('nonsense'), 180);
+  assert.equal(Model.normalizeRefreshMinutes(90), 90);
+  assert.equal(Model.normalizeRefreshMinutes(0), 30);
+  assert.equal(Model.normalizeRefreshMinutes(99999), 720);
+  assert.equal(Model.normalizeRefreshMinutes('nonsense'), 90);
   assert.equal(Model.normalizeCountry(' de '), 'DE');
   assert.equal(Model.normalizeCountry('USA'), '', 'a two-letter code is required');
   assert.equal(Model.normalizeCountry('d3'), '');

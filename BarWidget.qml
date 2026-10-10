@@ -69,7 +69,9 @@ Panel {
     "gogNotify": setting("gogNotify", true)
   })
   readonly property int refreshMinutes:
-    Model.normalizeRefreshMinutes(setting("refreshMinutes", 180))
+    // undefined, not 0: an absent setting must land on the default, and 0 would
+    // clamp to the floor instead.
+    Model.normalizeRefreshMinutes(setting("refreshMinutes", undefined))
   readonly property string steamCountry: Model.normalizeCountry(setting("steamCountry", ""))
 
   // Per-store results. Each bucket keeps its own games, error and timestamp so
@@ -96,15 +98,18 @@ Panel {
   // Whether the panel is currently showing the keyboard shortcuts.
   property bool showShortcuts: false
 
+  // Stale tracks the refresh interval, so it stays meaningful however often the
+  // stores are being polled.
+  readonly property int staleAfter: Model.staleAfterMs(refreshMinutes)
   readonly property bool stale: lastSuccessAt > 0
-    && nowMs - lastSuccessAt >= Model.STALE_AFTER_MS
+    && nowMs - lastSuccessAt >= staleAfter
   // The footer's ink, shared by the freshness text and both buttons so the two
   // cannot drift apart. The text drops to `dim` once the data is stale; the
   // buttons deliberately hold this colour, so they stay equally usable when the
   // numbers behind them are old.
   readonly property color footerInk: Qt.darker(foreground, 1.5)
   readonly property string freshness: Model.freshnessLabel(
-    lastSuccessAt, nowMs, anyBusy)
+    lastSuccessAt, nowMs, anyBusy, staleAfter)
   readonly property var activeStores: Model.activeStores(storesOn)
   readonly property var visibleGames: visibleGameList()
   // How many rows the panel's Repeater actually instantiated. This is not the

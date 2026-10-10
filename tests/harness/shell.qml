@@ -61,7 +61,7 @@ ShellRoot {
           item.bar = stubBar
           item.moduleName = "salmun-nister.loot-drops"
           item.settings = {
-            refreshMinutes: 180,
+            refreshMinutes: 90,
             steamEnabled: true,
             epicEnabled: true,
             gogEnabled: true,

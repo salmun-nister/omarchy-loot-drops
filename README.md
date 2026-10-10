@@ -114,7 +114,7 @@ Omarchy settings UI. They hot-reload on save.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `refreshMinutes` | `180` | How often to check the enabled stores (5–180). |
+| `refreshMinutes` | `90` | How often to check the enabled stores (30–720). |
 | `steamEnabled` | `true` | Watch Steam. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
 | `gogEnabled` | `true` | Watch GOG. |
@@ -124,7 +124,7 @@ Omarchy settings UI. They hot-reload on save.
 | `steamCountry` | `""` | Optional two-letter Steam store country (`US`, `DE`, `GB`). Empty lets Steam choose. |
 
 ```json
-{ "id": "salmun-nister.loot-drops", "refreshMinutes": 180, "gogNotify": false }
+{ "id": "salmun-nister.loot-drops", "refreshMinutes": 90, "gogNotify": false }
 ```
 
 The switches and bells in the panel write to the same keys, so you can also set

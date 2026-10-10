@@ -70,7 +70,17 @@ var MAX_ID = 40
 var MAX_SEEN_BYTES = 32768
 var MAX_SEEN_IDS = 120
 var USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-var STALE_AFTER_MS = 4 * 60 * 60 * 1000
+// The refresh interval bounds, shared with the manifest schema so the settings
+// slider and the normaliser cannot drift apart.
+var REFRESH_MIN = 30
+var REFRESH_DEFAULT = 90
+var REFRESH_MAX = 720
+
+// Stale is derived from the interval rather than fixed. A constant drifts out of
+// proportion the moment the interval changes — at a 90-minute default a fixed
+// four hours is barely more than one missed poll, and at 720 it would be under
+// one. 1.5x keeps "stale" meaning "we may have missed something" at any rate.
+var STALE_MULTIPLIER = 1.5
 
 // Steam ids are digits. Epic and GOG use opaque numeric or slug ids, so the
 // safe character set is shared and the host allowlist does the real work.
@@ -183,10 +193,14 @@ function normalizeCountry(value) {
 
 function normalizeRefreshMinutes(value) {
   var minutes = Math.round(Number(value))
-  if (!isFinite(minutes)) minutes = 180
-  // 5..180 is Steam Sniper's schema range, reused so the muscle memory and
-  // the settings UI behave identically.
-  return Math.max(5, Math.min(180, minutes))
+  if (!isFinite(minutes)) minutes = REFRESH_DEFAULT
+  return Math.max(REFRESH_MIN, Math.min(REFRESH_MAX, minutes))
+}
+
+// When data counts as stale, given the refresh interval it is on.
+function staleAfterMs(refreshMinutes) {
+  var minutes = normalizeRefreshMinutes(refreshMinutes)
+  return Math.round(minutes * STALE_MULTIPLIER * 60 * 1000)
 }
 
 // ---------------------------------------------------------------------------
@@ -774,11 +788,11 @@ function storeErrorLabel(store, errors) {
 }
 
 
-function freshnessLabel(lastSuccessAt, nowMs, busy) {
+function freshnessLabel(lastSuccessAt, nowMs, busy, staleAfter) {
   if (!lastSuccessAt) return busy ? "Checking the stores" : "Not checked yet"
   var age = Math.max(0, Number(nowMs) - lastSuccessAt)
   if (!isFinite(age)) age = 0
-  if (age >= STALE_AFTER_MS) return "Stale · " + ageLabel(age)
+  if (age >= staleAfter) return "Stale · " + ageLabel(age)
   if (age < 15000) return "Updated just now"
   return "Updated " + ageLabel(age) + " ago"
 }

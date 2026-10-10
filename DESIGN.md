@@ -84,7 +84,7 @@ feature from "notify me when a game goes free to keep" and are deferred.
 
 ## Settings
 
-`refreshMinutes` (integer, 5–180, default 180), `steamEnabled`, `epicEnabled`,
+`refreshMinutes` (integer, 30–720, default 90), `steamEnabled`, `epicEnabled`,
 `gogEnabled`, `steamNotify`, `epicNotify`, `gogNotify`, `steamCountry`.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
@@ -97,8 +97,8 @@ different settings.
 
 ## Refresh
 
-- Timer at `refreshMinutes`, default 180 (3 hours).
-- Refresh on panel open when data is absent or stale (older than 4 hours).
+- Timer at `refreshMinutes`, default 90.
+- Refresh on panel open when data is absent or stale (older than 1.5x the interval).
 - Manual refresh on **middle click** of the bar mark. This is the plugin's only
   middle-click action by design.
 - No resume-catch-up timer: at a 3-hour interval, the stale check on open covers
