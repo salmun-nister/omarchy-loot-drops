@@ -11,3 +11,4 @@ This is Loot Drops, an Omarchy plugin project. Read README.md and ARCHITECTURE.m
 - Keep release notes outcome-focused using Merge and Tell guidance when available.
 - Never edit .template/blueprint to change an initialized product; those files retain starter provenance. Edit product files directly.
 - Widgets are a future template type. Do not invent widget-core contracts in this project.
+- Commit and PR messages carry no agent attribution trailers (Co-Authored-By, Generated with). Single-author history is the norm here; do not rewrite published history again.
