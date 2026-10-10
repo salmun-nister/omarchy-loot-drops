@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "input_commit": "4369e2dd510dcf284d93fb3de535c6bfac290b14",
+  "input_commit": "3143f856954f14963ec596b8b1b37f1386c221ac",
   "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
   "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the link and notification paths. Portable checks are separate and are listed for completeness.",
