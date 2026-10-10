@@ -48,16 +48,20 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | Middle-click the bolt | Refresh now |
 | Click a game | Open its store page and close the panel |
 | `r` | Refresh now |
-| `e` | Switch the selected game's store on or off |
-| `n` | Mute or unmute the selected game's store |
+| `e` | Enable or disable the selected game's store |
+| `n` | Mute or unmute notifications for that store |
+| `j` / `k` | Scroll down / up |
 | `Esc` | Close the panel |
 
 Each enabled store gets its own section in the panel. Its header carries two
 controls: a **switch** that stops or resumes watching that store entirely, and a
 **bell** that mutes or unmutes its notifications. Both are clickable, both take
-effect immediately, and both are saved to your `shell.json`. Clicking the bell
-keeps the store listed but silent — a muted store is visibly different from one
-you have switched off, which disappears and is no longer fetched.
+effect immediately, and both are saved to your `shell.json`.
+
+Clicking the bell keeps the store listed but silent — a muted store is visibly
+different from one you have switched off. A store you have switched off collapses
+to a faded row with no games under it, because it is no longer being watched;
+its switch stays live so you can turn it back on from there.
 
 Right-click does nothing, deliberately.
 

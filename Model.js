@@ -14,6 +14,15 @@ var STORE_LABELS = {
   "gog": "GOG"
 }
 
+// Short forms, used only by the panel's subtitle. That line is uppercased and
+// letter-spaced, so "Epic Games" makes it long enough to wrap; the headers and
+// the notification headline keep the full names.
+var STORE_SHORT = {
+  "steam": "Steam",
+  "epic": "Epic",
+  "gog": "GOG"
+}
+
 // The canonical host each store's links may point at. A title and a URL both
 // reach sinks that launch a browser, so the URL is rebuilt from the parsed id
 // rather than trusted from the response wherever the store allows it.
@@ -599,12 +608,12 @@ function statusTitle(perStore, on, busy) {
   return total + " games free to keep"
 }
 
-// "Steam, Epic Games, and GOG" — the stores being watched, named so the panel
-// says where the list came from.
+// "Steam, Epic, and GOG" — the stores being watched, named so the panel says
+// where the list came from. Short forms, because this is the subtitle.
 function storeList(on) {
   var names = []
   for (var i = 0; i < STORES.length; i++) {
-    if (on && on[STORES[i]]) names.push(STORE_LABELS[STORES[i]] || STORES[i])
+    if (on && on[STORES[i]]) names.push(STORE_SHORT[STORES[i]] || STORES[i])
   }
   if (names.length === 0) return ""
   if (names.length === 1) return names[0]
@@ -621,8 +630,8 @@ function heroDetail(perStore, on) {
   var watched = storeList(on)
   if (watched === "") return "Turn a store on to start watching"
   var total = totalGames(perStore)
-  var noun = total === 1 ? "game" : "games"
-  return total + " " + noun + " free to keep from " + watched
+  var noun = total === 1 ? "FREE GAME" : "FREE GAMES"
+  return total + " " + noun + " FROM " + watched
 }
 
 function statusDetail(perStore, on, busy, errors) {

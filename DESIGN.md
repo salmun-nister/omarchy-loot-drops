@@ -319,6 +319,18 @@ Completed evidence:
   Not reproducible on this machine, which runs Qt 6.11.2; taken from the owner's
   Luna 0.2.2 fix on its merits.
 
+- Panel fixes after on-device review: the Repeater was bound to a property that
+  did not exist, so the panel rendered nothing while its data stayed correct; and
+  `hasGames` counted header rows, which stopped the bar mark dimming. The harness
+  now asserts the Repeater's instantiated row count against the model, so a
+  binding that produces an empty panel fails the run. That check was verified by
+  reintroducing the bug: it reports "built 0 rows from a model of 7".
+- Panel copy and layout: the subtitle reads "N FREE GAMES FROM Steam, Epic, and
+  GOG" using short store names, the freshness line moved to the bottom of the
+  panel and centred, and the key hints were reduced to r/e/n/j-k. A store that is
+  switched off now collapses to a faded header with its games dropped and its
+  bell hidden, keeping only the switch.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

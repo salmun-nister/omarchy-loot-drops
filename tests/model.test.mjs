@@ -17,7 +17,7 @@ const Model = new Function(`${source}\nreturn {
   parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
   storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
-  storeList, heroTitle, heroDetail, BAR_ICON,
+  storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -373,19 +373,23 @@ test('the panel headline is the plugin name and the count is a subtitle', () => 
   const four = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
                  epic: { games: [{ id: 'c' }, { id: 'd' }] }, gog: { games: [] } };
   assert.equal(Model.heroDetail(four, all),
-    '4 games free to keep from Steam, Epic Games, and GOG');
+    '4 FREE GAMES FROM Steam, Epic, and GOG');
 
   // Singular, and a store with nothing free is still named as watched.
   const one = { steam: { games: [{ id: 'a' }] }, gog: { games: [] } };
-  assert.equal(Model.heroDetail(one, all), '1 game free to keep from Steam, Epic Games, and GOG');
+  assert.equal(Model.heroDetail(one, all), '1 FREE GAME FROM Steam, Epic, and GOG');
   assert.equal(Model.heroDetail({ steam: { games: [] }, gog: { games: [] } }, all),
-    '0 games free to keep from Steam, Epic Games, and GOG');
+    '0 FREE GAMES FROM Steam, Epic, and GOG');
 });
 
 test('the store list names only the stores being watched', () => {
+  // The subtitle uses short names because it is uppercased and letter-spaced;
+  // the headers and notification headline keep the full ones.
   assert.equal(Model.storeList({ steam: true, epic: true, gog: true }),
-    'Steam, Epic Games, and GOG');
+    'Steam, Epic, and GOG');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, and GOG');
+  assert.equal(Model.STORE_LABELS.epic, 'Epic Games', 'headers keep the full name');
+  assert.equal(Model.STORE_SHORT.epic, 'Epic');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: false }), 'Steam');
   assert.equal(Model.storeList({ steam: false, epic: false, gog: false }), '');
   assert.equal(Model.storeList(null), '');

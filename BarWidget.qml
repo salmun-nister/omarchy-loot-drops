@@ -95,7 +95,16 @@ Panel {
     lastSuccessAt, nowMs, anyBusy)
   readonly property var activeStores: Model.activeStores(storesOn)
   readonly property var visibleGames: visibleGameList()
-  readonly property bool hasGames: visibleGames.length > 0
+  // How many rows the panel's Repeater actually instantiated. This is not the
+  // same as visibleGames.length: a Repeater bound to a property that does not
+  // exist renders nothing while the array behind it stays perfectly correct, so
+  // the harness asserts on this instead.
+  readonly property int renderedRows: rowRepeater.count
+
+  // The row list contains a header per store, so its length is not a count of
+  // games. Count the game rows only, or the bar mark would stop dimming
+  // whenever a store is merely switched on.
+  readonly property bool hasGames: gameCount() > 0
 
   function newBucket() {
     return { games: [], error: "", busy: false, neverChecked: true, lastSuccessAt: 0 }
@@ -118,36 +127,34 @@ Panel {
 
   // Flat, store-ordered list for the single cursor. Reordered on every change
   // so the highlighted row stays on the same game when a refresh lands.
-  // Flat list of row entries: a header ahead of each enabled store, then that
-  // store's games. Headers are part of the same index space so the cursor is a
-  // plain index and a row can be fetched by position for scrolling.
+  // Flat list of row entries: a header ahead of every store, then that store's
+  // games when it is being watched. Headers share the index space with games so
+  // the cursor is a plain index and a row can be fetched by position to scroll
+  // it into view.
+  //
+  // A store that is switched off still gets a header, so it can be switched
+  // back on from the panel, but its games are dropped: an unwatched store
+  // contributes nothing to the list and its header renders faded.
   function visibleGameList() {
     var list = []
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
-      if (!storesOn[store]) continue
+      var on = storesOn[store] === true
       var current = bucket(store)
-      var label = Model.storeStateLabel(store, current, errorsByStore())
       list.push({
         kind: "header",
         store: store,
-        empty: !current.games || current.games.length === 0,
-        failed: !!current.error,
-        stateLabel: label
+        enabled: on,
+        empty: on && (!current.games || current.games.length === 0),
+        failed: on && !!current.error,
+        stateLabel: on ? Model.storeStateLabel(store, current, errorsByStore()) : ""
       })
+      if (!on) continue
       for (var j = 0; j < current.games.length; j++) {
         list.push({ kind: "game", store: store, game: current.games[j] })
       }
     }
     return list
-  }
-
-  // Index of the first and last game row, or -1 when there are none.
-  function firstGameRow() {
-    for (var i = 0; i < visibleGames.length; i++) {
-      if (visibleGames[i].kind === "game") return i
-    }
-    return -1
   }
 
   // Write a setting change back to this widget's entry in shell.json. Applied
@@ -377,6 +384,14 @@ Panel {
 
   // The cursor walks game rows only, skipping headers, and never leaves the
   // viewport: the selected row is fetched from the Repeater and scrolled to.
+  function gameCount() {
+    var n = 0
+    for (var i = 0; i < visibleGames.length; i++) {
+      if (visibleGames[i].kind === "game") n++
+    }
+    return n
+  }
+
   function gameRowIndexes() {
     var out = []
     for (var i = 0; i < visibleGames.length; i++) {
@@ -671,15 +686,6 @@ Panel {
             }
           }
 
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            text: root.freshness
-            color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
           PanelSeparator {
             width: parent.width
             foreground: root.foreground
@@ -691,7 +697,7 @@ Panel {
           // and the row can be scrolled into view by asking the Repeater for it.
           Repeater {
             id: rowRepeater
-            model: root.rows
+            model: root.visibleGames
 
             Item {
               id: row
@@ -706,15 +712,18 @@ Panel {
                 anchors.fill: parent
                 visible: row.isHeader
                 implicitHeight: Style.space(30)
+                // A store that is switched off reads as present but inactive.
+                opacity: row.isHeader && row.modelData.enabled === false ? 0.45 : 1
 
                 Text {
                   id: headerLabel
                   anchors.left: parent.left
                   anchors.leftMargin: Style.spacing.sm
                   anchors.verticalCenter: parent.verticalCenter
-                  // Room for the bell and the switch on the right.
-                  width: parent.width - headerBell.width - headerSwitch.width
-                         - Style.spacing.sm * 4
+                  // Room for the bell and the switch on the right; the bell
+                  // contributes nothing when it is hidden.
+                  width: parent.width - (headerBell.visible ? headerBell.width : 0)
+                         - headerSwitch.width - Style.spacing.sm * 4
                   textFormat: Text.PlainText
                   text: Model.STORE_LABELS[row.modelData.store] || ""
                   color: root.dim
@@ -726,8 +735,10 @@ Panel {
                 }
 
                 // Clickable bell: mute or unmute this store's notifications.
+                // Hidden while the store is off, since there is nothing to mute.
                 Text {
                   id: headerBell
+                  visible: row.modelData.enabled !== false
                   anchors.right: headerSwitch.left
                   anchors.rightMargin: Style.spacing.sm
                   anchors.verticalCenter: parent.verticalCenter
@@ -812,9 +823,13 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   anchors.leftMargin: Style.spacing.sm
                   anchors.rightMargin: Style.spacing.sm
-                  // Titles from the network are plain text, never markup.
+                  // Titles from the network are plain text, never markup. A
+                  // header row has no `game`, and hiding the row does not stop
+                  // this binding from being evaluated, so it is guarded rather
+                  // than merely made invisible.
                   textFormat: Text.PlainText
-                  text: row.modelData.game.title
+                  text: row.modelData.kind === "game" && row.modelData.game
+                    ? row.modelData.game.title : ""
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -858,8 +873,20 @@ Panel {
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            text: "Left-click the icon for this list. Middle-click refreshes. Keys: r refresh, e switch the store on or off, n mute or unmute it."
+            horizontalAlignment: Text.AlignHCenter
+            text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll"
             color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          // Last thing in the panel, centred under the key hints.
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignHCenter
+            text: root.freshness
+            color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }

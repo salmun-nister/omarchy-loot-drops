@@ -87,6 +87,21 @@ ShellRoot {
           Qt.quit()
           return
         }
+        // The panel's row model is asserted, not just the buckets. A panel that
+        // binds `model:` to a property that does not exist renders nothing while
+        // the buckets stay perfectly correct, so checking buckets alone let an
+        // entirely invisible panel pass. This is what catches that class.
+        var rows = widget.visibleGames || []
+        var headers = []
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].kind === "header") headers.push(rows[i].store)
+        }
+        console.log("HARNESS rows " + JSON.stringify({
+          rowCount: rows.length,
+          headers: headers,
+          gameRows: rows.length - headers.length,
+          renderedRows: widget.renderedRows
+        }))
         console.log("HARNESS state " + JSON.stringify({
           buckets: widget.buckets,
           seen: widget.seenState,

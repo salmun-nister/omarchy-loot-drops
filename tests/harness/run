@@ -24,8 +24,51 @@ mkdir -p "$shim/qs"
 ln -s "$shell_dir/Ui" "$shim/qs/Ui"
 ln -s "$shell_dir/Commons" "$shim/qs/Commons"
 
-QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
+output="$(QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
 LOOT_LIGHTNING_HARNESS=1 \
 LOOT_LIGHTNING_DIR="$root" \
 LOOT_LIGHTNING_STATE="$state" \
-  exec quickshell -p "$here/shell.qml" "$@"
+  quickshell -p "$here/shell.qml" "$@" 2>&1)" || true
+printf '%s\n' "$output"
+
+# A panel whose row model is empty renders nothing while the buckets stay
+# correct, which is exactly the bug that shipped once already. Validate the row
+# report here so an invisible panel fails the harness instead of passing.
+if ! printf '%s' "$output" | python3 -c '
+import json, re, sys
+
+raw = sys.stdin.read()
+match = re.search(r"HARNESS rows (\{.*?\})", raw, re.S)
+if not match:
+    print("FAIL: harness produced no row report", file=sys.stderr)
+    raise SystemExit(1)
+
+data = json.loads(match.group(1))
+rows, headers = data["rowCount"], data["headers"]
+rendered = data.get("renderedRows", -1)
+print("  panel rows: %d  instantiated: %s  headers: %s"
+      % (rows, rendered, ", ".join(headers)))
+
+# The Repeater must have actually built the rows, not merely had a valid model.
+if rendered != rows:
+    print("FAIL: the Repeater built %s rows from a model of %d; the panel would "
+          "render blank" % (rendered, rows), file=sys.stderr)
+    raise SystemExit(1)
+
+if len(headers) != 3:
+    print("FAIL: expected a header per store, got %d: %s"
+          % (len(headers), headers), file=sys.stderr)
+    raise SystemExit(1)
+if rows < len(headers):
+    print("FAIL: %d rows for %d headers; the row model looks truncated"
+          % (rows, len(headers)), file=sys.stderr)
+    raise SystemExit(1)
+for store in ("steam", "epic", "gog"):
+    if store not in headers:
+        print("FAIL: no header for %s in %s" % (store, headers), file=sys.stderr)
+        raise SystemExit(1)
+'; then
+  exit 1
+fi
+
+echo "PASS: harness (panel row model populated)"
