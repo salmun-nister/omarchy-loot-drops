@@ -49,12 +49,13 @@ var SEARCH_URLS = {
   "gog": "https://www.gog.com/giveaways"
 }
 
-// U+F0E7, the Font Awesome bolt in the Nerd Font. Deliberately not U+26A1
-// (⚡): that codepoint has Emoji_Presentation=Yes, so Qt hands it to the colour
-// emoji font and it paints yellow in every theme, ignoring the palette. A
-// private-use codepoint has no emoji presentation, so this one renders
-// monochrome and takes the colour it is given, like every other bar icon.
-var BAR_ICON = ""
+// U+F0726, the Material Design treasure chest in the Nerd Font. Deliberately
+// not U+26A1: that codepoint has Emoji_Presentation=Yes, so Qt hands it to
+// the colour emoji font and it paints its own colour in every theme,
+// ignoring the palette. A private-use codepoint has no emoji presentation,
+// so this one renders monochrome and takes the colour it is given, like
+// every bar icon.
+var BAR_ICON = "󰜦"
 var MAX_BYTES = 4000000
 var MAX_GAMES = 40
 var MAX_TITLE = 120
@@ -686,7 +687,7 @@ function notificationArgs(store, alerts) {
 
   return [
     "omarchy-notification-send",
-    "--app-name", "Loot Lightning",
+    "--app-name", "Loot Drops",
     "-g", BAR_ICON,
     "-u", "normal",
     "-t", "12000",
@@ -740,7 +741,7 @@ function storeList(on) {
 // The panel's headline. The plugin's name is the title and the count moves to
 // the subtitle, which names the stores being watched.
 function heroTitle() {
-  return "Loot Lightning"
+  return "Loot Drops"
 }
 
 function heroDetail(perStore, on) {

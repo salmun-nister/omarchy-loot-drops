@@ -23,7 +23,7 @@ while notifications must continue, and document the shutdown path when you do.
 
 ## State
 
-One durable file, `~/.local/state/salmun-nister.loot-lightning/seen.json`,
+One durable file, `~/.local/state/salmun-nister.loot-drops/seen.json`,
 written through `lib/seen-state`. It holds a baseline per store:
 
 ```json

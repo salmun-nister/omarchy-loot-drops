@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Run a command and forward at most MAX bytes of its stdout.
 
-Loot Lightning's own helper. Usage:
+Loot Drops's own helper. Usage:
 
     capped-run MAX cmd [args...]
 

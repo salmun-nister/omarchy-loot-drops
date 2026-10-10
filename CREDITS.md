@@ -1,7 +1,7 @@
 # Credits and provenance
 
 **Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)** by
-nille, which watches Steam alone for games that are free to keep. Loot Lightning
+nille, which watches Steam alone for games that are free to keep. Loot Drops
 is an independent work: it adds Epic and GOG, a per-store panel layout, per-store
 switches and bells, a separate seen-id baseline per store, and its own parsing,
 allowlisting and diff logic.

@@ -1,6 +1,6 @@
 # Project instructions
 
-This is Loot Lightning, an Omarchy plugin project. Read README.md and ARCHITECTURE.md before changes.
+This is Loot Drops, an Omarchy plugin project. Read README.md and ARCHITECTURE.md before changes.
 
 - Run ./tests/run. Follow docs/DEVELOPMENT.md for native checks.
 - Use [build-omarchy-plugins](https://github.com/tcballard/build-omarchy-plugins) guidance and verify current upstream contracts before relying on version-specific APIs.

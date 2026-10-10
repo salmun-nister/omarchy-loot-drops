@@ -4,21 +4,21 @@
   "date": "2026-10-09",
   "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
   "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches and the notification path. Portable checks are separate and are listed for completeness.",
-  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-lightning, then omarchy-shell shell rescanPlugins and omarchy plugin enable salmun-nister.loot-lightning right. A plain directory is sufficient; no git remote was needed.",
+  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, then omarchy-shell shell rescanPlugins and omarchy plugin enable salmun-nister.loot-drops right. A plain directory is sufficient; no git remote was needed.",
   "commands": [
     "./tests/run",
     "./tests/harness/run",
     "omarchy plugin validate .",
     "omarchy-shell shell rescanPlugins",
-    "omarchy plugin enable salmun-nister.loot-lightning right",
-    "omarchy-shell salmun-nister.loot-lightning open",
-    "omarchy-shell salmun-nister.loot-lightning refresh"
+    "omarchy plugin enable salmun-nister.loot-drops right",
+    "omarchy-shell salmun-nister.loot-drops open",
+    "omarchy-shell salmun-nister.loot-drops refresh"
   ],
   "results": [
     {
       "check": "Bar widget loads on the real bar",
       "result": "pass",
-      "detail": "Shell log recorded 'Local plugin changed, reloading: salmun-nister.loot-lightning' with no errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
+      "detail": "Shell log recorded 'Local plugin changed, reloading: salmun-nister.loot-drops' with no errors. omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget']."
     },
     {
       "check": "Panel opens and renders the three stores",
@@ -33,7 +33,7 @@
     {
       "check": "Private state file is created and readable",
       "result": "pass",
-      "detail": "~/.local/state/salmun-nister.loot-lightning created mode 0700 with seen.json mode 0600, containing per-store id baselines."
+      "detail": "~/.local/state/salmun-nister.loot-drops created mode 0700 with seen.json mode 0600, containing per-store id baselines."
     },
     {
       "check": "First fetch after install is silent",
@@ -43,7 +43,7 @@
     {
       "check": "Desktop notification fires for a newly free game",
       "result": "pass",
-      "detail": "With the Steam baseline reduced to a single id, the next fetch produced a real desktop notification reading 'Fireside Feelings is free on Steam' with the Loot Lightning app name and bolt glyph."
+      "detail": "With the Steam baseline reduced to a single id, the next fetch produced a real desktop notification reading 'Fireside Feelings is free on Steam' with the Loot Drops app name and chest glyph."
     },
     {
       "check": "Notification does not repeat for an unchanged list",

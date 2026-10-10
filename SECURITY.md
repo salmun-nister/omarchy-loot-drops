@@ -15,7 +15,7 @@ and explicit.
 | --- | --- |
 | Network | Three hosts, one GET each per refresh. No credentials, no accounts, no `sudo`. |
 , `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
-| Files | One: `~/.local/state/salmun-nister.loot-lightning/seen.json`, written atomically through a no-follow helper. |
+| Files | One: `~/.local/state/salmun-nister.loot-drops/seen.json`, written atomically through a no-follow helper. |
 | Privileged operations | None. |
 | Credentials read | None. |
 

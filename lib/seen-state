@@ -1,7 +1,7 @@
 #!/usr/bin/python3
-"""Read and write Loot Lightning's private seen.json.
+"""Read and write Loot Drops's private seen.json.
 
-Loot Lightning's own helper. Usage:
+Loot Drops's own helper. Usage:
 
     seen-state load DIR
     seen-state save DIR        # payload on stdin

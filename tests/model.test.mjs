@@ -369,7 +369,7 @@ test('settings are normalised into safe ranges', () => {
 });
 
 test('the panel headline is the plugin name and the count is a subtitle', () => {
-  assert.equal(Model.heroTitle(), 'Loot Lightning');
+  assert.equal(Model.heroTitle(), 'Loot Drops');
   const all = { steam: true, epic: true, gog: true };
   const four = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
                  epic: { games: [{ id: 'c' }, { id: 'd' }] }, gog: { games: [] } };
@@ -399,14 +399,17 @@ test('the store list names only the stores being watched', () => {
     { steam: false, epic: false, gog: false }), 'Turn a store on to start watching');
 });
 
-test('the bar icon is a private-use glyph that takes a theme colour', () => {
+test('the bar icon is a private-use treasure chest that takes a theme colour', () => {
   const code = Model.BAR_ICON.codePointAt(0);
-  // U+26A1 (the plain bolt emoji) carries Emoji_Presentation=Yes, so Qt hands
-  // it to the colour emoji font and it ignores the palette. A private-use
-  // codepoint has no emoji presentation and renders monochrome.
-  assert.ok(code >= 0xe000 && code <= 0xf8ff,
-    `BAR_ICON U+${code.toString(16)} is not in the private use area`);
+  // Two private-use planes: BMP U+E000-F8FF, and Plane 15 at U+F0000-FFFFD. The
+  // Nerd Fonts Material Design block sits in the second.
+  assert.ok((code >= 0xe000 && code <= 0xf8ff)
+    || (code >= 0xf0000 && code <= 0xffffd),
+    `BAR_ICON U+${code.toString(16)} is not private-use, so it could paint its
+     own colour instead of the theme's`);
+  // U+26A1 carries Emoji_Presentation=Yes and rendered yellow in every theme.
   assert.notEqual(code, 0x26a1);
+  assert.equal(code, 0xf0726, 'the treasure chest mark moved between Nerd Fonts releases');
 });
 
 test('unseen games clear when the panel is opened and reappear on arrival', () => {

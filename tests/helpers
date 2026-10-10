@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-python_bin="${LOOT_LIGHTNING_PYTHON:-/usr/bin/python3}"
+python_bin="${LOOT_DROPS_PYTHON:-/usr/bin/python3}"
 capped="lib/capped-run"
 store="lib/seen-state"
 failures=0

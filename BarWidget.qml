@@ -22,14 +22,14 @@ import "Model.js" as Model
 // owner of the same timer for no gain.
 Panel {
   id: root
-  moduleName: "salmun-nister.loot-lightning"
-  ipcTarget: "salmun-nister.loot-lightning"
+  moduleName: "salmun-nister.loot-drops"
+  ipcTarget: "salmun-nister.loot-drops"
   manageIpc: false
 
   readonly property string stateDir:
-    Quickshell.env("LOOT_LIGHTNING_STATE")
+    Quickshell.env("LOOT_DROPS_STATE")
     || ((Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state"))
-        + "/salmun-nister.loot-lightning")
+        + "/salmun-nister.loot-drops")
 
   // The interpreter is named absolutely rather than taken from PATH: a user
   // with a version manager on PATH would otherwise run the helpers under a
@@ -650,7 +650,7 @@ Panel {
     }
   }
 
-  // The unseen marker, drawn over the bolt rather than beside it: a bar that
+  // The unseen marker, drawn over the chest rather than beside it: a bar that
   // changes width every time something arrives is a bar that twitches all day.
   // Geometry and colour follow the notification-center widget's badge.
   Rectangle {
@@ -795,8 +795,13 @@ Panel {
 
           readonly property bool isHeader: modelData.kind === "header"
 
+          // The empty-store note needs air below it. Without it the note
+          // ended flush with its row and sat right on the list's trailing
+          // spacing, which put it against the rule at the bottom.
           implicitHeight: isHeader
-            ? Style.space(30) + (modelData && modelData.empty ? emptyNote.implicitHeight : 0)
+            ? Style.space(30)
+              + (modelData && modelData.empty
+                ? emptyNote.implicitHeight + Style.space(8) : 0)
             : gameTitle.implicitHeight + Style.spacing.sm
 
           // Store header: mark, name, bell, switch.
@@ -976,9 +981,8 @@ Panel {
         footer: Column {
           width: panelList.width
           // Tighter than the panel's usual gap: the footer is a block of small
-          // controls, and panelGap left a visible hole between Refresh and the
-          // freshness line.
-          spacing: Style.space(8)
+          // controls, and panelGap left a visible hole between them.
+          spacing: Style.space(6)
 
           Text {
             width: parent.width
@@ -1000,17 +1004,6 @@ Panel {
             foreground: root.foreground
           }
 
-          Button {
-            width: parent.width
-            text: "Refresh now"
-            iconText: "\u{F021}"
-            bordered: true
-            foreground: root.foreground
-            accent: Commons.Color.accent
-            fontFamily: root.fontFamily
-            onClicked: root.refresh()
-          }
-
           Text {
             width: parent.width
             textFormat: Text.PlainText
@@ -1023,23 +1016,26 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          // The very last row: the freshness centred, help in the far corner.
+          // The very last row: refresh in the near corner, help in the far one,
+          // and the freshness centred between them.
           //
           // The text is centred with anchors rather than by filling the row and
-          // centring within it, so the help button on the right cannot shift it.
-          // Its width is capped at whatever is left over, which keeps a long
-          // freshness string from running under the button.
+          // centring within it, so neither button can shift it off centre. Its
+          // width is capped at whatever is left between them, which keeps a long
+          // freshness string from running under a button.
           Item {
             width: parent.width
             implicitHeight: Math.max(bottomText.implicitHeight,
+                                     refreshButton.implicitHeight,
                                      helpButton.implicitHeight)
 
             Text {
               id: bottomText
               anchors.horizontalCenter: parent.horizontalCenter
               anchors.verticalCenter: parent.verticalCenter
-              width: Math.min(implicitWidth,
-                              parent.width - helpButton.width - Style.space(10))
+              width: Math.min(implicitWidth, parent.width
+                              - refreshButton.width - helpButton.width
+                              - Style.space(12))
               textFormat: Text.PlainText
               horizontalAlignment: Text.AlignHCenter
               elide: Text.ElideRight
@@ -1047,6 +1043,18 @@ Panel {
               color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
+            }
+
+            Button {
+              id: refreshButton
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "\u{F021}"
+              bordered: true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              fontFamily: root.fontFamily
+              onClicked: root.refresh()
             }
 
             Button {

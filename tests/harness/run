@@ -25,9 +25,9 @@ ln -s "$shell_dir/Ui" "$shim/qs/Ui"
 ln -s "$shell_dir/Commons" "$shim/qs/Commons"
 
 output="$(QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
-LOOT_LIGHTNING_HARNESS=1 \
-LOOT_LIGHTNING_DIR="$root" \
-LOOT_LIGHTNING_STATE="$state" \
+LOOT_DROPS_HARNESS=1 \
+LOOT_DROPS_DIR="$root" \
+LOOT_DROPS_STATE="$state" \
   quickshell -p "$here/shell.qml" "$@" 2>&1)" || true
 printf '%s\n' "$output"
 

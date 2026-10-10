@@ -49,11 +49,11 @@ on one.
 ## Removing
 
 ```bash
-omarchy plugin disable salmun-nister.loot-lightning
-omarchy plugin remove salmun-nister.loot-lightning
+omarchy plugin disable salmun-nister.loot-drops
+omarchy plugin remove salmun-nister.loot-drops
 ```
 
-Removal leaves `~/.local/state/salmun-nister.loot-lightning/seen.json` in place.
+Removal leaves `~/.local/state/salmun-nister.loot-drops/seen.json` in place.
 That is deliberate: it preserves the record of what was already free, so
 reinstalling does not re-announce games that were free before. Delete that
 directory if you want a clean slate. Nothing else on the system is touched, and

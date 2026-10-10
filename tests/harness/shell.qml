@@ -7,7 +7,7 @@ import qs.Ui
 // state and the panel can be exercised without a desktop. The bar is stubbed
 // with the properties the widget reads; everything else is the shipped code.
 //
-// Set LOOT_LIGHTNING_DIR to the plugin checkout. Notifications are suppressed
+// Set LOOT_DROPS_DIR to the plugin checkout. Notifications are suppressed
 // through the settings so a harness run cannot fire a desktop notification,
 // and the state directory is redirected so it cannot touch real user state.
 ShellRoot {
@@ -56,10 +56,10 @@ ShellRoot {
         anchors.right: parent.right
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        source: (Quickshell.env("LOOT_LIGHTNING_DIR") || ".") + "/BarWidget.qml"
+        source: (Quickshell.env("LOOT_DROPS_DIR") || ".") + "/BarWidget.qml"
         onLoaded: {
           item.bar = stubBar
-          item.moduleName = "salmun-nister.loot-lightning"
+          item.moduleName = "salmun-nister.loot-drops"
           item.settings = {
             refreshMinutes: 180,
             steamEnabled: true,

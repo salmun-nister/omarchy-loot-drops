@@ -1,10 +1,10 @@
-<h1 align="center">Loot Lightning</h1>
+<h1 align="center">Loot Drops</h1>
 
 <p align="center">Watch Steam, Epic and GOG for games that are free to keep, and get a desktop notification the moment one appears.</p>
 
 <p align="center"><a href="https://github.com/tcballard/omarchy-badges"><img alt="Built for Omarchy: Plugin" height="20" src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg"></a></p>
 
-A lightning bolt in your bar. Click it and a panel lists everything currently
+A treasure chest in your bar. Click it and a panel lists everything currently
 free to keep, grouped by store, each row one click from the store page. When a
 new one appears, you get a desktop notification.
 
@@ -16,7 +16,7 @@ which does this for Steam alone. This adds Epic and GOG, per-store switches and
 bells, and keeps a separate baseline for each store. It is an independent work
 with no third-party code vendored — see [credits](CREDITS.md) for the lineage.
 
-<p align="center"><img alt="Loot Lightning showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops showing four games free to keep, grouped by store" src="preview.png" width="410"></p>
 
 **Preview:** a real screenshot from Omarchy 4.0.4-1 on Hyprland, taken with the
 panel open. GOG reads "No giveaway running" because no giveaway was live when it
@@ -26,16 +26,16 @@ was captured. Desktop acceptance evidence is in
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/salmun-nister/omarchy-loot-lightning --enable right
+omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable right
 ```
 
 Or clone it yourself and rescan:
 
 ```bash
-git clone https://github.com/salmun-nister/omarchy-loot-lightning \
-  ~/.config/omarchy/plugins/salmun-nister.loot-lightning
+git clone https://github.com/salmun-nister/omarchy-loot-drops \
+  ~/.config/omarchy/plugins/salmun-nister.loot-drops
 omarchy-shell shell rescanPlugins
-omarchy plugin enable salmun-nister.loot-lightning right
+omarchy plugin enable salmun-nister.loot-drops right
 ```
 
 Nothing else to install. `python3` and `curl` are already present on Omarchy.
@@ -44,8 +44,8 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 
 | Action | What happens |
 | --- | --- |
-| Left-click the bolt | Open the panel |
-| Middle-click the bolt | Refresh now |
+| Left-click the chest | Open the panel |
+| Middle-click the chest | Refresh now |
 | Click a game | Open its store page and close the panel |
 | `r` | Refresh now |
 | `e` | Enable or disable that store |
@@ -58,7 +58,7 @@ The shortcut list lives in the README. If you have forgotten it while the panel
 is open, press `?` — or click the `?` beside **Refresh now** — and it appears
 below the buttons until you press it again.
 
-A coloured dot sits on the top right of the bolt while there are free games you
+A coloured dot sits on the top right of the chest while there are free games you
 have not opened the panel to see. Opening the panel clears it; a game that turns
 up later lights it again. It is independent of the notification bells, so a
 muted store still shows a dot for something you have not looked at. Like the
@@ -104,7 +104,7 @@ Omarchy settings UI. They hot-reload on save.
 | `steamCountry` | `""` | Optional two-letter Steam store country (`US`, `DE`, `GB`). Empty lets Steam choose. |
 
 ```json
-{ "id": "salmun-nister.loot-lightning", "refreshMinutes": 180, "gogNotify": false }
+{ "id": "salmun-nister.loot-drops", "refreshMinutes": 180, "gogNotify": false }
 ```
 
 The switches and bells in the panel write to the same keys, so you can also set
@@ -154,7 +154,7 @@ markup and control characters before it is displayed or sent to the notification
 server. See [security](SECURITY.md).
 
 Your plugin state lives in one file, `seen.json`, under
-`~/.local/state/salmun-nister.loot-lightning/`. Removing the plugin leaves it
+`~/.local/state/salmun-nister.loot-drops/`. Removing the plugin leaves it
 behind; delete that directory if you want a clean slate. Nothing else on your
 system is touched.
 

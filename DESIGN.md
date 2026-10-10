@@ -1,12 +1,12 @@
-# Loot Lightning design
+# Loot Drops design
 
-Decision record for `salmun-nister.loot-lightning`. Kept in the repository so a
+Decision record for `salmun-nister.loot-drops`. Kept in the repository so a
 later session extends this rather than reopening it. Accepted scope, evidence and
 remaining work are at the bottom.
 
 ## Identity and prior art
 
-- **ID**: `salmun-nister.loot-lightning`. Permanent once published.
+- **ID**: `salmun-nister.loot-drops`. Permanent once published.
 - **Inspiration**: [nille/omarchy-steam-sniper](https://github.com/nille/omarchy-steam-sniper)
   (MIT, (c) 2026 nille). Single-store Steam giveaway watcher, installed on the
   development machine. No code from it is used here; see
@@ -20,7 +20,7 @@ remaining work are at the bottom.
   `com.omastorm.radar` and `fred.tides` in bash, `omaproton-vpn` in Python — and
   none outsource to a shared plumbing library, which is the local convention
   followed here.
-- **Distribution**: personal first, then published to `salmun-nister/omarchy-loot-lightning`
+- **Distribution**: personal first, then published to `salmun-nister/omarchy-loot-drops`
   and submitted to the marketplace. Publication is not a prerequisite for
   building, and no submission is authorized by this record.
 
@@ -72,7 +72,7 @@ feature from "notify me when a game goes free to keep" and are deferred.
 - **Per widget instance**: in-memory game list, per-store status and last-success
   timestamp, selected row.
 - **Durable, plugin-owned**: `seen.json` in
-  `$XDG_STATE_HOME/salmun-nister.loot-lightning`, written through the plugin's own
+  `$XDG_STATE_HOME/salmun-nister.loot-drops`, written through the plugin's own
   `lib/seen-state` helper. Shape is
   `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed}}}`,
   keyed per store so toggling one store never disturbs another store's baseline.
@@ -308,7 +308,7 @@ Completed evidence:
 
 - Panel redesign from the owner's on-device review: a switch and a clickable bell
   per store, written back through `bar.shell.updateEntryInline` as Omarchy's own
-  Tray and Clock do; the bolt changed from U+26A1 to U+F0E7 because U+26A1 has
+  Tray and Clock do; the mark changed from U+26A1 to U+F0726 because U+26A1 has
   Emoji_Presentation=Yes and so painted yellow in every theme instead of taking
   the palette colour; right-click and the Quit control removed; the panel body
   flattened to one row list so the cursor is a plain index, the highlight is a
