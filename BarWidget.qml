@@ -988,6 +988,13 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
+          // A spacer, so a store's last line — an empty-store note such as "No
+          // giveaway running" — does not sit against the rule.
+          Item {
+            width: parent.width
+            height: Style.space(8)
+          }
+
           // A rule between the list and the controls, so the buttons are not
           // read as part of a store's rows.
           PanelSeparator {
@@ -1006,25 +1013,6 @@ Panel {
             onClicked: root.refresh()
           }
 
-          // Help sits alone on the last row, out of the way and right-aligned,
-          // which leaves Refresh now full width and centred.
-          Item {
-            width: parent.width
-            implicitHeight: helpButton.implicitHeight
-
-            Button {
-              id: helpButton
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: "?"
-              bordered: true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              onClicked: root.showShortcuts = !root.showShortcuts
-            }
-          }
-
           Text {
             width: parent.width
             textFormat: Text.PlainText
@@ -1037,15 +1025,43 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          // Last thing in the panel, centred under the key hints.
-          Text {
+          // The very last row: the freshness centred, help in the far corner.
+          //
+          // The text is centred with anchors rather than by filling the row and
+          // centring within it, so the help button on the right cannot shift it.
+          // Its width is capped at whatever is left over, which keeps a long
+          // freshness string from running under the button.
+          Item {
             width: parent.width
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignHCenter
-            text: root.freshness
-            color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            implicitHeight: Math.max(bottomText.implicitHeight,
+                                     helpButton.implicitHeight)
+
+            Text {
+              id: bottomText
+              anchors.horizontalCenter: parent.horizontalCenter
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth,
+                              parent.width - helpButton.width - Style.space(10))
+              textFormat: Text.PlainText
+              horizontalAlignment: Text.AlignHCenter
+              elide: Text.ElideRight
+              text: root.freshness
+              color: root.stale ? root.dim : Qt.darker(root.foreground, 1.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Button {
+              id: helpButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: "?"
+              bordered: true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              fontFamily: root.fontFamily
+              onClicked: root.showShortcuts = !root.showShortcuts
+            }
           }
         }
       }
