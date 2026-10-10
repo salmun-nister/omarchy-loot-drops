@@ -18,6 +18,7 @@ const Model = new Function(`${source}\nreturn {
   notificationArgs, totalGames, activeStores, statusTitle, statusDetail,
   storeStateLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
+  acknowledge, unseenIds, hasUnseen, acknowledgedOf,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -406,4 +407,68 @@ test('the bar icon is a private-use glyph that takes a theme colour', () => {
   assert.ok(code >= 0xe000 && code <= 0xf8ff,
     `BAR_ICON U+${code.toString(16)} is not in the private use area`);
   assert.notEqual(code, 0x26a1);
+});
+
+test('unseen games clear when the panel is opened and reappear on arrival', () => {
+  const fresh = Model.emptySeen();
+  const onOffer = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
+                    epic: { games: [{ id: 'c' }] }, gog: { games: [] } };
+
+  // A first install shows the dot: nobody has looked yet.
+  assert.deepEqual(Model.unseenIds(fresh, onOffer), ['a', 'b', 'c']);
+  assert.equal(Model.hasUnseen(fresh, onOffer), true);
+
+  // Opening the panel is what counts as seen.
+  const looked = Model.acknowledge(fresh, onOffer);
+  assert.deepEqual(Model.unseenIds(looked, onOffer), []);
+  assert.equal(Model.hasUnseen(looked, onOffer), false);
+
+  // A game arriving afterwards lights it again, and only for that game.
+  const later = Object.assign({}, onOffer, {
+    steam: { games: [{ id: 'a' }, { id: 'b' }, { id: 'NEW' }] },
+  });
+  assert.deepEqual(Model.unseenIds(looked, later), ['NEW']);
+
+  // A game leaving does not resurrect anything.
+  const gone = { steam: { games: [{ id: 'a' }] }, epic: { games: [] }, gog: { games: [] } };
+  assert.deepEqual(Model.unseenIds(looked, gone), []);
+});
+
+test('the unseen set is independent of the notification baseline', () => {
+  // diffStore records ids for notification; acknowledge records ids for having
+  // looked. A game can be in the first and not the second, which is exactly the
+  // case the dot exists for.
+  let state = Model.diffStore(Model.emptySeen(), 'steam',
+    [{ id: 'a', title: 'A' }], true, true).state;
+  const offered = { steam: { games: [{ id: 'a' }] }, epic: { games: [] }, gog: { games: [] } };
+  assert.equal(Model.hasUnseen(state, offered), true,
+    'already announced is not the same as already seen');
+
+  state = Model.acknowledge(state, offered);
+  assert.equal(Model.hasUnseen(state, offered), false);
+
+  // A muted store is still unwatched, so it still reports unseen games.
+  const muted = Model.diffStore(state, 'steam', [{ id: 'a' }, { id: 'z' }], true, false);
+  const withZ = { steam: { games: [{ id: 'a' }, { id: 'z' }] }, epic: { games: [] }, gog: { games: [] } };
+  assert.deepEqual(Model.unseenIds(muted.state, withZ), ['z']);
+});
+
+test('acknowledged ids survive a round trip and ignore junk', () => {
+  let state = Model.acknowledge(Model.emptySeen(),
+    { steam: { games: [{ id: '405640' }, { id: '2990600' }] } });
+  const round = Model.parseSeen(Model.serializeSeen(state));
+  assert.deepEqual(Model.acknowledgedOf(round, 'steam'), ['2990600', '405640']);
+
+  // A corrupt or hostile file cannot inject ids that were never acknowledged.
+  for (const bad of ['', 'garbage', '[]', 'null',
+    '{"stores":{"steam":{"acknowledged":["a b","../../etc/passwd",""]}}}']) {
+    const parsed = Model.parseSeen(bad);
+    for (const store of Model.STORES) {
+      assert.ok(Model.acknowledgedOf(parsed, store)
+        .every(id => Model.scrubId(id) === id), `unsafe id survived: ${bad}`);
+    }
+  }
+
+  // A store that has never been acknowledged reports nothing seen.
+  assert.deepEqual(Model.acknowledgedOf(Model.emptySeen(), 'gog'), []);
 });

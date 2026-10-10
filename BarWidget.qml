@@ -88,6 +88,10 @@ Panel {
   property int retryDelayMs: 30000
   property bool cursorActive: false
   property int selectedIndex: 0
+  // Remembered so the keyboard keeps targeting the store whose games just went away.
+  property string keyboardStore: ""
+  // Whether the panel is currently showing the keyboard shortcuts.
+  property bool showShortcuts: false
 
   readonly property bool stale: lastSuccessAt > 0
     && nowMs - lastSuccessAt >= Model.STALE_AFTER_MS
@@ -128,6 +132,10 @@ Panel {
   // games. Count the game rows only, or the bar mark would stop dimming
   // whenever a store is merely switched on.
   readonly property bool hasGames: gameCount() > 0
+
+  // Games on offer that the panel has not been opened to show yet. Independent
+  // of notifications: a muted store still has something you have not looked at.
+  readonly property bool hasUnseen: Model.hasUnseen(seenState, buckets)
 
   function newBucket() {
     return { games: [], error: "", busy: false, neverChecked: true, lastSuccessAt: 0 }
@@ -206,21 +214,24 @@ Panel {
   // Switching a store off stops it being fetched at all; switching it back on
   // re-records silently rather than announcing everything it missed.
   function toggleStore(store) {
+    keyboardStore = store
     persist({ [enabledKey(store)]: !storesOn[store] })
+    reanchorCursor()
   }
 
   function toggleBell(store) {
+    keyboardStore = store
     persist({ [notifyKey(store)]: !notifyOn[store] })
   }
 
   function toggleSelectedStore() {
-    var row = selectedGame()
-    if (row) toggleStore(row.store)
+    var store = cursorStore()
+    if (store) toggleStore(store)
   }
 
   function toggleSelectedBell() {
-    var row = selectedGame()
-    if (row) toggleBell(row.store)
+    var store = cursorStore()
+    if (store) toggleBell(store)
   }
 
   function errorsByStore() {
@@ -231,6 +242,12 @@ Panel {
       if (error) out[store] = { message: error }
     }
     return out
+  }
+
+  function acknowledgeCurrent() {
+    if (!seenLoaded) return
+    seenState = Model.acknowledge(seenState, buckets)
+    persistSeen()
   }
 
   function ingestSeen(raw) {
@@ -434,19 +451,48 @@ Panel {
   }
 
   // Move by a step in games, not rows, so a header between two stores does not
-  // consume a keypress.
+  // consume a keypress. The cursor position is a row index while the step is an
+  // offset in games, so the two are converted rather than mixed: doing that
+  // loosely left the cursor on whichever store happened to slide into the freed
+  // slot, which is why e and n appeared to only ever act on one store.
   function moveCursor(step) {
     var allowed = gameRowIndexes()
     if (allowed.length === 0) return
     var at = allowed.indexOf(selectedIndex)
-    var next = at < 0 ? 0 : at + step
-    setCursor(Math.max(0, Math.min(allowed.length - 1, next)))
+    var next = at < 0 ? (step > 0 ? 0 : allowed.length - 1) : at + step
+    next = Math.max(0, Math.min(allowed.length - 1, next))
+    setCursor(next)
+    // Moving the cursor is what retargets the keyboard. Re-anchoring must not,
+    // or switching a store off would immediately retarget it elsewhere.
+    keyboardStore = visibleGames[allowed[next]].store
   }
 
   function selectedGame() {
     if (selectedIndex < 0 || selectedIndex >= visibleGames.length) return null
     var row = visibleGames[selectedIndex]
     return row && row.kind === "game" ? row : null
+  }
+
+  // The store the keyboard acts on: whichever store the cursor last landed on.
+  //
+  // It is deliberately NOT re-derived from the current selection. Switching a
+  // store off removes its rows, which re-anchors the cursor onto a different
+  // store's game, so deriving from the selection would make a second press of e
+  // toggle some other store. The remembered value only changes when the user
+  // moves the cursor or clicks a row, which is what "twice on the same game"
+  // has to mean.
+  function cursorStore() {
+    if (keyboardStore) return keyboardStore
+    var row = selectedGame()
+    return row ? row.store : ""
+  }
+
+  // Re-anchor the cursor after the row list changes underneath it.
+  function reanchorCursor() {
+    var allowed = gameRowIndexes()
+    if (allowed.indexOf(selectedIndex) < 0) {
+      setCursor(allowed.length > 0 ? 0 : -1)
+    }
   }
 
   // Keep the highlighted row inside the visible area. ListView does the
@@ -459,6 +505,7 @@ Panel {
 
   function openGame(row) {
     if (!row || row.kind !== "game") return
+    keyboardStore = row.store
     // safeUrl refuses anything off the store's own host, and the search page is
     // the fallback, so a row always opens somewhere legitimate.
     var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
@@ -585,9 +632,10 @@ Panel {
     bar: root.bar
     text: Model.BAR_ICON
     dimmed: !root.hasGames || root.stale
-    tooltipText: root.hasGames
-      ? Model.statusTitle(root.buckets, root.storesOn, root.anyBusy) + "\n" + root.freshness
-      : Model.statusTitle(root.buckets, root.storesOn, root.anyBusy) + "\n" + root.freshness
+    tooltipText: (root.hasUnseen
+      ? "New free games — click to see them\n"
+      : "") + Model.statusTitle(root.buckets, root.storesOn, root.anyBusy)
+      + "\n" + root.freshness
 
     onPressed: function(buttonCode) {
       // Left opens the panel, middle refreshes. Right-click is deliberately
@@ -595,6 +643,22 @@ Panel {
       if (buttonCode === Qt.MiddleButton) root.refresh()
       else root.toggle()
     }
+  }
+
+  // The unseen marker, drawn over the bolt rather than beside it: a bar that
+  // changes width every time something arrives is a bar that twitches all day.
+  // Geometry and colour follow the notification-center widget's badge.
+  Rectangle {
+    id: unseenDot
+    visible: root.hasUnseen
+    anchors.right: button.right
+    anchors.rightMargin: Style.space(3)
+    anchors.top: button.top
+    anchors.topMargin: Style.space(5)
+    width: Style.space(6)
+    height: width
+    radius: width / 2
+    color: Commons.Color.accent
   }
 
   // --- Panel -------------------------------------------------------------
@@ -630,6 +694,7 @@ Panel {
         if (key === "r") root.refresh()
         else if (key === "e") root.toggleSelectedStore()
         else if (key === "n") root.toggleSelectedBell()
+        else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
       // A ListView rather than a Column of Repeater rows. A Repeater builds its
@@ -744,7 +809,7 @@ Panel {
               // Room for the bell and the switch; the bell contributes nothing
               // when it is hidden.
               width: parent.width - (headerBell.visible ? headerBell.width : 0)
-                     - headerSwitch.width - Style.spacing.sm * 4
+                     - headerSwitch.width - Style.spacing.sm * 3
               textFormat: Text.PlainText
               text: Model.STORE_LABELS[row.modelData.store] || ""
               color: root.dim
@@ -757,36 +822,47 @@ Panel {
 
             // Clickable bell: mute or unmute this store's notifications.
             // Hidden while the store is off, since there is nothing to mute.
-            Text {
+            //
+            // The glyph alone is a few pixels wide, which is not a target
+            // anyone can hit reliably, so it sits in a box the height of the
+            // row and the width of the switch beside it. The hover fill is the
+            // same treatment a game row gets, so the two read as one kind of
+            // control.
+            Item {
               id: headerBell
               visible: row.modelData.enabled !== false
               anchors.right: headerSwitch.left
-              anchors.rightMargin: Style.spacing.sm
+              anchors.rightMargin: Style.spacing.xs
               anchors.verticalCenter: parent.verticalCenter
-              text: root.notifyOn[row.modelData.store]
-                ? "\u{F0F3}" : "\u{F1F6}"
-              color: root.notifyOn[row.modelData.store]
-                ? root.dim : Qt.darker(root.dim, 1.4)
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
-
-              MouseArea {
-                id: bellMouse
-                anchors.fill: parent
-                anchors.margins: Style.space(4)
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggleBell(row.modelData.store)
-              }
+              width: Style.space(30)
+              height: Style.space(26)
 
               Rectangle {
-                anchors.fill: bellMouse
-                anchors.margins: -Style.space(2)
+                id: bellHit
+                anchors.fill: parent
                 radius: Style.cornerRadius
                 color: bellMouse.containsMouse
                   ? Style.hoverFillFor(root.foreground, Commons.Color.accent)
                   : "transparent"
+              }
+
+              Text {
+                anchors.centerIn: parent
+                text: root.notifyOn[row.modelData.store]
+                  ? "\u{F0F3}" : "\u{F1F6}"
+                color: root.notifyOn[row.modelData.store]
+                  ? root.dim : Qt.darker(root.dim, 1.4)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
+              }
+
+              MouseArea {
+                id: bellMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleBell(row.modelData.store)
               }
             }
 
@@ -882,20 +958,44 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          Button {
+          // Refresh on the left, a help toggle on the right. The shortcut list
+          // is in the README; this is for the times you are in the panel and do
+          // not want to leave it to remember.
+          Item {
             width: parent.width
-            text: "Refresh now"
-            iconText: "\u{F021}"
-            bordered: true
-            foreground: root.foreground
-            accent: Commons.Color.accent
-            fontFamily: root.fontFamily
-            onClicked: root.refresh()
+            implicitHeight: Math.max(refreshButton.implicitHeight,
+                                     helpButton.implicitHeight)
+
+            Button {
+              id: refreshButton
+              anchors.left: parent.left
+              width: parent.width - helpButton.width - Style.spacing.sm
+              text: "Refresh now"
+              iconText: "\u{F021}"
+              bordered: true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              fontFamily: root.fontFamily
+              onClicked: root.refresh()
+            }
+
+            Button {
+              id: helpButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: "?"
+              bordered: true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              fontFamily: root.fontFamily
+              onClicked: root.showShortcuts = !root.showShortcuts
+            }
           }
 
           Text {
             width: parent.width
             textFormat: Text.PlainText
+            visible: root.showShortcuts
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
             text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll"
@@ -921,10 +1021,13 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
+    keyboardStore = ""
+    showShortcuts = false
     nowMs = Date.now()
     // Opening the panel refreshes when the data is missing or stale, which is
     // what makes a long refresh interval safe to live with.
     if (lastSuccessAt === 0 || stale) refresh()
+    acknowledgeCurrent()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 

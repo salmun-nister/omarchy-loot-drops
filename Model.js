@@ -419,8 +419,79 @@ function gogGame(payload, id) {
 
 function emptySeen() {
   var stores = {}
-  for (var i = 0; i < STORES.length; i++) stores[STORES[i]] = { ids: [], primed: false }
+  for (var i = 0; i < STORES.length; i++) {
+    stores[STORES[i]] = { ids: [], acknowledged: [], primed: false }
+  }
   return { primed: false, stores: stores }
+}
+
+// The ids of games the user has actually looked at in the panel, per store.
+// Distinct from `ids`, which is the notification baseline: a game can have been
+// announced already and still not been seen, and it is that which lights the
+// bar dot.
+function acknowledgedOf(state, store) {
+  var bucket = state && state.stores ? state.stores[store] : null
+  var list = bucket && Array.isArray(bucket.acknowledged) ? bucket.acknowledged : []
+  var out = []
+  for (var i = 0; i < list.length && out.length < MAX_SEEN_IDS; i++) {
+    var id = scrubId(list[i])
+    if (id) out.push(id)
+  }
+  return out
+}
+
+// Store the ids currently on offer as seen, so the bar dot clears. Called when
+// the panel is opened, which is what "seen" means here.
+function acknowledge(state, perStore) {
+  var next = {
+    primed: true,
+    stores: {}
+  }
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    var previous = state && state.stores && state.stores[store]
+    var ids = []
+    for (var k = 0; k < MAX_SEEN_IDS; k++) ids.push("")
+    var current = perStore && perStore[store]
+    var games = current && Array.isArray(current.games) ? current.games : []
+    var seen = []
+    for (var j = 0; j < games.length && seen.length < MAX_SEEN_IDS; j++) {
+      var id = games[j] ? scrubId(games[j].id) : ""
+      if (id) seen.push(id)
+    }
+    next.stores[store] = {
+      ids: previous && Array.isArray(previous.ids)
+        ? previous.ids.slice(0, MAX_SEEN_IDS) : [],
+      acknowledged: seen,
+      primed: previous ? previous.primed === true : false
+    }
+  }
+  return next
+}
+
+// Games on offer right now that the user has not yet looked at. This is what
+// the bar dot reports; it is deliberately independent of notifications, so a
+// muted store still shows a dot for something you have not seen.
+function unseenIds(state, perStore) {
+  var out = []
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    var current = perStore && perStore[store]
+    var games = current && Array.isArray(current.games) ? current.games : []
+    if (games.length === 0) continue
+    var seen = {}
+    var already = acknowledgedOf(state, store)
+    for (var a = 0; a < already.length; a++) seen[already[a]] = true
+    for (var j = 0; j < games.length; j++) {
+      var id = games[j] ? scrubId(games[j].id) : ""
+      if (id && !seen[id]) out.push(id)
+    }
+  }
+  return out
+}
+
+function hasUnseen(state, perStore) {
+  return unseenIds(state, perStore).length > 0
 }
 
 function parseSeen(raw) {
@@ -448,10 +519,21 @@ function parseSeen(raw) {
       seen[id] = true
       ids.push(id)
     }
+    var acknowledged = []
+    var ackedSeen = {}
+    var ackedList = bucket && Array.isArray(bucket.acknowledged)
+      ? bucket.acknowledged : []
+    for (var a = 0; a < ackedList.length && acknowledged.length < MAX_SEEN_IDS; a++) {
+      var acked = scrubId(ackedList[a])
+      if (!acked || ackedSeen[acked]) continue
+      ackedSeen[acked] = true
+      acknowledged.push(acked)
+    }
     // A store with recorded ids has necessarily been fetched before, so its
     // primed flag is derived rather than trusted from the file.
     stores[store] = {
       ids: ids,
+      acknowledged: acknowledged,
       primed: !!(bucket && bucket.primed === true) || ids.length > 0
     }
   }
@@ -471,8 +553,17 @@ function serializeSeen(state) {
       if (id) ids.push(id)
     }
     ids.sort()
+    var acknowledged = []
+    var ackedSource = bucket && typeof bucket === "object"
+      && Array.isArray(bucket.acknowledged) ? bucket.acknowledged : []
+    for (var a = 0; a < ackedSource.length && acknowledged.length < MAX_SEEN_IDS; a++) {
+      var acked = scrubId(ackedSource[a])
+      if (acked) acknowledged.push(acked)
+    }
+    acknowledged.sort()
     stores[store] = {
       ids: ids,
+      acknowledged: acknowledged,
       primed: !!(bucket && bucket.primed === true)
     }
   }
@@ -491,7 +582,7 @@ function serializeSeen(state) {
 function diffStore(state, store, games, storeEnabled, notifyEnabled) {
   var current = state && typeof state === "object" && state.stores
     ? state : emptySeen()
-  var previous = current.stores[store] || { ids: [], primed: false }
+  var previous = current.stores[store] || { ids: [], acknowledged: [], primed: false }
 
   var known = {}
   for (var k = 0; k < previous.ids.length; k++) known[previous.ids[k]] = true
@@ -523,11 +614,21 @@ function diffStore(state, store, games, storeEnabled, notifyEnabled) {
 
   var next = { primed: true, stores: copyStores(current.stores) }
   if (storeEnabled) {
-    next.stores[store] = { ids: ids, primed: true }
+    // The notification baseline moves; the record of what has been looked at
+    // does not. Replacing the bucket wholesale would clear the latter.
+    next.stores[store] = {
+      ids: ids,
+      acknowledged: previous.acknowledged.slice(0, MAX_SEEN_IDS),
+      primed: true
+    }
   } else {
     // Disabled: the baseline is preserved verbatim, and priming is dropped so
     // the next enabled fetch records without alerting.
-    next.stores[store] = { ids: previous.ids.slice(0, MAX_SEEN_IDS), primed: false }
+    next.stores[store] = {
+      ids: previous.ids.slice(0, MAX_SEEN_IDS),
+      acknowledged: previous.acknowledged.slice(0, MAX_SEEN_IDS),
+      primed: false
+    }
   }
 
   return { state: next, alerts: alerts }
@@ -540,6 +641,11 @@ function copyStores(stores) {
     var bucket = stores && stores[store]
     out[store] = {
       ids: bucket && Array.isArray(bucket.ids) ? bucket.ids.slice(0, MAX_SEEN_IDS) : [],
+      // Carried through every rebuild. Leaving it out here silently cleared the
+      // record of what the user had looked at on the next refresh, which lit the
+      // bar dot for games they had already seen.
+      acknowledged: bucket && Array.isArray(bucket.acknowledged)
+        ? bucket.acknowledged.slice(0, MAX_SEEN_IDS) : [],
       primed: !!(bucket && bucket.primed === true)
     }
   }

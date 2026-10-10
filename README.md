@@ -51,12 +51,25 @@ Nothing else to install. `python3` and `curl` are already present on Omarchy.
 | `e` | Enable or disable the selected game's store |
 | `n` | Mute or unmute notifications for that store |
 | `j` / `k` | Scroll down / up |
+| `?` | Show or hide the shortcut list |
 | `Esc` | Close the panel |
+
+The shortcut list lives in the README. If you have forgotten it while the panel
+is open, press `?` — or click the `?` beside **Refresh now** — and it appears
+below the buttons until you press it again.
+
+A coloured dot sits on the top right of the bolt while there are free games you
+have not opened the panel to see. Opening the panel clears it; a game that turns
+up later lights it again. It is independent of the notification bells, so a
+muted store still shows a dot for something you have not looked at. Like the
+notification-center badge, it is drawn over the icon rather than beside it, so
+the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel. Its header carries two
 controls: a **switch** that stops or resumes watching that store entirely, and a
-**bell** that mutes or unmutes its notifications. Both are clickable, both take
-effect immediately, and both are saved to your `shell.json`.
+**bell** that mutes or unmutes its notifications. Both sit in a hit box the height
+of the row and light up on hover, so they are easy to hit and read as controls.
+Both take effect immediately, and both are saved to your `shell.json`.
 
 Clicking the bell keeps the store listed but silent — a muted store is visibly
 different from one you have switched off. A store you have switched off collapses

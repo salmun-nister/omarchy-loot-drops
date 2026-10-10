@@ -341,6 +341,22 @@ Completed evidence:
   the defect: contentHeight drops from 184 to 18 and the harness fails naming the
   cause.
 
+- Three fixes from on-device review. The bell had a hit box of a few pixels; it
+  now fills a box the height of the row and highlights on hover like a game row
+  does. The `e` and `n` keys acted on the wrong store, because the cursor index
+  is a row index while the step is an offset in games, and nothing re-anchored
+  the cursor when a toggle changed the row list; the keyboard now targets
+  whichever store the cursor last landed on, and re-anchoring deliberately does
+  not retarget it. The static shortcut line was replaced by a `?` beside Refresh
+  now, and by the `?` key.
+- A bar dot for games the panel has not been opened to see, copying the
+  notification-center badge's geometry and colour. "Seen" is recorded per store in
+  `seen.json` as `acknowledged`, kept separate from the notification baseline
+  because a game can have been announced and still not been looked at. It is
+  persisted, so a shell restart does not light the dot for games already seen.
+  Building it surfaced a bug where every refresh cleared the record, because the
+  diff rebuilt each store's bucket without carrying the new field.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next
