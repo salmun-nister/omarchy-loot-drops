@@ -40,6 +40,31 @@ omarchy plugin enable salmun-nister.loot-drops right
 
 Nothing else to install. `python3` and `curl` are already present on Omarchy.
 
+## Removing
+
+```bash
+omarchy plugin remove salmun-nister.loot-drops
+```
+
+To keep it installed but stop it doing anything, disable it instead:
+
+```bash
+omarchy plugin disable salmun-nister.loot-drops
+```
+
+Removal takes the plugin folder with it. If you installed it as a plain
+directory rather than a git checkout, Omarchy backs that folder up to
+`~/.config/omarchy/plugins/.salmun-nister.loot-drops.bak.<timestamp>` instead
+of deleting it, so remove it yourself if you want the space back.
+
+Your state file is deliberately kept:
+`~/.local/state/salmun-nister.loot-drops/seen.json`. It records what was
+already free, so reinstalling does not re-announce games that were free before.
+Delete that directory if you want a clean slate.
+
+Nothing else is changed: no Hyprland setting, and no other entry in
+`~/.config/omarchy/shell.json`.
+
 ## Using it
 
 | Action | What happens |
