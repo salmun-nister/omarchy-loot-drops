@@ -33,6 +33,9 @@ export function check(base=root) {
     // The two descriptions are shown in different places, so nothing would
     // report a mismatch if only one were edited.
     assert.equal(m.barWidget.description,m.description,'manifest and barWidget descriptions differ');
+    // project.json is the copy configure() sends to GitHub, so a stale one would
+    // quietly overwrite the description with an earlier wording.
+    assert.equal(c.description,m.description,'manifest and project.json descriptions differ');
     const kinds={'bar-widget':'barWidget',bar:'bar',panel:'panel',overlay:'overlay',menu:'menu',service:'service'};
     assert(Array.isArray(m.kinds)&&m.kinds.length>0&&new Set(m.kinds).size===m.kinds.length);
     for(const k of m.kinds) assert(kinds[k] && m.entryPoints[kinds[k]],`Missing entry point for ${k}`);
