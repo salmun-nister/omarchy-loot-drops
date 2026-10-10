@@ -129,7 +129,7 @@ Panel {
       height: panelList.height,
       pinnedHeight: pinned.height,
       pinnedBottom: pinned.y + pinned.height,
-      listY: panelList.y,
+      listY: panelList.y
     }
   }
 
