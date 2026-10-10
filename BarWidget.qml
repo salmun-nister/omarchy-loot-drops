@@ -99,7 +99,30 @@ Panel {
   // same as visibleGames.length: a Repeater bound to a property that does not
   // exist renders nothing while the array behind it stays perfectly correct, so
   // the harness asserts on this instead.
-  readonly property int renderedRows: rowRepeater.count
+  readonly property int renderedRows: panelList.count
+
+  // Rows must be laid out, not merely built. The previous Column-of-Repeater
+  // rendered a blank panel while reporting a correct row count and a model of
+  // seven, because a Repeater builds delegates but positions none of them. The
+  // measure that actually distinguishes the two is the view's contentHeight:
+  // it is zero when every row has no height, and it grows with each positioned
+  // row.
+  //
+  // A function rather than a binding, because reading an item's geometry
+  // creates no dependency and a property bound to it goes stale after one read.
+  function listMetrics() {
+    return {
+      count: panelList.count,
+      contentHeight: panelList.contentHeight,
+      height: panelList.height
+    }
+  }
+
+  function rowsLaidOut() {
+    var m = listMetrics()
+    if (m.count === 0) return false
+    return m.contentHeight > 0 && m.height > 0
+  }
 
   // The row list contains a header per store, so its length is not a count of
   // games. Count the game rows only, or the bar mark would stop dimming
@@ -426,19 +449,12 @@ Panel {
     return row && row.kind === "game" ? row : null
   }
 
-  // Keep the highlighted row inside the visible area of the scroll view.
+  // Keep the highlighted row inside the visible area. ListView does the
+  // measuring, which is why the panel is a ListView and not a Column of
+  // Repeater rows.
   function scrollCursorIntoView() {
-    var area = rowRepeater && scrollArea
-    if (!area || !rowRepeater || selectedIndex < 0) return
-    var item = rowRepeater.itemAt(selectedIndex)
-    if (!item) return
-    var top = item.mapToItem(scrollArea.contentItem, 0, 0).y
-    var bottom = top + item.height
-    var view = scrollArea.height
-    if (top < scrollArea.contentY) scrollArea.contentY = top
-    else if (bottom > scrollArea.contentY + view) {
-      scrollArea.contentY = Math.max(0, bottom - view)
-    }
+    if (!panelList || selectedIndex < 0) return
+    panelList.positionViewAtIndex(selectedIndex, ListView.Contain)
   }
 
   function openGame(row) {
@@ -591,7 +607,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight,
+    contentHeight: panel.fittedContentHeight(panelList.contentHeight,
                                              Style.space(620))
 
     PanelKeyCatcher {
@@ -616,21 +632,30 @@ Panel {
         else if (key === "n") root.toggleSelectedBell()
       }
 
-      ScrollView {
-        id: scrollArea
+      // A ListView rather than a Column of Repeater rows. A Repeater builds its
+      // items but never lays them out, so every row sat at y = 0 with the
+      // enclosing Column reporting an implicit height of zero: the panel rendered
+      // blank while the data underneath was correct. A ListView also gives
+      // positionViewAtIndex, which is what keeps the cursor visible.
+      ListView {
+        id: panelList
         anchors.fill: parent
         clip: true
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-        ScrollBar.vertical.policy: panelColumn.implicitHeight > height
-          ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        model: root.visibleGames
+        boundsBehavior: Flickable.StopAtBounds
+        spacing: Style.spacing.xs
 
-        Column {
-          id: panelColumn
-          width: scrollArea.availableWidth
+        ScrollBar.vertical: ScrollBar {
+          policy: ScrollBar.AsNeeded
+        }
+
+        // --- Above the list ---------------------------------------------
+        header: Column {
+          width: panelList.width
           spacing: Style.spacing.panelGap
 
-          // Hero: the plugin's name, and underneath it how much is free and
-          // which stores that came from.
+          // The plugin's name, and underneath it how much is free and which
+          // stores that came from.
           Item {
             id: hero
             readonly property color tint: root.hasGames
@@ -638,8 +663,7 @@ Panel {
               : (root.bucket("steam").error || root.bucket("epic").error
                   || root.bucket("gog").error ? root.urgent : root.dim)
             width: parent.width
-            implicitHeight: Math.max(heroIcon.implicitHeight,
-                                     heroLabels.implicitHeight)
+            height: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 
             Text {
               id: heroIcon
@@ -690,162 +714,162 @@ Panel {
             width: parent.width
             foreground: root.foreground
           }
+        }
 
-          // One flat list of headers and games. The grouped look is produced by
-          // a header entry ahead of each store's games, which keeps one index
-          // space: the cursor is a plain index, the highlight is a comparison,
-          // and the row can be scrolled into view by asking the Repeater for it.
-          Repeater {
-            id: rowRepeater
-            model: root.visibleGames
+        // --- One row: a store header, or a game --------------------------
+        delegate: Item {
+          id: row
+          required property var modelData
+          required property int index
+          width: panelList.width
 
-            Item {
-              id: row
-              required property var modelData
-              required property int index
-              width: panelColumn.width
+          readonly property bool isHeader: modelData.kind === "header"
 
-              readonly property bool isHeader: modelData.kind === "header"
+          implicitHeight: isHeader
+            ? Style.space(30) + (modelData && modelData.empty ? emptyNote.implicitHeight : 0)
+            : gameTitle.implicitHeight + Style.spacing.sm
 
-              // --- Store header: name, bell, switch ---------------------
-              Item {
+          // Store header: name, bell, switch.
+          Item {
+            anchors.fill: parent
+            visible: row.isHeader
+            // A store that is switched off reads as present but inactive.
+            opacity: row.isHeader && row.modelData.enabled === false ? 0.45 : 1
+
+            Text {
+              id: headerLabel
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              // Room for the bell and the switch; the bell contributes nothing
+              // when it is hidden.
+              width: parent.width - (headerBell.visible ? headerBell.width : 0)
+                     - headerSwitch.width - Style.spacing.sm * 4
+              textFormat: Text.PlainText
+              text: Model.STORE_LABELS[row.modelData.store] || ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.0
+              elide: Text.ElideRight
+            }
+
+            // Clickable bell: mute or unmute this store's notifications.
+            // Hidden while the store is off, since there is nothing to mute.
+            Text {
+              id: headerBell
+              visible: row.modelData.enabled !== false
+              anchors.right: headerSwitch.left
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.notifyOn[row.modelData.store]
+                ? "\u{F0F3}" : "\u{F1F6}"
+              color: root.notifyOn[row.modelData.store]
+                ? root.dim : Qt.darker(root.dim, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
+
+              MouseArea {
+                id: bellMouse
                 anchors.fill: parent
-                visible: row.isHeader
-                implicitHeight: Style.space(30)
-                // A store that is switched off reads as present but inactive.
-                opacity: row.isHeader && row.modelData.enabled === false ? 0.45 : 1
-
-                Text {
-                  id: headerLabel
-                  anchors.left: parent.left
-                  anchors.leftMargin: Style.spacing.sm
-                  anchors.verticalCenter: parent.verticalCenter
-                  // Room for the bell and the switch on the right; the bell
-                  // contributes nothing when it is hidden.
-                  width: parent.width - (headerBell.visible ? headerBell.width : 0)
-                         - headerSwitch.width - Style.spacing.sm * 4
-                  textFormat: Text.PlainText
-                  text: Model.STORE_LABELS[row.modelData.store] || ""
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  font.letterSpacing: 1.0
-                  elide: Text.ElideRight
-                }
-
-                // Clickable bell: mute or unmute this store's notifications.
-                // Hidden while the store is off, since there is nothing to mute.
-                Text {
-                  id: headerBell
-                  visible: row.modelData.enabled !== false
-                  anchors.right: headerSwitch.left
-                  anchors.rightMargin: Style.spacing.sm
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: root.notifyOn[row.modelData.store]
-                    ? "\u{F0F3}" : "\u{F1F6}"
-                  color: root.notifyOn[row.modelData.store]
-                    ? root.dim : Qt.darker(root.dim, 1.4)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
-
-                  MouseArea {
-                    id: bellMouse
-                    anchors.fill: parent
-                    anchors.margins: Style.space(4)
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleBell(row.modelData.store)
-                  }
-
-                  Rectangle {
-                    anchors.fill: bellMouse
-                    anchors.margins: -Style.space(2)
-                    radius: Style.cornerRadius
-                    color: bellMouse.containsMouse
-                      ? Style.hoverFillFor(root.foreground, Commons.Color.accent)
-                      : "transparent"
-                  }
-                }
-
-                // Switch: stop or resume watching this store entirely.
-                ToggleSwitch {
-                  id: headerSwitch
-                  anchors.right: parent.right
-                  anchors.rightMargin: Style.spacing.sm
-                  anchors.verticalCenter: parent.verticalCenter
-                  checked: root.storesOn[row.modelData.store] === true
-                  foreground: root.foreground
-                  accent: Commons.Color.accent
-                  onToggled: root.toggleStore(row.modelData.store)
-                }
+                anchors.margins: Style.space(4)
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleBell(row.modelData.store)
               }
 
-              // --- Empty-store note, under its header --------------------
-              Text {
-                anchors.top: parent.top
-                anchors.topMargin: Style.space(30)
-                anchors.left: parent.left
-                anchors.leftMargin: Style.spacing.sm
-                anchors.right: parent.right
-                width: parent.width - Style.spacing.sm * 2
-                visible: row.isHeader && row.modelData.empty
-                textFormat: Text.PlainText
-                wrapMode: Text.WordWrap
-                text: row.modelData.stateLabel || ""
-                color: row.modelData.failed ? root.urgent : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-
-              // --- A game ------------------------------------------------
               Rectangle {
-                anchors.top: parent.top
-                anchors.topMargin: row.isHeader ? Style.space(30) : 0
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: gameTitle.implicitHeight + Style.spacing.sm
-                visible: !row.isHeader
+                anchors.fill: bellMouse
+                anchors.margins: -Style.space(2)
                 radius: Style.cornerRadius
-                color: root.cursorActive && root.selectedIndex === row.index
-                  ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
-                              : "transparent")
-                  : (gameMouse.containsMouse
-                    ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
-                                : "transparent")
-                    : "transparent")
-
-                Text {
-                  id: gameTitle
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.leftMargin: Style.spacing.sm
-                  anchors.rightMargin: Style.spacing.sm
-                  // Titles from the network are plain text, never markup. A
-                  // header row has no `game`, and hiding the row does not stop
-                  // this binding from being evaluated, so it is guarded rather
-                  // than merely made invisible.
-                  textFormat: Text.PlainText
-                  text: row.modelData.kind === "game" && row.modelData.game
-                    ? row.modelData.game.title : ""
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
-                }
-
-                MouseArea {
-                  id: gameMouse
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openGame(row.modelData)
-                }
+                color: bellMouse.containsMouse
+                  ? Style.hoverFillFor(root.foreground, Commons.Color.accent)
+                  : "transparent"
               }
             }
+
+            // Switch: stop or resume watching this store entirely.
+            ToggleSwitch {
+              id: headerSwitch
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.storesOn[row.modelData.store] === true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              onToggled: root.toggleStore(row.modelData.store)
+            }
           }
+
+          // Why an enabled store has nothing to show.
+          Text {
+            id: emptyNote
+            anchors.top: parent.top
+            anchors.topMargin: Style.space(30)
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.sm
+            width: parent.width - Style.spacing.sm * 2
+            visible: row.isHeader && row.modelData.empty
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            text: row.modelData.stateLabel || ""
+            color: row.modelData.failed ? root.urgent : root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          // A game.
+          Rectangle {
+            anchors.top: parent.top
+            anchors.topMargin: row.isHeader ? Style.space(30) : 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: gameTitle.implicitHeight + Style.spacing.sm
+            visible: !row.isHeader
+            radius: Style.cornerRadius
+            color: root.cursorActive && root.selectedIndex === row.index
+              ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
+                          : "transparent")
+              : (gameMouse.containsMouse
+                ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
+                            : "transparent")
+                : "transparent")
+
+            Text {
+              id: gameTitle
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.sm
+              anchors.rightMargin: Style.spacing.sm
+              // Titles from the network are plain text, never markup. A header
+              // row has no `game`, and hiding a row does not stop this binding
+              // being evaluated, so it is guarded rather than made invisible.
+              textFormat: Text.PlainText
+              text: row.modelData.kind === "game" && row.modelData.game
+                ? row.modelData.game.title : ""
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            MouseArea {
+              id: gameMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.openGame(row.modelData)
+            }
+          }
+        }
+
+        // --- Below the list ---------------------------------------------
+        footer: Column {
+          width: panelList.width
+          spacing: Style.spacing.panelGap
 
           Text {
             width: parent.width

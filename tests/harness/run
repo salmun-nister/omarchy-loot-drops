@@ -31,38 +31,63 @@ LOOT_LIGHTNING_STATE="$state" \
   quickshell -p "$here/shell.qml" "$@" 2>&1)" || true
 printf '%s\n' "$output"
 
-# A panel whose row model is empty renders nothing while the buckets stay
-# correct, which is exactly the bug that shipped once already. Validate the row
-# report here so an invisible panel fails the harness instead of passing.
+# A panel whose row model is empty, or whose rows carry no height, renders
+# nothing while the widget's data stays correct — which is exactly the bug that
+# shipped twice. Validate the row report here so a blank panel fails the harness.
 if ! printf '%s' "$output" | python3 -c '
-import json, re, sys
+import json, os, sys
 
+MIN_ROW_HEIGHT = int(os.environ.get("LOOT_MIN_ROW", "14"))
 raw = sys.stdin.read()
-match = re.search(r"HARNESS rows (\{.*?\})", raw, re.S)
-if not match:
+marker = "HARNESS rows "
+start = raw.find(marker)
+if start < 0:
     print("FAIL: harness produced no row report", file=sys.stderr)
     raise SystemExit(1)
+start += len(marker)
+depth, end = 0, None
+for i, ch in enumerate(raw[start:], start):
+    if ch == "{":
+        depth += 1
+    elif ch == "}":
+        depth -= 1
+        if depth == 0:
+            end = i + 1
+            break
+if end is None:
+    print("FAIL: harness row report was truncated", file=sys.stderr)
+    raise SystemExit(1)
 
-data = json.loads(match.group(1))
+data = json.loads(raw[start:end])
 rows, headers = data["rowCount"], data["headers"]
 rendered = data.get("renderedRows", -1)
-print("  panel rows: %d  instantiated: %s  headers: %s"
-      % (rows, rendered, ", ".join(headers)))
+metrics = data.get("metrics", {})
 
-# The Repeater must have actually built the rows, not merely had a valid model.
+print("  panel rows: %d  view count: %s  contentHeight: %s  headers: %s"
+      % (rows, rendered, metrics.get("contentHeight"), ", ".join(headers)))
+
+# The view must have built the rows, not merely had a valid model.
 if rendered != rows:
-    print("FAIL: the Repeater built %s rows from a model of %d; the panel would "
+    print("FAIL: the view built %s rows from a model of %d; the panel would "
           "render blank" % (rendered, rows), file=sys.stderr)
     raise SystemExit(1)
 
-if len(headers) != 3:
-    print("FAIL: expected a header per store, got %d: %s"
-          % (len(headers), headers), file=sys.stderr)
+# The rows must carry height. A Repeater builds every delegate and positions
+# none of them, which left a correct count above a blank panel.
+if not data.get("laidOut"):
+    print("FAIL: %d rows built but the list has no height; the panel would "
+          "render blank" % rows, file=sys.stderr)
     raise SystemExit(1)
-if rows < len(headers):
-    print("FAIL: %d rows for %d headers; the row model looks truncated"
-          % (rows, len(headers)), file=sys.stderr)
+
+# Every row is at least a caption tall, so a list of N rows cannot legitimately
+# be shorter than N pixels. A blank panel measured 18px for 7 rows.
+content_height = metrics.get("contentHeight") or 0
+if content_height < rows * MIN_ROW_HEIGHT:
+    print("FAIL: contentHeight %s is under %dpx for %d rows; the rows are not "
+          "stacked and the panel would render blank"
+          % (content_height, rows * MIN_ROW_HEIGHT, rows), file=sys.stderr)
     raise SystemExit(1)
+
 for store in ("steam", "epic", "gog"):
     if store not in headers:
         print("FAIL: no header for %s in %s" % (store, headers), file=sys.stderr)
@@ -71,4 +96,4 @@ for store in ("steam", "epic", "gog"):
   exit 1
 fi
 
-echo "PASS: harness (panel row model populated)"
+echo "PASS: harness (panel rows built, sized and positioned)"

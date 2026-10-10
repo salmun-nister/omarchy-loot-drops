@@ -331,6 +331,16 @@ Completed evidence:
   switched off now collapses to a faded header with its games dropped and its
   bell hidden, keeping only the switch.
 
+- The panel was blank on the real bar for a second reason: the row list was a
+  Column of Repeater delegates. A Repeater builds every delegate but positions
+  none of them, so all seven rows sat at y = 0 and the Column reported an
+  implicit height of zero. Replaced with a ListView, which lays out its rows and
+  supplies positionViewAtIndex for the cursor. The harness now asserts the list's
+  contentHeight against a per-row floor rather than trusting a row count; a count
+  of seven was reported over a panel that drew nothing. Verified by reintroducing
+  the defect: contentHeight drops from 184 to 18 and the harness fails naming the
+  cause.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

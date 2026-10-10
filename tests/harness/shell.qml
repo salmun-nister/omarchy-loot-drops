@@ -100,7 +100,12 @@ ShellRoot {
           rowCount: rows.length,
           headers: headers,
           gameRows: rows.length - headers.length,
-          renderedRows: widget.renderedRows
+          renderedRows: widget.renderedRows,
+          laidOut: widget.rowsLaidOut(),
+          metrics: widget.listMetrics(),
+          panelOpened: widget.opened,
+          probe: widget.rowProbe,
+          column: widget.columnProbe
         }))
         console.log("HARNESS state " + JSON.stringify({
           buckets: widget.buckets,
