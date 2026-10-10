@@ -1,9 +1,9 @@
 {
   "status": "passed",
-  "input_commit": "e809ccf9cc645d045759f31f307eeab7e79ebb6d",
+  "input_commit": "7729674fbbc4b6b5d166af6b76caf131e5b83015",
   "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the attribution-trailer rewrite and after the project.json description fix. Portable checks are separate and are listed for completeness.",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the theme screenshots and the hero swap. That commit changes only README.md and images, so the runtime is byte-identical to e809ccf and the switch, bell and notification-click results carry over unchanged. Portable checks are separate and are listed for completeness.",
   "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section, then omarchy-shell shell rescanPlugins. A plain directory is sufficient; no git remote was needed. The manifest, the bar-widget block and .template/project.json all carry the same description at this commit, so configure() no longer rewrites the repository description back to the old wording.",
   "commands": [
     "./tests/run",
@@ -96,7 +96,7 @@
     "No vertical bar was observed. The tested bar was horizontal (position top).",
     "The derived stale threshold was recomputed and unit-tested but not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out.",
     "Game rows were not clicked in this run. Rows still hand the URL to xdg-open so the browser picks its own window, but opening a store page and confirming which window received the tab was not re-exercised here; that behaviour was confirmed by the user on a previous run and no code covering it has changed since.",
-    "preview.png was not recaptured. No rendering or layout code changed after it was taken, and the live panel captured in this run matches it: same hero, same four games, same empty GOG row and same footer.",
+    "preview.png is now the Sunlit Sands panel, cropped from a live capture; the other three themes in the README are the same crop of the same live panel. No rendering or layout code changed alongside them, and the live panel captured in this run matches the set: same hero, same four games, same empty GOG row and same footer.",
     "The notification click opens the panel rather than the store page, so the notification path does not cover URL opening; only a panel row does.",
     "The documented install command 'omarchy plugin add <git-url>' was still not exercised. Acceptance used the local symlink that the plugin was already installed through.",
     "The bar widget is loaded once per monitor, and only one monitor was exercised.",
