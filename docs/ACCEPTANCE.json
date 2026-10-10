@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "input_commit": "f93632a25781f38e65010d1cb81439fa4d8b2886",
+  "input_commit": "4369e2dd510dcf284d93fb3de535c6bfac290b14",
   "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland, kernel 7.2.5-3-omarchy, x86_64",
   "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the link and notification paths. Portable checks are separate and are listed for completeness.",
@@ -93,17 +93,24 @@
       "detail": "With epicNotify false the Epic Games section stayed in the panel with its games and showed a crossed-out bell, distinct from a disabled store. Verified during development; not re-exercised after the hero, footer and pinned changes."
     },
     {
+      "check": "Stale is derived from the refresh interval",
+      "result": "pass",
+      "detail": "Stale was a fixed four-hour constant that only lined up with the old 180-minute default (1.33x). It is now 1.5x refreshMinutes, so it keeps meaning 'we may have missed something' at any interval: 45 minutes at the 30-minute floor, 135 at the 90-minute default, 18 hours at the 720 maximum. Unit-tested across those bounds, including that a single missed poll never reads stale and that an out-of-range interval cannot produce a threshold the settings slider disagrees with. Default interval moved 180 -> 90 and the range 5-180 -> 30-720, so the default no longer sits on the slider's ceiling."
+    },
+    {
       "check": "Portable checks",
       "result": "pass",
-      "detail": "39 model and helper tests, QML lint against the real Qt qmllint with no errors, the helper behaviour suite, and the offscreen harness (7 rows, all three store headers, pinned-hero assertion) all pass."
+      "detail": "40 model and helper tests, QML lint against the real Qt qmllint with no errors, the helper behaviour suite, and the offscreen harness (7 rows, all three store headers, pinned-hero assertion) all pass."
     }
   ],
   "limitations": [
     "GOG's success path is fixture-only. No giveaway was running during acceptance, so the 200 response shape has not been observed live; the 404 empty path has.",
     "No vertical bar was observed. The tested bar was horizontal (position top).",
+    "The derived stale threshold is unit-tested but was not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out; the user confirmed the panel renders and behaves correctly with the new default instead.",
+    "Store switch and bell behaviour was verified during development and not re-exercised after the hero, footer, pinned-list, interval and stale changes.",
     "preview.png shows the store data that was live at capture time and will not reflect what the panel shows later.",
     "The notification click opens the panel rather than the store page, so no click-through to a store URL is exercised. That is the intended behaviour, but it means the notification path no longer covers URL opening; only the panel row does.",
-    "The documented install command 'omarchy plugin add <git-url>' was not exercised, because no public repository exists yet. Acceptance used a local symlink instead.",
-    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin no longer depends on it, but other Omarchy panels and any notification that opens a URL still do. Not reported upstream yet."
+    "The documented install command 'omarchy plugin add <git-url>' was not exercised against a published repository at the time of recording; acceptance used a local symlink and a private GitHub remote.",
+    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin no longer depends on it, but other Omarchy panels and any notification that opens a URL still do. Already reported upstream."
   ]
 }
