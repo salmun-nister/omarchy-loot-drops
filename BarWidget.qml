@@ -637,9 +637,7 @@ Panel {
     bar: root.bar
     text: Model.BAR_ICON
     dimmed: !root.hasGames || root.stale
-    tooltipText: (root.hasUnseen
-      ? "New free games — click to see them\n"
-      : "") + Model.statusTitle(root.buckets, root.storesOn, root.anyBusy)
+    tooltipText: Model.statusTitle(root.buckets, root.storesOn, root.anyBusy)
       + "\n" + root.freshness
 
     onPressed: function(buttonCode) {
@@ -835,7 +833,7 @@ Panel {
             Text {
               id: headerLabel
               anchors.left: headerMark.right
-              anchors.leftMargin: Style.spacing.xs
+              anchors.leftMargin: Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
               // Room for the bell and the switch; the bell contributes nothing
               // when it is hidden.
@@ -916,9 +914,10 @@ Panel {
             anchors.top: parent.top
             anchors.topMargin: Style.space(30)
             anchors.left: parent.left
-            anchors.leftMargin: Style.spacing.sm
-            width: parent.width - Style.spacing.sm * 2
-            visible: row.isHeader && row.modelData.empty
+            // Same indent as a game row, so "no giveaway running" lines up with
+            // the rows it stands in for.
+            anchors.leftMargin: Style.space(22)
+            width: parent.width - Style.space(22) - Style.spacing.sm
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             text: row.modelData.stateLabel || ""
@@ -1034,8 +1033,8 @@ Panel {
               anchors.horizontalCenter: parent.horizontalCenter
               anchors.verticalCenter: parent.verticalCenter
               width: Math.min(implicitWidth, parent.width
-                              - refreshButton.width - helpButton.width
-                              - Style.space(12))
+                              - refreshButton.implicitWidth
+                              - helpButton.implicitWidth - Style.space(12))
               textFormat: Text.PlainText
               horizontalAlignment: Text.AlignHCenter
               elide: Text.ElideRight
@@ -1049,7 +1048,7 @@ Panel {
               id: refreshButton
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "\u{F021}"
+              iconText: "\u{F021}"
               bordered: true
               foreground: root.foreground
               accent: Commons.Color.accent
@@ -1061,7 +1060,7 @@ Panel {
               id: helpButton
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              text: "?"
+              iconText: "?"
               bordered: true
               foreground: root.foreground
               accent: Commons.Color.accent
