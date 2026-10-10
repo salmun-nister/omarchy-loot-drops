@@ -24,7 +24,9 @@ function gh(args, data) {
 export function configure(c, apply, template, api=gh) {
   const full = `${c.owner}/${c.repo}`;
   const desired = policy(c.kind);
-  const settings = {allow_squash_merge:true,allow_merge_commit:false,allow_rebase_merge:false,delete_branch_on_merge:true,allow_auto_merge:true,has_wiki:false,...(template?{is_template:true}:{})};
+  // The repo description is never populated from manifest.json by anything else,
+  // and it is what fills the About box on the repository page.
+  const settings = {description:c.description,allow_squash_merge:true,allow_merge_commit:false,allow_rebase_merge:false,delete_branch_on_merge:true,allow_auto_merge:true,has_wiki:false,...(template?{is_template:true}:{})};
   if (!apply) return {repository:full,settings,ruleset:desired,topics:['omarchy',`omarchy-${c.kind}`],note:'Dry run. --apply makes these changes using your authenticated gh session. No bypass actors; solo maintainers use PRs with green CI and no mandatory second reviewer.'};
   const repo = api(['api',`repos/${full}`]);
   if (repo.full_name.toLowerCase() !== full.toLowerCase() || !repo.permissions?.admin) throw Error('Repository admin access required');
