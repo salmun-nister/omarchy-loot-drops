@@ -835,11 +835,20 @@ Panel {
 
           readonly property bool isHeader: modelData.kind === "header"
 
+          // The switch draws its hover ring a few pixels outside its track, so
+          // the header row must be at least as tall as the switch or the ring
+          // is clipped — and the first store's ring, sitting at the top of the
+          // list, had its top cut off by a flat 30px row. Deriving the height
+          // from the switch keeps it whole without hard-coding a size that a
+          // larger theme font would invalidate.
+          readonly property int headerRowHeight:
+            Math.max(headerSwitch.implicitHeight, Style.space(30))
+
           // The empty-store note needs air below it. Without it the note
           // ended flush with its row and sat right on the list's trailing
           // spacing, which put it against the rule at the bottom.
           implicitHeight: isHeader
-            ? Style.space(30)
+            ? headerRowHeight
               + (modelData && modelData.errorLabel
                 ? storeError.implicitHeight + Style.space(8) : 0)
             : gameTitle.implicitHeight + Style.spacing.sm
@@ -943,7 +952,7 @@ Panel {
           Text {
             id: storeError
             anchors.top: parent.top
-            anchors.topMargin: Style.space(30)
+            anchors.topMargin: row.headerRowHeight
             anchors.left: parent.left
             anchors.leftMargin: Style.space(22)
             width: parent.width - Style.space(22) - Style.spacing.sm

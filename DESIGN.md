@@ -375,9 +375,11 @@ Completed evidence:
   outline, hover fill and tooltip instead of the bell being a bare glyph in a
   hand-rolled hover box. Each of the four controls carries a hover tooltip (mute
   or unmute notifications; watch or stop watching a store; refresh now;
-  shortcuts). Both section rules gained clearance from the store list — the top
-  gap lives inside the pinned column so the hero stays flush above the list, and
-  the harness asserts both gaps so a later layout change cannot close them.
+  shortcuts). Both section rules gained 8px of clearance from the store list; the
+  top gap lives inside the pinned column so the hero stays flush above the list.
+  The header row is now sized to the store switch rather than a flat 30px: the
+  switch draws its hover ring outside its track, so it is taller than the old
+  row and the first store's ring had its top clipped against the list.
 
 Remaining:
 
