@@ -62,8 +62,10 @@ no Hyprland setting is modified.
 ## Before publishing
 
 Record the exact verified install command and the installed Omarchy version in
-`docs/ACCEPTANCE.json`. There is no published marketplace listing yet, and
-submitting one is a separate, explicitly authorized step — see `DESIGN.md`.
+`docs/ACCEPTANCE.json`. The plugin is listed in the Omarchy marketplace; its
+verified snapshot is the last full commit promoted there, and a later commit
+stays unverified until it is promoted through the plugin-verification form — see
+`DESIGN.md`.
 
 For richer surfaces, use the current Build Omarchy Plugins generator to select
 panel, overlay, menu or service contracts. Do not declare extra kinds until their
