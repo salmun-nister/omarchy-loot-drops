@@ -1,9 +1,9 @@
 {
   "status": "passed",
-  "input_commit": "dd996c5ae80a814acfbbae42ff68b928b56d224f",
+  "input_commit": "0eb6367685411dc0c88e5c12ebd8eb44e9c7bb16",
   "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the panel controls changed: the bell became a bordered button, the four controls gained hover tooltips, the two section rules gained clearance from the store list, the header row was sized to the switch so its hover ring is not clipped, Enter and Space were gated on the keyboard cursor, and the first move key now lands on the edge of the list. The theme screenshots were retaken for the same commit. Portable checks are separate and are listed for completeness.",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the panel controls changed: the bell became a bordered button, the four controls gained hover tooltips, the two section rules gained clearance from the store list, the header row was sized to the switch so its hover ring is not clipped, Enter and Space were gated on the keyboard cursor, and the first move key now lands on the edge of the list. The theme screenshots were retaken for the same commit. It was recorded once more after the marketplace-reported GOG slug-less parse fix, which is a parser and fetch-callback change covered by the model tests. Portable checks are separate and are listed for completeness.",
   "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section, then omarchy-shell shell rescanPlugins and omarchy restart shell. A plain directory is sufficient; no git remote was needed. The manifest, the bar-widget block and .template/project.json all carry the same description at this commit, so configure() no longer rewrites the repository description back to the old wording.",
   "commands": [
     "./tests/run",
@@ -105,6 +105,11 @@
       "check": "Muting a bell keeps the store listed but silent",
       "result": "pass",
       "detail": "Toggled on the live panel: the store stayed listed with its games and the bell showed crossed out, distinct from a disabled store. The toggles persisted to the shell config as gogNotify and epicNotify and were restored to true."
+    },
+    {
+      "check": "A GOG giveaway with no usable slug lists instead of failing",
+      "result": "pass",
+      "detail": "The marketplace review found that gogGame assigned url without declaring it, so a giveaway with a valid id and title but no accepted slug threw a ReferenceError; the exception escaped the fetch callback and, because curl exits zero for a 200, GOG's busy flag never cleared and it stopped refreshing. Two new model tests cover it: a slug-less payload parses to a game with an empty url that resolves to the GOG store search, and a slugged response followed by a slug-less one does not leak the earlier url. The model is now compiled under \"use strict\" in the test harness, so an undeclared assignment fails the suite. Fixture/unit only: GOG returned 404 live, so the slug-less 200 body was not observed on the desktop."
     },
     {
       "check": "Stale is derived from the refresh interval",
