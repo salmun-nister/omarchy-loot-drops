@@ -31,7 +31,7 @@ them:
 </tr>
 <tr>
 <td align="center"><img alt="Loot Drops panel in the Outpost theme" src="docs/themes/outpost.png" width="320"><br><sub>Outpost</sub></td>
-<td align="center"><img alt="Loot Drops panel in the Solitude theme" src="docs/themes/solitude.png" width="320"><br><sub>Solitude</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Catppuccin Latte theme" src="docs/themes/catppuccin-latte.png" width="320"><br><sub>Catppuccin Latte</sub></td>
 </tr>
 </table>
 
