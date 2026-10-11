@@ -1,15 +1,16 @@
 {
   "status": "passed",
-  "input_commit": "864da54580dddeb0babfe4a1f6d421334e8bdf8d",
+  "input_commit": "dd996c5ae80a814acfbbae42ff68b928b56d224f",
   "date": "2026-10-10",
   "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the theme screenshots and hero swap, and again after the crops were re-cut to include the window border. Both of those commits change only README.md and images, so the runtime is byte-identical to e809ccf and the switch, bell and notification-click results carry over unchanged. Portable checks are separate and are listed for completeness.",
-  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section, then omarchy-shell shell rescanPlugins. A plain directory is sufficient; no git remote was needed. The manifest, the bar-widget block and .template/project.json all carry the same description at this commit, so configure() no longer rewrites the repository description back to the old wording.",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after the panel controls changed: the bell became a bordered button, the four controls gained hover tooltips, the two section rules gained clearance from the store list, the header row was sized to the switch so its hover ring is not clipped, Enter and Space were gated on the keyboard cursor, and the first move key now lands on the edge of the list. The theme screenshots were retaken for the same commit. Portable checks are separate and are listed for completeness.",
+  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section, then omarchy-shell shell rescanPlugins and omarchy restart shell. A plain directory is sufficient; no git remote was needed. The manifest, the bar-widget block and .template/project.json all carry the same description at this commit, so configure() no longer rewrites the repository description back to the old wording.",
   "commands": [
     "./tests/run",
     "./tests/qml/lint",
     "./tests/harness/run",
     "omarchy plugin validate .",
+    "omarchy restart shell",
     "omarchy-shell shell rescanPlugins",
     "omarchy-shell shell listPlugins",
     "omarchy-shell shell debugBarGeometry",
@@ -23,27 +24,52 @@
     {
       "check": "Bar widget loads on the real bar",
       "result": "pass",
-      "detail": "omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget'], and shell debugBarGeometry places salmun-nister.loot-drops in the right section at x=2183, 27x25, visible:true and itemVisible:true. rescanPlugins reloaded it with no Loot Drops errors in the Quickshell log."
+      "detail": "omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget'], and shell debugBarGeometry places salmun-nister.loot-drops in the right section, 27x25, visible:true and itemVisible:true. A shell restart reloaded it with no Loot Drops errors in the Quickshell log."
     },
     {
       "check": "Panel opens and renders the three stores",
       "result": "pass",
-      "detail": "summon returned ok and mapped the omarchy-keyboard-panel layer. Captured from the live desktop: hero read 'Loot Drops' with the chest glyph over '4 FREE GAMES FROM STEAM, EPIC, AND GOG'; Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG showed its header row and nothing else; the footer held the refresh glyph, 'Updated 3m ago' and the ? button."
+      "detail": "summon returned ok and mapped the omarchy-keyboard-panel layer. Captured from the live desktop: hero read 'Loot Drops' with the chest glyph over '4 FREE GAMES FROM STEAM, EPIC, AND GOG'; Steam listed Pony Island and Fireside Feelings; Epic Games listed Out of Sight and TerraScape; GOG showed its header row and nothing else; the footer held the bordered refresh button, the freshness line and the bordered ? button."
+    },
+    {
+      "check": "Store controls are bordered buttons with tooltips",
+      "result": "pass",
+      "detail": "The bell renders as the same bordered Button as the footer's Refresh and ?, with the outline and hover fill; the store switch keeps its own hover ring. Hovering each of the four controls names what it does — mute or unmute notifications, watch or stop watching a store, refresh now, and shortcuts. Confirmed by the user on the live desktop, because the panel pins the pointer and the agent cannot move it onto a control to hover it."
+    },
+    {
+      "check": "Section rules are clear of the store list",
+      "result": "pass",
+      "detail": "Both the rule under the hero and the rule above the footer sit 8px clear of the store list, so the first store header and the last game row are no longer flush against a rule. Visible in the live capture."
+    },
+    {
+      "check": "The store switch hover ring is not clipped",
+      "result": "pass",
+      "detail": "The header row is sized to the switch rather than a flat 30px, so the switch's hover ring, which is drawn outside its track, is fully inside the row. Verified during development by forcing the ring on for every store: the first store's ring, previously cut off at the top of the list, draws complete; the forced state was reverted before this commit."
     },
     {
       "check": "Empty store shows only its name",
       "result": "pass",
-      "detail": "GOG with no giveaway rendered a bare header row, keeping its bell and switch, with no empty-store line. Same behaviour as the previous run."
+      "detail": "GOG with no giveaway rendered a bare header row, keeping its bell and switch, with no empty-store line."
+    },
+    {
+      "check": "Enter and Space do not open a game before the keyboard cursor is engaged",
+      "result": "pass",
+      "detail": "With the panel open and no row shown as selected, Enter and Space do nothing. They only open the highlighted game once the keyboard cursor is engaged with j/k or an arrow. Before, they fired against a selection that was pinned on every fetch but never drawn, launching an arbitrary game whatever the pointer was over. Confirmed by the user on the live desktop."
+    },
+    {
+      "check": "The first move key lands on the edge of the list",
+      "result": "pass",
+      "detail": "The first j highlights the first game (Pony Island) and the first k the last, rather than skipping to the second game as it did when the first move only engaged the cursor and left the highlight where the last refresh pinned it. Confirmed by the user on the live desktop."
     },
     {
       "check": "Hero is pinned and a fitting list does not scroll",
       "result": "pass",
-      "detail": "The offscreen harness against the three live stores reported rowCount 7, gameRows 4, headers steam/epic/gog, pinnedHeight 41, pinnedBottom 41 and listY 41, with contentHeight 172 equal to height 172, so the fitting list has no scroll range."
+      "detail": "The offscreen harness against the three live stores reported rowCount 7, gameRows 4, headers steam/epic/gog, pinnedHeight 55, pinnedBottom 55 and listY 55, with contentHeight 194 equal to height 194, so the fitting list has no scroll range."
     },
     {
       "check": "Footer controls share one colour",
       "result": "pass",
-      "detail": "Observed in the live capture: the freshness text, the refresh glyph and the ? button read as one ink. No layout or colour code changed since the change that unified them, so this is a visual re-check rather than a fresh measurement."
+      "detail": "Observed in the live capture: the freshness text and both bordered footer buttons read as one ink."
     },
     {
       "check": "Desktop notification opens the panel",
@@ -53,12 +79,12 @@
     {
       "check": "All three endpoints resolve live",
       "result": "pass",
-      "detail": "Steam search/results returned HTTP 200 with 56,736 bytes; Epic freeGamesPromotions returned HTTP 200 with 49,858 bytes; GOG giveaway/api/get returned HTTP 404, which the panel renders as an empty store rather than an error. The harness parsed the same live responses into 2 Steam rows and 2 zero-discount Epic offers."
+      "detail": "Steam search/results returned HTTP 200; Epic freeGamesPromotions returned HTTP 200; GOG giveaway/api/get returned HTTP 404, which the panel renders as an empty store rather than an error. The harness parsed the same live responses into 2 Steam rows and 2 zero-discount Epic offers."
     },
     {
       "check": "Private state file is created and readable",
       "result": "pass",
-      "detail": "~/.local/state/salmun-nister.loot-drops mode 0700 with seen.json mode 0600, holding per-store id baselines for Steam and Epic. The file was byte-identical before and after the notification test."
+      "detail": "~/.local/state/salmun-nister.loot-drops mode 0700 with seen.json mode 0600, holding per-store id baselines for Steam and Epic."
     },
     {
       "check": "Desktop notification fires for a newly free game",
@@ -78,7 +104,7 @@
     {
       "check": "Muting a bell keeps the store listed but silent",
       "result": "pass",
-      "detail": "Toggled on the live panel: the store stayed listed with its games and the bell showed crossed out, distinct from a disabled store. Both toggles persisted to the shell config as gogNotify and epicNotify and were restored to true."
+      "detail": "Toggled on the live panel: the store stayed listed with its games and the bell showed crossed out, distinct from a disabled store. The toggles persisted to the shell config as gogNotify and epicNotify and were restored to true."
     },
     {
       "check": "Stale is derived from the refresh interval",
@@ -95,8 +121,9 @@
     "GOG's success path is fixture-only. GOG returned 404 during this run as it did last time, so the 200 response shape has still never been observed live.",
     "No vertical bar was observed. The tested bar was horizontal (position top).",
     "The derived stale threshold was recomputed and unit-tested but not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out.",
+    "The tooltip text, the Enter/Space gate and the first-move landing were confirmed by the user on the live desktop rather than by the agent: the open panel pins the pointer, so hyprctl cannot move it onto a control to hover, and the key state depends on the user's own keystrokes. Each is visible in code and covered by the reasoning above; the live confirmation is the user's.",
     "Game rows were not clicked in this run. Rows still hand the URL to xdg-open so the browser picks its own window, but opening a store page and confirming which window received the tab was not re-exercised here; that behaviour was confirmed by the user on a previous run and no code covering it has changed since.",
-    "preview.png is the Sunlit Sands panel, cropped from a live capture out to the window border; the other three themes in the README are cropped the same way from the same live panel. Solitude has no top border in its capture because its bar sits flush on the panel. No rendering or layout code changed alongside them, and the live panel captured in this run matches the set: same hero, same four games, same empty GOG row and same footer.",
+    "preview.png is the Sunlit Sands panel, cropped from a live capture out to the window border; the README's Theming grid shows Aonagi, Sumi Day, Outpost and Catppuccin Latte cropped the same way from the same live panel. Solitude was captured but left out of the grid. The captures predate nothing in this commit - they show the bordered bell buttons, the rule spacing and the taller header rows.",
     "The notification click opens the panel rather than the store page, so the notification path does not cover URL opening; only a panel row does.",
     "The documented install command 'omarchy plugin add <git-url>' was still not exercised. Acceptance used the local symlink that the plugin was already installed through.",
     "The bar widget is loaded once per monitor, and only one monitor was exercised.",
