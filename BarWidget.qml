@@ -708,7 +708,12 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
 
-      onActivateRequested: root.openSelected()
+      // Enter and Space activate whatever the keyboard cursor is on. They must
+      // stay silent until the cursor exists: selectedIndex is pinned to a game
+      // on every fetch, but no row is shown as selected until the user presses
+      // j/k or an arrow, so activating before then opened an arbitrary game
+      // that had never been presented as the selection.
+      onActivateRequested: if (root.cursorActive) root.openSelected()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
@@ -1052,7 +1057,7 @@ Panel {
             visible: root.showShortcuts
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll"
+            text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll · enter open"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
