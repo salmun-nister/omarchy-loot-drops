@@ -106,9 +106,11 @@ Each enabled store gets its own section in the panel, headed by the store's mark
 — the real Steam and GOG logos, and a storefront for Epic, which Nerd Fonts has
 no mark for. The header carries two controls: a **switch** that stops or resumes
 watching that store entirely, and a **bell** that mutes or unmutes its
-notifications. Games sit slightly indented under their store name. Both sit in a hit box the height
-of the row and light up on hover, so they are easy to hit and read as controls.
-Both take effect immediately, and both are saved to your `shell.json`.
+notifications. Games sit slightly indented under their store name. The bell is a
+bordered button, the same kind as the footer's Refresh and `?`, so all three
+share their outline and hover highlight. Hovering any panel control — the bell,
+the switch, Refresh or `?` — names what it does. Both take effect immediately,
+and both are saved to your `shell.json`.
 
 `e` and `n` act on whichever store your **pointer is over**, falling back to
 whichever store the keyboard cursor last landed on. Hovering a store's name or any

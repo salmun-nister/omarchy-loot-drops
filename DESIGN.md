@@ -370,6 +370,15 @@ Completed evidence:
   between Nerd Fonts releases, so the version is pinned and tested. Nerd Fonts
   ships no Epic mark, so Epic borrows its initial.
 
+- Panel controls from on-device review. The bell is now a bordered `Button`, the
+  same component the footer's Refresh and `?` use, so the three share one
+  outline, hover fill and tooltip instead of the bell being a bare glyph in a
+  hand-rolled hover box. Each of the four controls carries a hover tooltip (mute
+  or unmute notifications; watch or stop watching a store; refresh now;
+  shortcuts). Both section rules gained clearance from the store list — the top
+  gap lives inside the pinned column so the hero stays flush above the list, and
+  the harness asserts both gaps so a later layout change cannot close them.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

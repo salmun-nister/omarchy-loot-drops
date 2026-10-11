@@ -730,9 +730,11 @@ Panel {
         // Stated rather than derived. The hero is an Item with an explicit
         // height and no implicitHeight, and this Column reports zero for itself
         // while that is true, which would leave the list starting on top of it.
+        // The trailing term is clearance under the rule so the first store
+        // header is not flush against it; the list still starts at this
+        // Column's bottom, which is what keeps the hero pinned above the rows.
         height: hero.height + pinnedRule.height + Style.spacing.panelGap
-        // The gap the ListView spacing used to put under its header.
-        bottomPadding: Style.spacing.xs
+                + Style.space(8)
 
         // The plugin's name, and underneath it how much is free and which
         // stores that came from.
@@ -889,50 +891,30 @@ Panel {
               elide: Text.ElideRight
             }
 
-            // Clickable bell: mute or unmute this store's notifications.
+            // Bell button: mute or unmute this store's notifications.
             // Hidden while the store is off, since there is nothing to mute.
             //
-            // The glyph alone is a few pixels wide, which is not a target
-            // anyone can hit reliably, so it sits in a box the height of the
-            // row and the width of the switch beside it. The hover fill is the
-            // same treatment a game row gets, so the two read as one kind of
-            // control.
-            Item {
+            // A bordered Button, the same kind the footer's Refresh and ? are,
+            // so the three read as one sort of control and share the outline,
+            // hover fill and tooltip rather than the bell being a bare glyph
+            // with its own hand-rolled hover box.
+            Button {
               id: headerBell
               visible: row.modelData.enabled !== false
               anchors.right: headerSwitch.left
               anchors.rightMargin: Style.spacing.xs
               anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(30)
-              height: Style.space(26)
-
-              Rectangle {
-                id: bellHit
-                anchors.fill: parent
-                radius: Style.cornerRadius
-                color: bellMouse.containsMouse
-                  ? Style.hoverFillFor(root.foreground, Commons.Color.accent)
-                  : "transparent"
-              }
-
-              Text {
-                anchors.centerIn: parent
-                text: root.notifyOn[row.modelData.store]
-                  ? "\u{F0F3}" : "\u{F1F6}"
-                color: root.notifyOn[row.modelData.store]
-                  ? root.dim : Qt.darker(root.dim, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                opacity: root.notifyOn[row.modelData.store] ? 1 : 0.6
-              }
-
-              MouseArea {
-                id: bellMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggleBell(row.modelData.store)
-              }
+              text: root.notifyOn[row.modelData.store]
+                ? "\u{F0F3}" : "\u{F1F6}"
+              bordered: true
+              foreground: root.notifyOn[row.modelData.store]
+                ? root.dim : Qt.darker(root.dim, 1.4)
+              accent: Commons.Color.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              tooltipText: root.notifyOn[row.modelData.store]
+                ? "Mute notifications" : "Unmute notifications"
+              onClicked: root.toggleBell(row.modelData.store)
             }
 
             // Switch: stop or resume watching this store entirely.
@@ -945,6 +927,14 @@ Panel {
               foreground: root.foreground
               accent: Commons.Color.accent
               onToggled: root.toggleStore(row.modelData.store)
+
+              PanelToolTip {
+                visible: headerSwitch.containsMouse
+                text: (root.storesOn[row.modelData.store]
+                  ? "Stop watching " : "Watch ")
+                  + (Model.STORE_LABELS[row.modelData.store] || "this store")
+                fontFamily: root.fontFamily
+              }
             }
           }
 
@@ -1022,6 +1012,9 @@ Panel {
           // Tighter than the panel's usual gap: the footer is a block of small
           // controls, and panelGap left a visible hole between them.
           spacing: Style.space(6)
+          // Clearance above the rule, matching the gap under the hero's rule, so
+          // the last game row is not flush against the footer.
+          topPadding: Style.space(8)
 
           Text {
             width: parent.width
@@ -1035,10 +1028,11 @@ Panel {
           }
 
           // A rule between the list and the controls, so the buttons are not
-          // read as part of a store's rows. The gap above it is the list's own
-          // spacing, which is the same gap that separates Steam from the rule
-          // at the top, so both sides of the rule match.
+          // read as part of a store's rows. The gap above it is the footer's
+          // own topPadding, and the gap below the hero's rule is the same size,
+          // so both sides of the rule match.
           PanelSeparator {
+            id: footerRule
             width: parent.width
             foreground: root.foreground
           }
@@ -1093,6 +1087,7 @@ Panel {
               foreground: root.footerInk
               accent: Commons.Color.accent
               fontFamily: root.fontFamily
+              tooltipText: "Refresh now"
               onClicked: root.refresh()
             }
 
@@ -1105,6 +1100,7 @@ Panel {
               foreground: root.footerInk
               accent: Commons.Color.accent
               fontFamily: root.fontFamily
+              tooltipText: "Shortcuts"
               onClicked: root.showShortcuts = !root.showShortcuts
             }
           }
