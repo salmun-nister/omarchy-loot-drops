@@ -433,9 +433,12 @@ function gogGame(payload, id) {
   if (!title) return null
 
   // scrubId already refuses whitespace, punctuation and path traversal, so the
-  // slug that reaches the URL builder cannot carry them either.
+  // slug that reaches the URL builder cannot carry them either. A game with no
+  // usable slug still lists, with an empty url so the panel falls back to the
+  // store search; this assignment used to be undeclared, so that path threw a
+  // ReferenceError instead of returning the row.
   var slug = scrubId(payload.slug)
-  if (slug) url = safeUrl("gog", "https://" + HOSTS.gog + "/game/" + slug)
+  var url = slug ? safeUrl("gog", "https://" + HOSTS.gog + "/game/" + slug) : ""
   return {
     store: "gog",
     id: id,
