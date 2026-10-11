@@ -356,7 +356,17 @@ Panel {
       return
     }
 
-    var parsed = Model.parseStore(store, body)
+    // A parser that throws must not leave the store busy forever. refresh()
+    // skips a store whose bucket is busy, so an exception escaping this callback
+    // would strand that store with no error shown and no way to retry. Turn any
+    // throw into the same store error a bad response gets.
+    var parsed
+    try {
+      parsed = Model.parseStore(store, body)
+    } catch (e) {
+      fail(store, "Store returned an unexpected response")
+      return
+    }
     if (!parsed.ok) {
       fail(store, "Store returned an unexpected response")
       return

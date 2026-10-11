@@ -393,6 +393,16 @@ Completed evidence:
   highlight wherever the last refresh had pinned it, so the first j skipped past
   the first game.
 
+- Marketplace review found a GOG parse path that threw: `gogGame` assigned `url`
+  without declaring it, so a giveaway with a valid id and title but no accepted
+  slug raised a ReferenceError instead of returning a row, and since the
+  exception escaped the fetch callback with a zero curl exit, GOG's busy flag
+  never cleared and it stopped refreshing. `url` is now declared and defaults to
+  "", which reaches the existing store-search fallback, and the fetch callback
+  wraps parsing so any throw becomes a store error rather than a stuck store. The
+  model tests now compile under "use strict" so an undeclared assignment fails
+  the suite.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

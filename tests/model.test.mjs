@@ -10,7 +10,9 @@ const here = new URL('./', import.meta.url);
 const root = new URL('../', here);
 const source = readFileSync(new URL('Model.js', root), 'utf8')
   .replace(/^\.pragma\s+library\s*$/m, '');
-const Model = new Function(`${source}\nreturn {
+// "use strict" so an undeclared assignment (which once threw a ReferenceError
+// from the GOG parser) fails here instead of at runtime in the shell.
+const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE,
   staleAfterMs, STALE_MULTIPLIER,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
@@ -204,6 +206,29 @@ test('gog rejects a body that is not an object', () => {
   // simply has nothing to show, which is not the same as a malformed one.
   assert.deepEqual(Model.parseGog('{"id":"123","title":""}'),
     { ok: true, games: [] });
+});
+
+// A giveaway with an id and title but no usable slug used to throw a
+// ReferenceError from an undeclared `url`, which escaped the fetch callback and
+// left GOG's busy flag set so it never refreshed again. It must list instead,
+// with an empty url so the caller falls back to the store search.
+test('gog lists a giveaway that has no usable slug', () => {
+  const result = Model.parseGog('{"id":"123","title":"No Slug Game","endDate":"2026-10-20T15:00:00Z"}');
+  assert.equal(result.ok, true);
+  assert.equal(result.games.length, 1);
+  assert.equal(result.games[0].title, 'No Slug Game');
+  assert.equal(result.games[0].url, '');
+  assert.equal(Model.safeUrl('gog', result.games[0].url) || Model.searchUrl('gog'),
+    'https://www.gog.com/giveaways');
+});
+
+// The slug path must leave no implicit global behind: a slugged response
+// followed by a slugless one must yield "" rather than the previous url.
+test('gog does not leak the slug url between responses', () => {
+  assert.equal(Model.parseGog(fixture('gog-giveaway.json')).games[0].url,
+    'https://www.gog.com/game/giveaway_game');
+  const next = Model.parseGog('{"id":"999","title":"Another Game"}');
+  assert.equal(next.games[0].url, '');
 });
 
 test('parseStore routes each store and refuses an unknown one', () => {
