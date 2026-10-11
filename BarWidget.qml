@@ -702,7 +702,14 @@ Panel {
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) {
+          // The first move engages the cursor and lands on the edge of the list
+          // in that direction, so j selects the first game rather than leaving
+          // the highlight wherever the last refresh happened to pin it. Before,
+          // this only flipped the flag and the first j skipped to the second
+          // game.
           root.cursorActive = true
+          if (dy > 0) root.setCursor(0)
+          else if (dy < 0) root.setCursor(root.gameRowIndexes().length - 1)
           return
         }
         if (dy !== 0) root.moveCursor(dy)
