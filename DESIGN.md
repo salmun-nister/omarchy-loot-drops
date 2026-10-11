@@ -381,6 +381,13 @@ Completed evidence:
   switch draws its hover ring outside its track, so it is taller than the old
   row and the first store's ring had its top clipped against the list.
 
+- Enter and Space opened a game that had never been selected. `selectedIndex` is
+  pinned to a game on every fetch so the cursor has somewhere to land, but no row
+  is drawn as selected until the keyboard cursor is engaged with j/k or an
+  arrow, so the activate keys fired against a hidden selection. They are now
+  gated on the cursor being active, and the panel's shortcut hint lists enter
+  with the rest.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next
