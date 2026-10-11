@@ -403,6 +403,14 @@ Completed evidence:
   model tests now compile under "use strict" so an undeclared assignment fails
   the suite.
 
+- Published in the Omarchy plugin marketplace as `salmun-nister.loot-drops`. The
+  maintainer accepted the `remote-build` capability at the committed snapshot —
+  the flagged path is the documented alternative git-clone install, not a build
+  step — and the GOG parse fix above is part of that snapshot. The `v0.1.0`
+  source release is cut from the same tag. Later commits are outside the verified
+  snapshot until a full-SHA update is approved, so documentation-only changes are
+  batched rather than pushed on their own.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next
@@ -410,8 +418,6 @@ Remaining:
 - Vertical-bar layout unobserved.
 - Notification delivery unobserved on a real desktop (the harness mutes bells to
   avoid firing one).
-- Marketplace listing and screenshot not started; **submission is not
-  authorized**.
 - `omakit inspect` still reports the deadline and buffering classes, because a
-  static scanner cannot see a deadline expressed in QML. Accepted for an
-  eventual submission; revisit if a reviewer flags it.
+  static scanner cannot see a deadline expressed in QML. Accepted for the
+  listing; revisit if a reviewer flags it.

@@ -1,3 +1,6 @@
+# Cut a draft source release for an existing accepted tag. Dispatch it from the
+# Actions tab, or `gh workflow run release.yml -f tag=v0.1.0`. The tag must
+# already exist and pass the acceptance gate in tests/run and scripts/archive.mjs.
 name: Release source
 on:
   workflow_dispatch:
@@ -33,4 +36,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
-        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --draft --title "$RELEASE_TAG" --notes "Source release. Review acceptance evidence and complete the release notes before publishing."
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --draft --title "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes "Source release. Review acceptance evidence and complete the release notes before publishing."
