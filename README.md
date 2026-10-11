@@ -18,23 +18,6 @@ taken from the live desktop with the panel open. The stores and games in it were
 real at capture time, so it will not match what the panel shows later. Desktop
 acceptance evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
 
-## Theming
-
-The panel is built from the shell's own theme tokens, so it matches whatever
-theme you are running — there is no per-plugin styling to keep in sync. A few of
-them:
-
-<table align="center">
-<tr>
-<td align="center"><img alt="Loot Drops panel in the Aonagi theme" src="docs/themes/aonagi.png" width="320"><br><sub>Aonagi</sub></td>
-<td align="center"><img alt="Loot Drops panel in the Sumi Day theme" src="docs/themes/sumi-day.png" width="320"><br><sub>Sumi Day</sub></td>
-</tr>
-<tr>
-<td align="center"><img alt="Loot Drops panel in the Outpost theme" src="docs/themes/outpost.png" width="320"><br><sub>Outpost</sub></td>
-<td align="center"><img alt="Loot Drops panel in the Catppuccin Latte theme" src="docs/themes/catppuccin-latte.png" width="320"><br><sub>Catppuccin Latte</sub></td>
-</tr>
-</table>
-
 ## Install
 
 ```bash
@@ -125,6 +108,23 @@ Right-click does nothing, deliberately.
 
 The panel lists every free game, however many there are; it scrolls with the
 wheel, and the keyboard cursor scrolls itself into view.
+
+## Theming
+
+The panel is built from the shell's own theme tokens, so it matches whatever
+theme you are running — there is no per-plugin styling to keep in sync. A few of
+them:
+
+<table align="center">
+<tr>
+<td align="center"><img alt="Loot Drops panel in the Aonagi theme" src="docs/themes/aonagi.png" width="320"><br><sub>Aonagi</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Sumi Day theme" src="docs/themes/sumi-day.png" width="320"><br><sub>Sumi Day</sub></td>
+</tr>
+<tr>
+<td align="center"><img alt="Loot Drops panel in the Outpost theme" src="docs/themes/outpost.png" width="320"><br><sub>Outpost</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Catppuccin Latte theme" src="docs/themes/catppuccin-latte.png" width="320"><br><sub>Catppuccin Latte</sub></td>
+</tr>
+</table>
 
 ## Settings
 
