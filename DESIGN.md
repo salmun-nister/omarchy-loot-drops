@@ -388,6 +388,11 @@ Completed evidence:
   gated on the cursor being active, and the panel's shortcut hint lists enter
   with the rest.
 
+- The first move key now lands on the edge of the list: j selects the first game,
+  k the last. The first move only used to engage the cursor and leave the
+  highlight wherever the last refresh had pinned it, so the first j skipped past
+  the first game.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next
