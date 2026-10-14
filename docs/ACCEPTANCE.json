@@ -1,15 +1,20 @@
 {
   "status": "passed",
-  "input_commit": "1f99bfc8ba6a79d471d9289ec31d86bc9071c174",
+  "input_commit": "8f2dbaa2b4a7936f408a22e7e44ace15ce31ba0f",
   "date": "2026-10-14",
   "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, and the notification and link paths, re-run after two runtime changes: the mouse and keyboard now share one highlight instead of drawing at once, and new games are marked seen per row with a coin marker and an s toggle instead of the bar dot clearing when the panel opened. The record is against this tip commit; its runtime is byte-identical to fd2a51d, the feature commit it documents, because this commit is documentation only. Paths the two changes did not touch retain their earlier results. Portable checks are separate and are listed for completeness.",
-  "install": "Local checkout symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, already enabled in the bar's right section. The changed QML needs omarchy restart shell: omarchy-shell shell rescanPlugins re-reads manifests but does not reload changed QML, which was confirmed the hard way when a first marker test ran against the stale build. To exercise the markers with no newly free game live, the seen.json acknowledged lists were cleared and the shell restarted, so the two live Epic games loaded as unacknowledged. A plain directory is sufficient; no git remote was needed.",
+  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the notification and link paths, and the install/update/removal lifecycle, re-run for the 0.2.0 candidate. Two runtime changes since 0.1.0: the mouse and keyboard now share one highlight instead of drawing at once, and new games are marked seen per row with a coin marker and an s toggle instead of the bar dot clearing when the panel opened. The preview and theme screenshots were retaken to show the markers. The record is against the merged 0.2.0 content commit; the acceptance commit that follows is documentation only, so the runtime it describes is unchanged. Portable checks are separate and are listed for completeness.",
+  "install": "Git-managed install from a fresh clone was exercised with omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable, then omarchy plugin enable salmun-nister.loot-drops right. The public https URL was not used because the candidate was not pushed at record time; the clone and validation path is the same. For development the checkout is also symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops. Changed QML needs omarchy restart shell: omarchy-shell shell rescanPlugins re-reads manifests but does not reload changed QML, which was confirmed when a first marker test ran against the stale build. Update from 0.1.0 was exercised by checking out the v0.1.0 tag in the checkout, restarting the shell, then returning to the candidate. The markers were exercised by clearing the seen.json acknowledged lists and restarting the shell to re-read them.",
   "commands": [
     "./tests/run",
     "./tests/qml/lint",
     "./tests/harness/run",
     "omarchy plugin validate .",
+    "omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes",
+    "omarchy plugin enable salmun-nister.loot-drops right",
+    "omarchy plugin update salmun-nister.loot-drops --yes",
+    "omarchy plugin remove salmun-nister.loot-drops --yes",
+    "git checkout v0.1.0; omarchy restart shell; git checkout main; omarchy restart shell",
     "omarchy restart shell",
     "omarchy-shell shell rescanPlugins",
     "omarchy-shell shell listPlugins",
@@ -99,7 +104,7 @@
     {
       "check": "Desktop notification opens the panel",
       "result": "pass",
-      "detail": "A toast fired through the real notificationArgs argv appeared with the Loot Drops app name and chest glyph, and clicking it opened the panel on the live desktop. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the per-widget open handler answers. A test asserts the argv carries no URL at all. The notification path is unchanged by this commit and retains this earlier result."
+      "detail": "A toast fired through the real notificationArgs argv appeared with the Loot Drops app name and chest glyph, and clicking it opened the panel on the live desktop. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the per-widget open handler answers. A test asserts the argv carries no URL at all. The notification path is unchanged by this candidate and retains this earlier result."
     },
     {
       "check": "All three endpoints resolve live",
@@ -112,14 +117,39 @@
       "detail": "~/.local/state/salmun-nister.loot-drops mode 0700 with seen.json mode 0600, holding per-store id baselines and per-store acknowledged lists. The acknowledged lists were cleared and the file re-read for the marker tests, and the widget persisted them back through lib/seen-state."
     },
     {
+      "check": "Install from a fresh git checkout",
+      "result": "pass",
+      "detail": "omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable cloned the repository into ~/.config/omarchy/plugins/salmun-nister.loot-drops, passed omarchy-plugin-validate, and loaded. The clone carried VERSION 0.2.0 at the candidate tree (its content is the 8f2dbaa squash commit); omarchy plugin enable salmun-nister.loot-drops right placed it in the right section (debugBarGeometry 27x26, visible:true, itemVisible:true). The seen.json SHA was unchanged by the install. The public https URL was not used because the candidate was not pushed; the file:// clone exercises the same clone-and-validate path with the same content."
+    },
+    {
+      "check": "Update from 0.1.0 preserves settings and state",
+      "result": "pass",
+      "detail": "The checkout was switched to the v0.1.0 tag (d3af01d) and the shell restarted: the plugin loaded enabled and read the existing state, whose seen.json SHA stayed 072fcc9f810d4c23cb9b6a865e26be115fd8e090d8b74b19c9955d7ef0f28a6b, so the 0.2.0 per-store {ids, acknowledged} format is read correctly by 0.1.0. Returning to the candidate (VERSION 0.2.0) and restarting loaded the plugin enabled with the same state SHA; shell.json settings were untouched throughout."
+    },
+    {
+      "check": "Update via omarchy plugin update",
+      "result": "pass",
+      "detail": "omarchy plugin update salmun-nister.loot-drops --yes fetched the git-managed clone and reported 'is up to date' (origin matched), exercising the update path's fetch/compare/validate gate without a spurious change."
+    },
+    {
+      "check": "Removal leaves no residue and preserves state",
+      "result": "pass",
+      "detail": "omarchy plugin remove salmun-nister.loot-drops --yes removed the git-managed clone (the script rm -rf's a .git checkout; the upstream repository was untouched and still at its candidate commit). The symlink install was also removed and the script only unlinked the link (rm -f of the path), never the target, leaving the repository intact. seen.json was preserved across both removals at the same SHA. The development symlink was restored afterwards and the plugin re-enabled right."
+    },
+    {
+      "check": "Preview and theme screenshots refreshed",
+      "result": "pass",
+      "detail": "Five captures were taken on the live desktop with the panel showing the coin markers and cropped to the panel window border: preview.png (Sunlit Sands, 430x287) and docs/themes/{aonagi 400x273, sumi-day 430x287, outpost 430x287, catppuccin-latte 430x287}.png. The height is shorter than the previous set because the panel lists two games rather than four."
+    },
+    {
       "check": "Desktop notification fires for a newly free game",
       "result": "pass",
-      "detail": "Verified on an earlier run: the Steam baseline was reduced to a single id and the plugin rescanned so the widget re-read the file, then refresh fetched live and a real desktop notification read 'Fireside Feelings is free on Steam'. The notification baseline and diffStore are unchanged by this commit, so the result is retained."
+      "detail": "Verified on an earlier run: the Steam baseline was reduced to a single id and the plugin rescanned so the widget re-read the file, then refresh fetched live and a real desktop notification read 'Fireside Feelings is free on Steam'. The notification baseline and diffStore are unchanged by this candidate, so the result is retained."
     },
     {
       "check": "Notification does not repeat for an unchanged list",
       "result": "pass",
-      "detail": "Verified on an earlier run: a second refresh against the same list produced no further notification and re-recorded both Steam ids in the baseline. The diff is unchanged by this commit."
+      "detail": "Verified on an earlier run: a second refresh against the same list produced no further notification and re-recorded both Steam ids in the baseline. The diff is unchanged by this candidate."
     },
     {
       "check": "Switching a store off stops it and hides it",
@@ -153,8 +183,10 @@
     "The derived stale threshold was recomputed and unit-tested but not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out.",
     "The pointer-driven interactions — the shared highlight, the coin marker view, its tooltip, clicking the coin, launching a game, and the s toggle — were confirmed by the user on the live desktop rather than by the agent: the open panel pins the pointer, so the agent cannot move it onto a row, and the key state depends on the user's own keystrokes. They are visible in code and covered by the model tests; the live confirmation is the user's.",
     "Live store contents vary. At this run Steam and GOG listed nothing free, so the per-game markers were exercised on Epic's two games rather than across all three stores.",
-    "preview.png and the README's theme grid predate the seen markers, so those captures do not show the coins; they still show the bordered controls, rule spacing and header rows they were taken for.",
-    "The documented install command 'omarchy plugin add <git-url>' was still not exercised. Acceptance used the local symlink that the plugin was already installed through.",
+    "Install-from-git was exercised with a local file:// clone of this checkout because the candidate was not pushed at record time. The public https clone path is mechanically identical and is exercised after the candidate is pushed.",
+    "Removal was exercised on a git-managed clone and on the symlink install. The README's separately documented case — a plain directory copied in rather than cloned, which Omarchy backs up instead of deleting — was not exercised.",
+    "The refreshed preview.png and theme grid show the panel with two free games and their coin markers, captured 2026-10-14; their height differs from the prior set because the list is shorter.",
+    "The notification click opens the panel rather than the store page, so the notification path does not cover URL opening; only a panel row does.",
     "The bar widget is loaded once per monitor, and only one monitor was exercised.",
     "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin does not depend on it, but other Omarchy panels and any notification that opens a URL still do. Already reported upstream."
   ]
