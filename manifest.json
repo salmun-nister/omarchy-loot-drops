@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, and GOG for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",

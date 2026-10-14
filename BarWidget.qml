@@ -90,6 +90,11 @@ Panel {
   property int retryDelayMs: 30000
   property bool cursorActive: false
   property int selectedIndex: 0
+  // The game row the pointer is over, as a flat list index, or -1 when the
+  // pointer is off the rows. The highlight follows the most recent input: a
+  // hover claims it and dismisses the keyboard cursor, and a keyboard move
+  // claims it back. Only one row is ever highlighted.
+  property int pointerIndex: -1
   // Whichever store the e and n keys act on. It follows the pointer when the
   // pointer is over a row, and the keyboard cursor otherwise, so pressing e
   // acts on the store you are looking at rather than on whichever one happens
@@ -149,9 +154,11 @@ Panel {
   // whenever a store is merely switched on.
   readonly property bool hasGames: gameCount() > 0
 
-  // Games on offer that the panel has not been opened to show yet. Independent
-  // of notifications: a muted store still has something you have not looked at.
-  readonly property bool hasUnseen: Model.hasUnseen(seenState, buckets)
+  // Games on offer that the user has not acknowledged yet. Independent of
+  // notifications: a muted store still has something you have not looked at.
+  // Only enabled stores count, because a switched-off store's rows are hidden
+  // and its markers could never be cleared from the panel.
+  readonly property bool hasUnseen: Model.hasUnseen(seenState, enabledBuckets())
 
   function newBucket() {
     return { games: [], error: "", busy: false, neverChecked: true, lastSuccessAt: 0 }
@@ -170,6 +177,40 @@ Panel {
 
   function bucket(store) {
     return buckets[store] || newBucket()
+  }
+
+  // The per-store results the panel actually shows, i.e. only the stores that
+  // are switched on. The bar dot and the row markers both key off this so a
+  // hidden store can neither light the dot nor hold it on.
+  function enabledBuckets() {
+    var out = {}
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var store = Model.STORES[i]
+      if (storesOn[store] === true) out[store] = bucket(store)
+    }
+    return out
+  }
+
+  // Which ids the user has acknowledged, per store, as a lookup. The row
+  // marker reads this rather than a per-row flag carried in the list model: a
+  // changed model would rebuild every delegate and drop the scroll position
+  // each time a game is marked, whereas this re-evaluates only the markers.
+  readonly property var acknowledgedIds: acknowledgedIndex()
+
+  function acknowledgedIndex() {
+    var index = {}
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var ids = Model.acknowledgedOf(seenState, Model.STORES[i])
+      var set = {}
+      for (var a = 0; a < ids.length; a++) set[ids[a]] = true
+      index[Model.STORES[i]] = set
+    }
+    return index
+  }
+
+  function gameUnseen(store, id) {
+    var set = acknowledgedIds[store]
+    return !(set && set[id])
   }
 
   // Flat, store-ordered list for the single cursor. Reordered on every change
@@ -260,10 +301,38 @@ Panel {
     return out
   }
 
-  function acknowledgeCurrent() {
+  // Acknowledge one game, clearing its marker and letting the bar dot go out
+  // once every new game has been marked.
+  function markSeen(store, id) {
     if (!seenLoaded) return
-    seenState = Model.acknowledge(seenState, buckets)
+    seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
+  }
+
+  // The game the highlight is on, keyboard or pointer, so h marks whichever row
+  // is showing as selected.
+  function highlightedGame() {
+    if (cursorActive) return selectedGame()
+    if (pointerIndex >= 0 && pointerIndex < visibleGames.length) {
+      var row = visibleGames[pointerIndex]
+      if (row && row.kind === "game") return row
+    }
+    return null
+  }
+
+  // Flip a game's seen state: an unseen game is acknowledged, a seen one is
+  // forgotten and its marker comes back.
+  function toggleSeen(store, id) {
+    if (!seenLoaded) return
+    seenState = gameUnseen(store, id)
+      ? Model.acknowledgeGame(seenState, store, id)
+      : Model.forgetGame(seenState, store, id)
+    persistSeen()
+  }
+
+  function toggleHighlighted() {
+    var row = highlightedGame()
+    if (row) toggleSeen(row.store, row.game.id)
   }
 
   function ingestSeen(raw) {
@@ -534,6 +603,10 @@ Panel {
   function openGame(row) {
     if (!row || row.kind !== "game") return
     targetStore = row.store
+    // Launching is one of the ways a game is acknowledged. The panel is about
+    // to close, so the marker would not be seen to clear, but the bar dot and
+    // the next open reflect it.
+    markSeen(row.store, row.game.id)
     // safeUrl refuses anything off the store's own host, and the search page is
     // the fallback, so a row always opens somewhere legitimate.
     var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
@@ -712,14 +785,22 @@ Panel {
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) {
-          // The first move engages the cursor and lands on the edge of the list
+          // The first move engages the cursor. When the pointer is highlighting
+          // a game, that game is the base position and the step moves from it,
+          // so shifting from the mouse to the keyboard continues where the
+          // pointer left off. With no pointer, it lands on the edge of the list
           // in that direction, so j selects the first game rather than leaving
-          // the highlight wherever the last refresh happened to pin it. Before,
-          // this only flipped the flag and the first j skipped to the second
-          // game.
+          // the highlight wherever the last refresh happened to pin it.
           root.cursorActive = true
+          var allowed = root.gameRowIndexes()
+          var at = allowed.indexOf(root.pointerIndex)
+          if (at >= 0) {
+            root.setCursor(at)
+            root.moveCursor(dy)
+            return
+          }
           if (dy > 0) root.setCursor(0)
-          else if (dy < 0) root.setCursor(root.gameRowIndexes().length - 1)
+          else if (dy < 0) root.setCursor(allowed.length - 1)
           return
         }
         if (dy !== 0) root.moveCursor(dy)
@@ -738,6 +819,7 @@ Panel {
         if (key === "r") root.refresh()
         else if (key === "e") root.toggleSelectedStore()
         else if (key === "n") root.toggleSelectedBell()
+        else if (key === "s") root.toggleHighlighted()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
@@ -996,13 +1078,39 @@ Panel {
             height: gameTitle.implicitHeight + Style.spacing.sm
             visible: !row.isHeader
             radius: Style.cornerRadius
-            color: root.cursorActive && root.selectedIndex === row.index
+            // One highlight, owned by whichever input was used last: the
+            // keyboard cursor while it is active, the pointer otherwise. They
+            // never stack.
+            color: (root.cursorActive ? root.selectedIndex === row.index
+                                      : root.pointerIndex === row.index)
               ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
                           : "transparent")
-              : (gameMouse.containsMouse
-                ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
-                            : "transparent")
-                : "transparent")
+              : "transparent"
+
+            // The marker for a game the user has not acknowledged. It sits in
+            // the left gutter, aligned with the store's own mark, so the title
+            // keeps its indent and nothing shifts as markers clear.
+            Text {
+              id: gameMark
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              visible: !row.isHeader && row.modelData.game
+                && root.gameUnseen(row.modelData.store, row.modelData.game.id)
+              textFormat: Text.PlainText
+              text: Model.NEW_GAME_GLYPH
+              color: Commons.Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+
+              // Declared inside the marker so the tooltip anchors over the coin
+              // rather than over the whole row.
+              PanelToolTip {
+                visible: gameMouse.containsMouse && gameMouse.overMark
+                text: "Mark as seen"
+                fontFamily: root.fontFamily
+              }
+            }
 
             Text {
               id: gameTitle
@@ -1029,10 +1137,29 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
+              // Whether the pointer is over the marker, used to tell a click on
+              // the coin from a click on the rest of the row.
+              readonly property bool overMark: gameMark.visible
+                && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
               // The pointer picks the store the keyboard acts on, so e and n do
-              // not depend on where the keyboard cursor happens to be.
-              onEntered: root.targetStore = row.modelData.store
-              onClicked: root.openGame(row.modelData)
+              // not depend on where the keyboard cursor happens to be. It also
+              // claims the highlight, dismissing the keyboard cursor so the two
+              // do not both draw, and becomes the base for the next j/k move.
+              onEntered: {
+                root.pointerIndex = row.index
+                root.cursorActive = false
+                root.targetStore = row.modelData.store
+              }
+              // Leaving the rows clears the highlight: the pointer took it from
+              // the keyboard, so the keyboard's position does not come back.
+              onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
+              // One MouseArea covers the whole row, including the marker, so
+              // moving onto the coin cannot exit-and-clear the highlight. A
+              // click on the coin marks the game seen; anywhere else launches it.
+              onClicked: {
+                if (overMark) root.markSeen(row.modelData.store, row.modelData.game.id)
+                else root.openGame(row.modelData)
+              }
             }
           }
         }
@@ -1074,7 +1201,7 @@ Panel {
             visible: root.showShortcuts
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll · enter open"
+            text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -1142,13 +1269,13 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
+    pointerIndex = -1
     targetStore = ""
     showShortcuts = false
     nowMs = Date.now()
     // Opening the panel refreshes when the data is missing or stale, which is
     // what makes a long refresh interval safe to live with.
     if (lastSuccessAt === 0 || stale) refresh()
-    acknowledgeCurrent()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 

@@ -11,7 +11,7 @@ new one appears, you get a desktop notification.
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
 
-<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing four games free to keep grouped by store" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing two games free to keep grouped by store, each with a coin marker" src="preview.png" width="410"></p>
 
 **Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.4-1 on Hyprland,
 taken from the live desktop with the panel open. The stores and games in it were
@@ -54,7 +54,8 @@ of deleting it, so remove it yourself if you want the space back.
 
 Your state file is deliberately kept:
 `~/.local/state/salmun-nister.loot-drops/seen.json`. It records what was
-already free, so reinstalling does not re-announce games that were free before.
+already free, so reinstalling does not re-announce games that were free before,
+and which games you have marked seen, so your markers survive a reinstall.
 Delete that directory if you want a clean slate.
 
 Nothing else is changed: no Hyprland setting, and no other entry in
@@ -67,9 +68,11 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | Left-click the chest | Open the panel |
 | Middle-click the chest | Refresh the three stores now |
 | Click a game | Open its store page and close the panel |
+| Click a game's coin | Mark that game as seen, without opening it |
 | `r` | Refresh the three stores now |
 | `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
+| `s` | Toggle the highlighted game's seen state (press again to bring its coin back) |
 | `j` / `k` | Scroll down / up |
 | `?` | Show or hide the shortcut list |
 | `Esc` | Close the panel |
@@ -79,11 +82,15 @@ is open, press `?` — or click the `?` in the panel's bottom-right corner — a
 it appears above the buttons until you press it again.
 
 A coloured dot sits on the top right of the chest while there are free games you
-have not opened the panel to see. Opening the panel clears it; a game that turns
-up later lights it again. It is independent of the notification bells, so a
-muted store still shows a dot for something you have not looked at. Like the
-notification-center badge, it is drawn over the icon rather than beside it, so
-the bar does not change width as games arrive.
+have not marked as seen. Each such game carries a coin marker to the left of its
+title in the panel, and the dot stays until every one of them has been marked:
+opening the panel no longer clears it by itself. A game is marked when you open
+it or click its coin, or `s` toggles the highlighted one, so a game can be put
+back to unseen and its coin brought back. A game that turns up later lights the
+dot again. The dot is independent of the
+notification bells, so a muted store still shows a dot for something you have not
+looked at. Like the notification-center badge, it is drawn over the icon rather
+than beside it, so the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel, headed by the store's mark
 — the real Steam and GOG logos, and a storefront for Epic, which Nerd Fonts has
@@ -98,6 +105,12 @@ and both are saved to your `shell.json`.
 `e` and `n` act on whichever store your **pointer is over**, falling back to
 whichever store the keyboard cursor last landed on. Hovering a store's name or any
 of its games retargets them, so you do not have to move the cursor first.
+
+Hovering a game highlights it exactly as the keyboard cursor does, and the two
+never show at once: moving the mouse onto a row clears the keyboard highlight,
+and pressing `j`/`k` clears the mouse one. Pressing `j`/`k` while pointing at a
+game carries on from that game, so moving from mouse to keyboard starts where
+the pointer left off.
 
 Clicking the bell keeps the store listed but silent — a muted store is visibly
 different from one you have switched off. A store you have switched off collapses
