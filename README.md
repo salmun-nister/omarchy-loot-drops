@@ -246,6 +246,10 @@ nille, which watches Steam alone for games that are free to keep. Loot Drops is
 an independent work: it adds Epic and GOG, per-store switches and bells, and
 keeps a separate baseline for each store.
 
+Steam, Epic Games, and GOG are trademarks of their respective owners. Loot Drops
+is an independent project, not affiliated with, endorsed by, or sponsored by
+them; it only reads their public pages.
+
 Built from [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins)
 guidance and the Omarchy template set. No third-party code is vendored; full
 lineage is recorded in [CREDITS.md](CREDITS.md).
