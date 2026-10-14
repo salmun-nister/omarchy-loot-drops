@@ -21,7 +21,8 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
-  acknowledge, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS, IPC_TARGET,
+  acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
+  IPC_TARGET, NEW_GAME_GLYPH,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
@@ -467,7 +468,19 @@ test('the bar icon is a private-use treasure chest that takes a theme colour', (
   assert.equal(code, 0xf0726, 'the treasure chest mark moved between Nerd Fonts releases');
 });
 
-test('unseen games clear when the panel is opened and reappear on arrival', () => {
+test('the new-game marker is a private-use coin that takes a theme colour', () => {
+  const code = Model.NEW_GAME_GLYPH.codePointAt(0);
+  // BMP private-use, like the bar icon: no emoji presentation, so it renders
+  // monochrome and takes the accent the row gives it.
+  assert.ok(code >= 0xe000 && code <= 0xf8ff,
+    `NEW_GAME_GLYPH U+${code.toString(16)} is not private-use`);
+  // Nerd Fonts 3.5.1: EDE8 is fa-coins. F51E, the old Font Awesome coins
+  // position, is oct-stack there, which is why the mark moved.
+  assert.equal(code, 0xede8, 'the coins mark is U+EDE8');
+  assert.equal(Model.NEW_GAME_GLYPH.length, 1);
+});
+
+test('a game is marked seen one at a time, and siblings stay unseen', () => {
   const fresh = Model.emptySeen();
   const onOffer = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
                     epic: { games: [{ id: 'c' }] }, gog: { games: [] } };
@@ -476,33 +489,57 @@ test('unseen games clear when the panel is opened and reappear on arrival', () =
   assert.deepEqual(Model.unseenIds(fresh, onOffer), ['a', 'b', 'c']);
   assert.equal(Model.hasUnseen(fresh, onOffer), true);
 
-  // Opening the panel is what counts as seen.
-  const looked = Model.acknowledge(fresh, onOffer);
-  assert.deepEqual(Model.unseenIds(looked, onOffer), []);
-  assert.equal(Model.hasUnseen(looked, onOffer), false);
+  // Acknowledging one game clears only that one.
+  const one = Model.acknowledgeGame(fresh, 'steam', 'a');
+  assert.deepEqual(Model.unseenIds(one, onOffer), ['b', 'c']);
+
+  // Acknowledging the rest goes quiet, and marking again is a no-op.
+  let all = Model.acknowledgeGame(one, 'steam', 'b');
+  all = Model.acknowledgeGame(all, 'epic', 'c');
+  assert.equal(Model.hasUnseen(all, onOffer), false);
+  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(all, 'steam', 'a'), 'steam'),
+    ['a', 'b'], 'marking an already-seen game must not duplicate it');
 
   // A game arriving afterwards lights it again, and only for that game.
   const later = Object.assign({}, onOffer, {
     steam: { games: [{ id: 'a' }, { id: 'b' }, { id: 'NEW' }] },
   });
-  assert.deepEqual(Model.unseenIds(looked, later), ['NEW']);
+  assert.deepEqual(Model.unseenIds(all, later), ['NEW']);
 
   // A game leaving does not resurrect anything.
   const gone = { steam: { games: [{ id: 'a' }] }, epic: { games: [] }, gog: { games: [] } };
-  assert.deepEqual(Model.unseenIds(looked, gone), []);
+  assert.deepEqual(Model.unseenIds(all, gone), []);
+});
+
+test('a seen game can be forgotten again, toggling its marker back', () => {
+  let state = Model.emptySeen();
+  const onOffer = { steam: { games: [{ id: 'a' }, { id: 'b' }] } };
+  state = Model.acknowledgeGame(state, 'steam', 'a');
+  state = Model.acknowledgeGame(state, 'steam', 'b');
+  assert.deepEqual(Model.unseenIds(state, onOffer), []);
+
+  // Forgetting one brings only that one back.
+  state = Model.forgetGame(state, 'steam', 'a');
+  assert.deepEqual(Model.unseenIds(state, onOffer), ['a']);
+  assert.deepEqual(Model.acknowledgedOf(state, 'steam'), ['b']);
+
+  // Forgetting a game that is not acknowledged, or an unknown store, is a
+  // no-op rather than a throw.
+  assert.deepEqual(Model.acknowledgedOf(Model.forgetGame(state, 'steam', 'zzz'), 'steam'), ['b']);
+  assert.deepEqual(Model.acknowledgedOf(Model.forgetGame(state, 'nope', 'b'), 'steam'), ['b']);
 });
 
 test('the unseen set is independent of the notification baseline', () => {
-  // diffStore records ids for notification; acknowledge records ids for having
-  // looked. A game can be in the first and not the second, which is exactly the
-  // case the dot exists for.
+  // diffStore records ids for notification; acknowledgeGame records ids for
+  // having looked. A game can be in the first and not the second, which is
+  // exactly the case the dot exists for.
   let state = Model.diffStore(Model.emptySeen(), 'steam',
     [{ id: 'a', title: 'A' }], true, true).state;
   const offered = { steam: { games: [{ id: 'a' }] }, epic: { games: [] }, gog: { games: [] } };
   assert.equal(Model.hasUnseen(state, offered), true,
     'already announced is not the same as already seen');
 
-  state = Model.acknowledge(state, offered);
+  state = Model.acknowledgeGame(state, 'steam', 'a');
   assert.equal(Model.hasUnseen(state, offered), false);
 
   // A muted store is still unwatched, so it still reports unseen games.
@@ -512,10 +549,17 @@ test('the unseen set is independent of the notification baseline', () => {
 });
 
 test('acknowledged ids survive a round trip and ignore junk', () => {
-  let state = Model.acknowledge(Model.emptySeen(),
-    { steam: { games: [{ id: '405640' }, { id: '2990600' }] } });
+  let state = Model.acknowledgeGame(Model.emptySeen(), 'steam', '405640');
+  state = Model.acknowledgeGame(state, 'steam', '2990600');
   const round = Model.parseSeen(Model.serializeSeen(state));
   assert.deepEqual(Model.acknowledgedOf(round, 'steam'), ['2990600', '405640']);
+
+  // An unusable id and an unknown store change nothing. acknowledgedOf keeps
+  // insertion order, so compare sorted.
+  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'steam', 'a b'), 'steam').sort(),
+    ['2990600', '405640'], 'a non-id must not enter the acknowledged set');
+  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'nope', 'x'), 'steam').sort(),
+    ['2990600', '405640'], 'an unknown store must not be acknowledged');
 
   // A corrupt or hostile file cannot inject ids that were never acknowledged.
   for (const bad of ['', 'garbage', '[]', 'null',

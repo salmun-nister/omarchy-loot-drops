@@ -154,9 +154,11 @@ Panel {
   // whenever a store is merely switched on.
   readonly property bool hasGames: gameCount() > 0
 
-  // Games on offer that the panel has not been opened to show yet. Independent
-  // of notifications: a muted store still has something you have not looked at.
-  readonly property bool hasUnseen: Model.hasUnseen(seenState, buckets)
+  // Games on offer that the user has not acknowledged yet. Independent of
+  // notifications: a muted store still has something you have not looked at.
+  // Only enabled stores count, because a switched-off store's rows are hidden
+  // and its markers could never be cleared from the panel.
+  readonly property bool hasUnseen: Model.hasUnseen(seenState, enabledBuckets())
 
   function newBucket() {
     return { games: [], error: "", busy: false, neverChecked: true, lastSuccessAt: 0 }
@@ -175,6 +177,40 @@ Panel {
 
   function bucket(store) {
     return buckets[store] || newBucket()
+  }
+
+  // The per-store results the panel actually shows, i.e. only the stores that
+  // are switched on. The bar dot and the row markers both key off this so a
+  // hidden store can neither light the dot nor hold it on.
+  function enabledBuckets() {
+    var out = {}
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var store = Model.STORES[i]
+      if (storesOn[store] === true) out[store] = bucket(store)
+    }
+    return out
+  }
+
+  // Which ids the user has acknowledged, per store, as a lookup. The row
+  // marker reads this rather than a per-row flag carried in the list model: a
+  // changed model would rebuild every delegate and drop the scroll position
+  // each time a game is marked, whereas this re-evaluates only the markers.
+  readonly property var acknowledgedIds: acknowledgedIndex()
+
+  function acknowledgedIndex() {
+    var index = {}
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var ids = Model.acknowledgedOf(seenState, Model.STORES[i])
+      var set = {}
+      for (var a = 0; a < ids.length; a++) set[ids[a]] = true
+      index[Model.STORES[i]] = set
+    }
+    return index
+  }
+
+  function gameUnseen(store, id) {
+    var set = acknowledgedIds[store]
+    return !(set && set[id])
   }
 
   // Flat, store-ordered list for the single cursor. Reordered on every change
@@ -265,10 +301,38 @@ Panel {
     return out
   }
 
-  function acknowledgeCurrent() {
+  // Acknowledge one game, clearing its marker and letting the bar dot go out
+  // once every new game has been marked.
+  function markSeen(store, id) {
     if (!seenLoaded) return
-    seenState = Model.acknowledge(seenState, buckets)
+    seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
+  }
+
+  // The game the highlight is on, keyboard or pointer, so h marks whichever row
+  // is showing as selected.
+  function highlightedGame() {
+    if (cursorActive) return selectedGame()
+    if (pointerIndex >= 0 && pointerIndex < visibleGames.length) {
+      var row = visibleGames[pointerIndex]
+      if (row && row.kind === "game") return row
+    }
+    return null
+  }
+
+  // Flip a game's seen state: an unseen game is acknowledged, a seen one is
+  // forgotten and its marker comes back.
+  function toggleSeen(store, id) {
+    if (!seenLoaded) return
+    seenState = gameUnseen(store, id)
+      ? Model.acknowledgeGame(seenState, store, id)
+      : Model.forgetGame(seenState, store, id)
+    persistSeen()
+  }
+
+  function toggleHighlighted() {
+    var row = highlightedGame()
+    if (row) toggleSeen(row.store, row.game.id)
   }
 
   function ingestSeen(raw) {
@@ -539,6 +603,10 @@ Panel {
   function openGame(row) {
     if (!row || row.kind !== "game") return
     targetStore = row.store
+    // Launching is one of the ways a game is acknowledged. The panel is about
+    // to close, so the marker would not be seen to clear, but the bar dot and
+    // the next open reflect it.
+    markSeen(row.store, row.game.id)
     // safeUrl refuses anything off the store's own host, and the search page is
     // the fallback, so a row always opens somewhere legitimate.
     var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
@@ -751,6 +819,7 @@ Panel {
         if (key === "r") root.refresh()
         else if (key === "e") root.toggleSelectedStore()
         else if (key === "n") root.toggleSelectedBell()
+        else if (key === "s") root.toggleHighlighted()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
@@ -1018,6 +1087,31 @@ Panel {
                           : "transparent")
               : "transparent"
 
+            // The marker for a game the user has not acknowledged. It sits in
+            // the left gutter, aligned with the store's own mark, so the title
+            // keeps its indent and nothing shifts as markers clear.
+            Text {
+              id: gameMark
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              visible: !row.isHeader && row.modelData.game
+                && root.gameUnseen(row.modelData.store, row.modelData.game.id)
+              textFormat: Text.PlainText
+              text: Model.NEW_GAME_GLYPH
+              color: Commons.Color.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+
+              // Declared inside the marker so the tooltip anchors over the coin
+              // rather than over the whole row.
+              PanelToolTip {
+                visible: gameMouse.containsMouse && gameMouse.overMark
+                text: "Mark as seen"
+                fontFamily: root.fontFamily
+              }
+            }
+
             Text {
               id: gameTitle
               anchors.left: parent.left
@@ -1043,6 +1137,10 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
+              // Whether the pointer is over the marker, used to tell a click on
+              // the coin from a click on the rest of the row.
+              readonly property bool overMark: gameMark.visible
+                && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
               // The pointer picks the store the keyboard acts on, so e and n do
               // not depend on where the keyboard cursor happens to be. It also
               // claims the highlight, dismissing the keyboard cursor so the two
@@ -1055,7 +1153,13 @@ Panel {
               // Leaving the rows clears the highlight: the pointer took it from
               // the keyboard, so the keyboard's position does not come back.
               onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
-              onClicked: root.openGame(row.modelData)
+              // One MouseArea covers the whole row, including the marker, so
+              // moving onto the coin cannot exit-and-clear the highlight. A
+              // click on the coin marks the game seen; anywhere else launches it.
+              onClicked: {
+                if (overMark) root.markSeen(row.modelData.store, row.modelData.game.id)
+                else root.openGame(row.modelData)
+              }
             }
           }
         }
@@ -1097,7 +1201,7 @@ Panel {
             visible: root.showShortcuts
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            text: "r refresh · e enable/disable store · n mute/unmute notifications · j/k scroll · enter open"
+            text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -1172,7 +1276,6 @@ Panel {
     // Opening the panel refreshes when the data is missing or stale, which is
     // what makes a long refresh interval safe to live with.
     if (lastSuccessAt === 0 || stale) refresh()
-    acknowledgeCurrent()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 

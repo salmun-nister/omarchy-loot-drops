@@ -67,9 +67,11 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | Left-click the chest | Open the panel |
 | Middle-click the chest | Refresh the three stores now |
 | Click a game | Open its store page and close the panel |
+| Click a game's coin | Mark that game as seen, without opening it |
 | `r` | Refresh the three stores now |
 | `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
+| `s` | Toggle the highlighted game's seen state (press again to bring its coin back) |
 | `j` / `k` | Scroll down / up |
 | `?` | Show or hide the shortcut list |
 | `Esc` | Close the panel |
@@ -79,11 +81,15 @@ is open, press `?` — or click the `?` in the panel's bottom-right corner — a
 it appears above the buttons until you press it again.
 
 A coloured dot sits on the top right of the chest while there are free games you
-have not opened the panel to see. Opening the panel clears it; a game that turns
-up later lights it again. It is independent of the notification bells, so a
-muted store still shows a dot for something you have not looked at. Like the
-notification-center badge, it is drawn over the icon rather than beside it, so
-the bar does not change width as games arrive.
+have not marked as seen. Each such game carries a coin marker to the left of its
+title in the panel, and the dot stays until every one of them has been marked:
+opening the panel no longer clears it by itself. A game is marked when you open
+it or click its coin, or `s` toggles the highlighted one, so a game can be put
+back to unseen and its coin brought back. A game that turns up later lights the
+dot again. The dot is independent of the
+notification bells, so a muted store still shows a dot for something you have not
+looked at. Like the notification-center badge, it is drawn over the icon rather
+than beside it, so the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel, headed by the store's mark
 — the real Steam and GOG logos, and a storefront for Epic, which Nerd Fonts has

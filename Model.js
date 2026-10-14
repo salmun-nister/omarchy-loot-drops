@@ -62,6 +62,12 @@ var SEARCH_URLS = {
 // so this one renders monochrome and takes the colour it is given, like
 // every bar icon.
 var BAR_ICON = "󰜦"
+// U+EDE8, the Font Awesome coins glyph (a stack of coins) in Nerd Fonts 3.5.1.
+// Private use like BAR_ICON, so it paints monochrome and takes the theme colour.
+// Marks a game the panel has not acknowledged yet. Note the codepoint moved
+// between Nerd Fonts releases: F51E, the Font Awesome coins position in 3.0,
+// is oct-stack in 3.5.1, so the version matters here as it does for the GOG mark.
+var NEW_GAME_GLYPH = "\u{EDE8}"
 var MAX_BYTES = 4000000
 var MAX_GAMES = 40
 var MAX_TITLE = 120
@@ -475,31 +481,47 @@ function acknowledgedOf(state, store) {
   return out
 }
 
-// Store the ids currently on offer as seen, so the bar dot clears. Called when
-// the panel is opened, which is what "seen" means here.
-function acknowledge(state, perStore) {
-  var next = {
-    primed: true,
-    stores: {}
+// Mark one game as looked at, so its per-row marker clears and the bar dot can
+// go out once nothing is left unseen. Called per game when it is launched, when
+// its marker is clicked, or with the h key; siblings and the notification
+// baseline are untouched. At the cap the oldest id is dropped rather than
+// refusing the new one, or a game could never be acknowledged once the list
+// filled.
+function acknowledgeGame(state, store, id) {
+  var next = { primed: true, stores: copyStores(state && state.stores) }
+  if (STORES.indexOf(store) < 0) return next
+  var clean = scrubId(id)
+  if (!clean) return next
+  var acknowledged = acknowledgedOf(state, store)
+  if (acknowledged.indexOf(clean) >= 0) return next
+  acknowledged.push(clean)
+  while (acknowledged.length > MAX_SEEN_IDS) acknowledged.shift()
+  var previous = next.stores[store] || { ids: [], acknowledged: [], primed: false }
+  next.stores[store] = {
+    ids: previous.ids.slice(0, MAX_SEEN_IDS),
+    acknowledged: acknowledged,
+    primed: previous.primed === true
   }
-  for (var i = 0; i < STORES.length; i++) {
-    var store = STORES[i]
-    var previous = state && state.stores && state.stores[store]
-    var ids = []
-    for (var k = 0; k < MAX_SEEN_IDS; k++) ids.push("")
-    var current = perStore && perStore[store]
-    var games = current && Array.isArray(current.games) ? current.games : []
-    var seen = []
-    for (var j = 0; j < games.length && seen.length < MAX_SEEN_IDS; j++) {
-      var id = games[j] ? scrubId(games[j].id) : ""
-      if (id) seen.push(id)
-    }
-    next.stores[store] = {
-      ids: previous && Array.isArray(previous.ids)
-        ? previous.ids.slice(0, MAX_SEEN_IDS) : [],
-      acknowledged: seen,
-      primed: previous ? previous.primed === true : false
-    }
+  return next
+}
+
+// The inverse: drop one game from the acknowledged set so its marker and the
+// bar dot come back. Used by the s toggle. Forgetting a game that was not
+// acknowledged is a no-op.
+function forgetGame(state, store, id) {
+  var next = { primed: true, stores: copyStores(state && state.stores) }
+  if (STORES.indexOf(store) < 0) return next
+  var clean = scrubId(id)
+  if (!clean) return next
+  var acknowledged = acknowledgedOf(state, store)
+  var at = acknowledged.indexOf(clean)
+  if (at < 0) return next
+  acknowledged.splice(at, 1)
+  var previous = next.stores[store] || { ids: [], acknowledged: [], primed: false }
+  next.stores[store] = {
+    ids: previous.ids.slice(0, MAX_SEEN_IDS),
+    acknowledged: acknowledged,
+    primed: previous.primed === true
   }
   return next
 }

@@ -352,7 +352,7 @@ Completed evidence:
   whichever store the cursor last landed on, and re-anchoring deliberately does
   not retarget it. The static shortcut line was replaced by a `?` beside Refresh
   now, and by the `?` key.
-- A bar dot for games the panel has not been opened to see, copying the
+- A bar dot for games the user has not acknowledged, copying the
   notification-center badge's geometry and colour. "Seen" is recorded per store in
   `seen.json` as `acknowledged`, kept separate from the notification baseline
   because a game can have been announced and still not been looked at. It is
@@ -423,6 +423,21 @@ Completed evidence:
   makes shifting from mouse to keyboard continue where the pointer left off.
   Leaving the rows clears the highlight rather than restoring the keyboard's
   position, because the pointer already dismissed it.
+
+- The bar dot cleared whenever the panel was opened, so it could not say which
+  games were new and it cleared even if nothing had been looked at. Seen is now
+  recorded per game rather than in bulk: each unacknowledged game carries a
+  coins marker (U+EDE8, fa-coins in Nerd Fonts 3.5.1; private use like the bar
+  icon, so it takes the theme colour) in the panel's left gutter, aligned with
+  the store mark so the title
+  never shifts, and opening the panel no longer acknowledges anything. A game is
+  acknowledged when it is opened or its marker is clicked, and `s` toggles the
+  highlighted game, so a mistake can be undone and the coin brought back; the
+  bar dot stays lit until the last one is. The key is `s`, not `h`: the shell's
+  shared key catcher claims h/l for horizontal movement, so h never reaches a
+  panel's text-key handler.
+  The dot is computed from enabled stores only, because a switched-off store's
+  hidden rows could otherwise hold the dot on with no marker left to clear it.
 
 Remaining:
 
