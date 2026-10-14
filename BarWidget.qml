@@ -90,6 +90,11 @@ Panel {
   property int retryDelayMs: 30000
   property bool cursorActive: false
   property int selectedIndex: 0
+  // The game row the pointer is over, as a flat list index, or -1 when the
+  // pointer is off the rows. The highlight follows the most recent input: a
+  // hover claims it and dismisses the keyboard cursor, and a keyboard move
+  // claims it back. Only one row is ever highlighted.
+  property int pointerIndex: -1
   // Whichever store the e and n keys act on. It follows the pointer when the
   // pointer is over a row, and the keyboard cursor otherwise, so pressing e
   // acts on the store you are looking at rather than on whichever one happens
@@ -712,14 +717,22 @@ Panel {
 
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) {
-          // The first move engages the cursor and lands on the edge of the list
+          // The first move engages the cursor. When the pointer is highlighting
+          // a game, that game is the base position and the step moves from it,
+          // so shifting from the mouse to the keyboard continues where the
+          // pointer left off. With no pointer, it lands on the edge of the list
           // in that direction, so j selects the first game rather than leaving
-          // the highlight wherever the last refresh happened to pin it. Before,
-          // this only flipped the flag and the first j skipped to the second
-          // game.
+          // the highlight wherever the last refresh happened to pin it.
           root.cursorActive = true
+          var allowed = root.gameRowIndexes()
+          var at = allowed.indexOf(root.pointerIndex)
+          if (at >= 0) {
+            root.setCursor(at)
+            root.moveCursor(dy)
+            return
+          }
           if (dy > 0) root.setCursor(0)
-          else if (dy < 0) root.setCursor(root.gameRowIndexes().length - 1)
+          else if (dy < 0) root.setCursor(allowed.length - 1)
           return
         }
         if (dy !== 0) root.moveCursor(dy)
@@ -996,13 +1009,14 @@ Panel {
             height: gameTitle.implicitHeight + Style.spacing.sm
             visible: !row.isHeader
             radius: Style.cornerRadius
-            color: root.cursorActive && root.selectedIndex === row.index
+            // One highlight, owned by whichever input was used last: the
+            // keyboard cursor while it is active, the pointer otherwise. They
+            // never stack.
+            color: (root.cursorActive ? root.selectedIndex === row.index
+                                      : root.pointerIndex === row.index)
               ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
                           : "transparent")
-              : (gameMouse.containsMouse
-                ? (root.bar ? Style.hoverFillFor(root.bar.foreground, Commons.Color.accent)
-                            : "transparent")
-                : "transparent")
+              : "transparent"
 
             Text {
               id: gameTitle
@@ -1030,8 +1044,17 @@ Panel {
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
               // The pointer picks the store the keyboard acts on, so e and n do
-              // not depend on where the keyboard cursor happens to be.
-              onEntered: root.targetStore = row.modelData.store
+              // not depend on where the keyboard cursor happens to be. It also
+              // claims the highlight, dismissing the keyboard cursor so the two
+              // do not both draw, and becomes the base for the next j/k move.
+              onEntered: {
+                root.pointerIndex = row.index
+                root.cursorActive = false
+                root.targetStore = row.modelData.store
+              }
+              // Leaving the rows clears the highlight: the pointer took it from
+              // the keyboard, so the keyboard's position does not come back.
+              onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
               onClicked: root.openGame(row.modelData)
             }
           }
@@ -1142,6 +1165,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
+    pointerIndex = -1
     targetStore = ""
     showShortcuts = false
     nowMs = Date.now()

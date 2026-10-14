@@ -411,6 +411,19 @@ Completed evidence:
   snapshot until a full-SHA update is approved, so documentation-only changes are
   batched rather than pushed on their own.
 
+- The mouse and keyboard shared one highlight poorly: a hovered row used the
+  fainter hover fill while the keyboard cursor used the selection fill, so
+  hovering while a row was keyboard-selected drew two different boxes at once,
+  and the hover box was a visibly weaker highlight than j/k. Both now use the
+  selection fill, and the highlight is owned by whichever input was used last:
+  a hover claims it and dismisses the keyboard cursor (`cursorActive`), and a
+  keyboard move claims it back, so only one row is ever highlighted. The pointer
+  row is remembered as `pointerIndex`; the first j/k with the pointer on a game
+  now steps from that game instead of jumping to the list edge, which is what
+  makes shifting from mouse to keyboard continue where the pointer left off.
+  Leaving the rows clears the highlight rather than restoring the keyboard's
+  position, because the pointer already dismissed it.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

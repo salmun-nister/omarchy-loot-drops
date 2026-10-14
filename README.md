@@ -99,6 +99,12 @@ and both are saved to your `shell.json`.
 whichever store the keyboard cursor last landed on. Hovering a store's name or any
 of its games retargets them, so you do not have to move the cursor first.
 
+Hovering a game highlights it exactly as the keyboard cursor does, and the two
+never show at once: moving the mouse onto a row clears the keyboard highlight,
+and pressing `j`/`k` clears the mouse one. Pressing `j`/`k` while pointing at a
+game carries on from that game, so moving from mouse to keyboard starts where
+the pointer left off.
+
 Clicking the bell keeps the store listed but silent — a muted store is visibly
 different from one you have switched off. A store you have switched off collapses
 to a faded row with no games under it, because it is no longer being watched;
