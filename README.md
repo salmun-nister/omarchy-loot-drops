@@ -11,7 +11,7 @@ new one appears, you get a desktop notification.
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
 
-<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing four games free to keep grouped by store" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing two games free to keep grouped by store, each with a coin marker" src="preview.png" width="410"></p>
 
 **Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.4-1 on Hyprland,
 taken from the live desktop with the panel open. The stores and games in it were
