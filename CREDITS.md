@@ -27,8 +27,9 @@ implementation.
 ## Third-party material
 
 - No badge artwork, wallpaper, screenshot or product logo is bundled.
-- Store names and endpoints belong to their respective owners and are used only
-  to read public pages.
+- Steam, Epic Games, and GOG are trademarks of their respective owners, used
+  only to name the stores whose public pages are read. Loot Drops is not
+  affiliated with, endorsed by, or sponsored by them.
 - The bar icon and status glyphs are Nerd Font glyphs already present in the
   shell's font, not redistributed artwork.
 
