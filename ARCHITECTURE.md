@@ -24,10 +24,12 @@ while notifications must continue, and document the shutdown path when you do.
 ## State
 
 One durable file, `~/.local/state/salmun-nister.loot-drops/seen.json`,
-written through `lib/seen-state`. It holds a baseline per store:
+written through `lib/seen-state`. It holds two records per store: `ids`, the
+notification baseline of games already announced, and `acknowledged`, the games
+the user has marked seen, which is what the bar dot and the row markers track.
 
 ```json
-{ "primed": true, "stores": { "steam": { "ids": ["405640"], "primed": true } } }
+{ "primed": true, "stores": { "steam": { "ids": ["405640"], "acknowledged": [], "primed": true } } }
 ```
 
 Everything else is per-instance and in memory: the game list, each store's error

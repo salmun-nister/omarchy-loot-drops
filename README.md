@@ -54,7 +54,8 @@ of deleting it, so remove it yourself if you want the space back.
 
 Your state file is deliberately kept:
 `~/.local/state/salmun-nister.loot-drops/seen.json`. It records what was
-already free, so reinstalling does not re-announce games that were free before.
+already free, so reinstalling does not re-announce games that were free before,
+and which games you have marked seen, so your markers survive a reinstall.
 Delete that directory if you want a clean slate.
 
 Nothing else is changed: no Hyprland setting, and no other entry in
