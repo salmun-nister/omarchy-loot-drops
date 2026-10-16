@@ -22,10 +22,24 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
   acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
-  IPC_TARGET, NEW_GAME_GLYPH,
+  IPC_TARGET, NEW_GAME_GLYPH, HOURGLASS_GLYPH, endingSoon,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
+
+// The captured Epic payload carries absolute window dates, so its live and
+// upcoming windows are rebased on "now" as it loads. Stored as-is they stop
+// meaning live the day the window lapses, which is how these tests silently
+// went red. Only the ordering matters, so the offsets are arbitrary.
+function epicFixture() {
+  const day = 24 * 60 * 60 * 1000;
+  const at = days => new Date(Date.now() + days * day).toISOString();
+  return fixture('epic-free-games.json')
+    .replaceAll('2026-10-08T15:00:00.000Z', at(-10))  // live window opens
+    .replaceAll('2026-10-15T15:00:00.000Z', at(10))   // live window closes
+    .replaceAll('2026-10-22T15:00:00.000Z', at(20))   // upcoming opens
+    .replaceAll('2026-10-29T15:00:00.000Z', at(27));  // upcoming closes
+}
 
 test('URL allowlist accepts only the store host over https', () => {
   assert.equal(Model.safeUrl('steam', 'https://store.steampowered.com/app/405640/'),
@@ -142,7 +156,7 @@ test('steam rejects a body that is not the search payload', () => {
 });
 
 test('epic lists only live zero-discount offers', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   assert.equal(result.ok, true);
   const titles = result.games.map(g => g.title);
   assert.ok(titles.includes('Out of Sight'));
@@ -156,7 +170,7 @@ test('epic lists only live zero-discount offers', () => {
 });
 
 test('epic builds links from the catalog mapping, with urlSlug fallback', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   const byTitle = Object.fromEntries(result.games.map(g => [g.title, g]));
 
   assert.equal(byTitle['Out of Sight'].url,
@@ -170,7 +184,7 @@ test('epic builds links from the catalog mapping, with urlSlug fallback', () => 
 });
 
 test('epic scrubs markup-shaped titles', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   const hostile = result.games.find(g => g.id === 'id-markup');
   assert.ok(hostile, 'the markup title should still be listed');
   assert.ok(!hostile.title.includes('<'), 'angle brackets survived');
@@ -234,7 +248,7 @@ test('gog does not leak the slug url between responses', () => {
 
 test('parseStore routes each store and refuses an unknown one', () => {
   assert.equal(Model.parseStore('steam', fixture('steam-free.json')).ok, true);
-  assert.equal(Model.parseStore('epic', fixture('epic-free-games.json')).ok, true);
+  assert.equal(Model.parseStore('epic', epicFixture()).ok, true);
   assert.equal(Model.parseStore('gog', fixture('gog-giveaway.json')).ok, true);
   const unknown = Model.parseStore('nintendo', '{}');
   assert.equal(unknown.ok, false);
@@ -606,5 +620,30 @@ test('every store has a header mark, and the real logos are private-use', () => 
     const mark = Model.STORE_GLYPHS[store];
     assert.equal(typeof mark, 'string', `${store} has no mark`);
     assert.ok(mark.length > 0, `${store} has an empty mark`);
+  }
+});
+
+test('the hourglass is a private-use mark, pinned to its Nerd Fonts codepoint', () => {
+  const code = Model.HOURGLASS_GLYPH.codePointAt(0);
+  assert.ok(code >= 0xe000 && code <= 0xf8ff,
+    `the hourglass U+${code.toString(16)} is not private-use`);
+  assert.equal(code, 0xf253, 'the hourglass moved between Nerd Fonts releases');
+});
+
+test('ending soon is a one-day window that survives an elapsed end date', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z');
+  const iso = hours => new Date(now + hours * 3600 * 1000).toISOString();
+
+  assert.equal(Model.endingSoon(iso(48), now), false, 'two days out is not soon');
+  assert.equal(Model.endingSoon(iso(24.5), now), false, 'just beyond the window');
+  assert.equal(Model.endingSoon(iso(24), now), true, 'exactly one day counts');
+  assert.equal(Model.endingSoon(iso(1), now), true, 'within the window');
+  // The whole point of the unbounded check: a lapsed giveaway keeps its mark
+  // until a refresh drops the row or moves the date back out.
+  assert.equal(Model.endingSoon(iso(-48), now), true, 'an elapsed end date stays marked');
+
+  // Unknown or malformed dates must not mark a row, so those rows read as before.
+  for (const bad of ['', 'not a date', null, undefined]) {
+    assert.equal(Model.endingSoon(bad, now), false, `marked on a bad date: ${bad}`);
   }
 });

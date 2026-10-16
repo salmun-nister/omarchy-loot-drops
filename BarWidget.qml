@@ -939,6 +939,16 @@ Panel {
 
           readonly property bool isHeader: modelData.kind === "header"
 
+          // Whether this row's game has not been acknowledged, and whether its
+          // giveaway is within a day of ending (or past its end but still
+          // listed). Both guarded, so a header or a row without a game is
+          // neither. endingSoon reads root.nowMs, so the always-on 30s tick
+          // re-evaluates it without a timer of its own.
+          readonly property bool unseen: !isHeader && !!modelData.game
+            && root.gameUnseen(modelData.store, modelData.game.id)
+          readonly property bool endingSoon: !isHeader && !!modelData.game
+            && Model.endingSoon(modelData.game.endsAt, root.nowMs)
+
           // The switch draws its hover ring a few pixels outside its track, so
           // the header row must be at least as tall as the switch or the ring
           // is clipped — and the first store's ring, sitting at the top of the
@@ -1087,27 +1097,31 @@ Panel {
                           : "transparent")
               : "transparent"
 
-            // The marker for a game the user has not acknowledged. It sits in
-            // the left gutter, aligned with the store's own mark, so the title
-            // keeps its indent and nothing shifts as markers clear.
+            // The marker for a game the user has not acknowledged, or one whose
+            // giveaway is ending soon. It sits in the left gutter, aligned with
+            // the store's own mark, so the title keeps its indent and nothing
+            // shifts as markers clear. When both apply the hourglass wins and
+            // the coin is withheld; the game stays unacknowledged underneath.
             Text {
               id: gameMark
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
-              visible: !row.isHeader && row.modelData.game
-                && root.gameUnseen(row.modelData.store, row.modelData.game.id)
+              visible: row.unseen || row.endingSoon
               textFormat: Text.PlainText
-              text: Model.NEW_GAME_GLYPH
-              color: Commons.Color.accent
+              text: row.endingSoon ? Model.HOURGLASS_GLYPH : Model.NEW_GAME_GLYPH
+              color: row.endingSoon ? root.urgent : Commons.Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
 
-              // Declared inside the marker so the tooltip anchors over the coin
-              // rather than over the whole row.
+              // Declared inside the marker so the tooltip anchors over the glyph
+              // rather than over the whole row. A row that is both ending and
+              // unseen names both states, and the click clears the unseen one.
               PanelToolTip {
-                visible: gameMouse.containsMouse && gameMouse.overMark
-                text: "Mark as seen"
+                visible: gameMouse.containsMouse && gameMouse.overGlyph
+                text: row.endingSoon
+                  ? (row.unseen ? "Ending soon. Mark as seen" : "Ending soon")
+                  : "Mark as seen"
                 fontFamily: root.fontFamily
               }
             }
@@ -1137,9 +1151,11 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              // Whether the pointer is over the marker, used to tell a click on
-              // the coin from a click on the rest of the row.
-              readonly property bool overMark: gameMark.visible
+              // Whether the pointer is over the marker glyph. This drives the
+              // tooltip whoever the glyph belongs to; the click uses it together
+              // with `row.unseen`, so an already-seen game still explains its
+              // hourglass on hover while its click falls through to launching.
+              readonly property bool overGlyph: gameMark.visible
                 && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
               // The pointer picks the store the keyboard acts on, so e and n do
               // not depend on where the keyboard cursor happens to be. It also
@@ -1154,10 +1170,13 @@ Panel {
               // the keyboard, so the keyboard's position does not come back.
               onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
               // One MouseArea covers the whole row, including the marker, so
-              // moving onto the coin cannot exit-and-clear the highlight. A
-              // click on the coin marks the game seen; anywhere else launches it.
+              // moving onto the glyph cannot exit-and-clear the highlight. A
+              // click on the marker of an unseen game marks it seen; anywhere
+              // else launches it. Marking an already-seen game would be a no-op,
+              // so there the hourglass click launches instead.
               onClicked: {
-                if (overMark) root.markSeen(row.modelData.store, row.modelData.game.id)
+                if (overGlyph && row.unseen)
+                  root.markSeen(row.modelData.store, row.modelData.game.id)
                 else root.openGame(row.modelData)
               }
             }

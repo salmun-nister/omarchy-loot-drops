@@ -112,6 +112,29 @@ different settings.
 - **Store turned off then on** — re-primes that store's baseline silently, so
   re-enabling does not produce a flood of backfill notifications.
 
+## Ending soon
+
+A game row carries a mark when its giveaway is within a day of ending, or has
+already ended but is still listed. It reuses the unseen coin's slot in the left
+gutter; when both apply the hourglass wins and the coin is withheld, but the game
+stays unacknowledged underneath, so the bar dot and the click that clears it are
+unchanged.
+
+The window is `end - now <= 24h` with **no lower bound**. Dropping the lower bound
+is the whole feature: an elapsed giveaway keeps its mark, and the mark clears only
+when a refresh drops the game or moves its end date back beyond the window. So it
+holds no state of its own — it is derived from the row's `endsAt` and the widget's
+`nowMs`, which the always-on 30s tick already updates.
+
+Only Epic and GOG publish an end date; Steam's search rows carry none, so a Steam
+row never shows the mark. A missing or malformed date means no mark either, so
+those rows read exactly as before.
+
+- **Rejected: refetching the store the moment a mark lapses.** It is the only part
+  of the feature with a failure mode, and it buys at most the gap between the
+  lapse and the next poll: Epic and GOG already drop expired offers at parse time,
+  so the row goes on the next refresh regardless.
+
 ## Failure states
 
 Kept distinct per store, never collapsed into generic fallback:
@@ -136,6 +159,17 @@ absolutely rather than taken from `PATH`, so a user with a version manager
 installed does not run the helpers under a different Python than the one they
 were tested against. **No credentials. No privilege. No `sudo`.**
 
+`curl` is deliberately **not** pinned the way the interpreter is: it is resolved
+through `PATH`. The transport it performs is a public, unauthenticated GET with
+no privilege to protect, and leaving the name bare is what lets `demo/run`
+substitute a shim. The tradeoff is taken knowingly — a reviewer boundary states
+that a bare name and a user-writable shim are not a trusted executable identity —
+and it buys the closed reader boundary below.
+
+`demo/run` is a development harness, not part of the widget: it starts its own
+isolated Quickshell against a temporary state directory and never stops or
+reconfigures the running shell.
+
 ## Security invariants
 
 These are properties of the plugin, not policy. Callers cannot bypass them.
@@ -152,6 +186,10 @@ These are properties of the plugin, not policy. Callers cannot bypass them.
    shape-checked on read.
 4. Leading dashes are stripped from notification titles, because the headline
    occupies an option position that is parsed before the positional argument.
+5. The reader's endpoint set is **closed**. `sourceUrl` is exhaustive over the
+   three stores; no environment variable, file path or fixture hook can point a
+   fetch anywhere else. The demo substitutes `curl` on `PATH` instead, entirely
+   outside the widget.
 
 All three feeds are attacker-controlled if a store is compromised or the
 connection is intercepted.
@@ -259,6 +297,8 @@ ability never worked.
   syntax warning.
 - A live harness that loads the real widget into a real Quickshell instance
   against all three stores.
+- A manual demo (`./demo/run`) that renders the real panel against a committed
+  fixture, so the ending-soon marker can be seen without waiting for a giveaway.
 
 **GOG's success-path parser is fixture-only until a real giveaway is captured.**
 GOG had nothing running on 9 October 2026, so the 200 shape is implemented from
@@ -438,6 +478,31 @@ Completed evidence:
   panel's text-key handler.
   The dot is computed from enabled stores only, because a switched-off store's
   hidden rows could otherwise hold the dot on with no marker left to clear it.
+
+- The **ending-soon marker**. A game whose giveaway closes within a day, or that
+  has closed already but is still listed, wears `fa-hourglass-end` (U+F253, Nerd
+  Fonts 3.5.1) in the unseen coin's slot, in `urgent`. When both apply the
+  hourglass wins and the coin is withheld, but the game stays unacknowledged, so
+  the bar dot and the click that clears it are unchanged. The window is
+  `end - now <= 24h` **with no lower bound**, so an elapsed giveaway keeps its
+  mark until a refresh drops the row or moves its date back out; the mark holds
+  no state of its own. Only Epic and GOG publish an end date, so a Steam row
+  never shows one, and an absent or malformed date means no mark. The marker
+  marks seen only for an unseen game, so an already-seen game's hourglass
+  launches instead of dead-ending.
+
+- The **`demo/` harness** (`demo/run`, `demo/bin/curl`,
+  `demo/fixtures/ending-soon.json`) renders the real panel against a committed
+  fixture: two games end inside the day, two in a week. The widget is unmodified.
+  The demo puts a `curl` shim first on `PATH`, and `lib/capped-run` resolves the
+  widget's bare `curl` through it, so the shipped transport is what runs. The
+  fixture's windows are shifted as a group so the furthest closes a week from
+  now, keeping a genuine payload that never goes stale. `demo_preflight.py`
+  passes, warning only about the two `mktemp` directories it deletes.
+  **Rejected: a fixture override in the widget.** A first cut had `sourceUrl`
+  read `LOOT_DROPS_FIXTURE_<STORE>` and fetch `file://`; that widened a closed
+  reader boundary into a general local-file read. The demo substitutes the
+  process instead, and the invariant above records why.
 
 Remaining:
 

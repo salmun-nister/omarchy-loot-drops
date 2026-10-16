@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Serve the demo fixture in place of the network.
+
+demo/run puts this directory first on PATH. The widget still runs a bare `curl`
+through lib/capped-run, and capped-run resolves it through that PATH, so this
+script answers instead of the real curl. The shipped widget is unchanged and has
+no idea a demo is running.
+
+The fixture's giveaway windows are shifted as a group so the furthest one closes
+a week from now. That keeps the committed payload a genuine Epic response, with
+its real relative gaps (about 3 hours, 20 hours, 6 days, 7 days), while stopping
+the windows going stale the way a fixture with fixed dates would.
+
+Only what the widget actually passes matters; every other argument is ignored.
+The response ends with the status line the widget appends through
+`curl --write-out "\\n%{http_code}"`.
+"""
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "ending-soon.json"
+FURTHEST = timedelta(days=7)
+
+
+def parse_iso(value):
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def windows(element):
+    promotions = element.get("promotions") or {}
+    for group in promotions.get("promotionalOffers") or []:
+        for offer in group.get("promotionalOffers") or []:
+            yield offer
+
+
+def main():
+    url = sys.argv[-1] if len(sys.argv) > 1 else ""
+    if "epicgames" not in url:
+        # No other store is enabled in the demo. An empty body with a 404 reads
+        # as an empty store rather than inventing a fake success.
+        sys.stdout.write("\n404")
+        return
+
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    elements = payload["data"]["Catalog"]["searchStore"]["elements"]
+    offers = [offer for element in elements for offer in windows(element)]
+
+    shift = (datetime.now(timezone.utc) + FURTHEST) - max(parse_iso(o["endDate"]) for o in offers)
+    for offer in offers:
+        for field in ("startDate", "endDate"):
+            moved = parse_iso(offer[field]) + shift
+            offer[field] = moved.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n200")
+
+
+if __name__ == "__main__":
+    main()

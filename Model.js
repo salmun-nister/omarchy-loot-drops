@@ -68,6 +68,14 @@ var BAR_ICON = "󰜦"
 // between Nerd Fonts releases: F51E, the Font Awesome coins position in 3.0,
 // is oct-stack in 3.5.1, so the version matters here as it does for the GOG mark.
 var NEW_GAME_GLYPH = "\u{EDE8}"
+// U+F253, the Font Awesome "hourglass-end" (sand almost run out) in Nerd Fonts
+// 3.5.1. Private use like the other marks, so it paints monochrome and takes the
+// colour it is given. It stands in for the coin when a giveaway is ending soon.
+var HOURGLASS_GLYPH = "\u{F253}"
+// How close to a giveaway's end counts as "ending soon". A date already past
+// still counts (see endingSoon), so the mark survives until a refresh drops the
+// game or moves its end date back out of the window.
+var ENDING_SOON_MS = 24 * 60 * 60 * 1000
 var MAX_BYTES = 4000000
 var MAX_GAMES = 40
 var MAX_TITLE = 120
@@ -207,6 +215,17 @@ function normalizeRefreshMinutes(value) {
 function staleAfterMs(refreshMinutes) {
   var minutes = normalizeRefreshMinutes(refreshMinutes)
   return Math.round(minutes * STALE_MULTIPLIER * 60 * 1000)
+}
+
+// Whether a giveaway's end is within ENDING_SOON_MS, or already past. A past end
+// date deliberately still counts: the row is still listed, and the date may have
+// been extended or the store simply not re-fetched yet. The mark therefore needs
+// no memory of its own; it clears when a refresh drops the game or moves its end
+// date more than the window away. An absent or malformed date yields no mark, so
+// those rows read exactly as they did before.
+function endingSoon(endsAt, nowMs) {
+  var end = parseTime(endsAt)
+  return end > 0 && end - Number(nowMs) <= ENDING_SOON_MS
 }
 
 // ---------------------------------------------------------------------------

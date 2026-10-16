@@ -3,8 +3,9 @@
 ## Checks
 
 ```bash
-./tests/run          # portable: structure, model, QML lint, helper behaviour
-./tests/harness/run  # live: the real widget against the three real stores
+./tests/run         # portable: structure, model, QML lint, helper behaviour
+./tests/harness/run # live: the real widget against the three real stores
+./demo/run          # manual: the real widget against a committed fixture
 ```
 
 `./tests/run` is what CI runs. It needs Node 22+ and, for the QML lint pass, the
@@ -13,6 +14,22 @@ pieces are skipped with a message rather than silently passing.
 
 A green `./tests/run` does **not** establish live desktop acceptance. The harness
 covers transport; it does not cover what the panel looks like on your bar.
+
+## Demoing the panel
+
+`./demo/run` renders the real panel against `demo/fixtures/ending-soon.json`,
+opening it and leaving the window up until you close it. Two games end inside the
+day, so they wear the ending-soon hourglass, and two end in a week, so they wear
+the unseen coin. Steam and GOG are left off, so a live fetch cannot land on top
+of the fixture.
+
+The widget is not modified for this. `demo/run` puts `demo/bin` first on `PATH`,
+where a `curl` shim answers in place of the network; `lib/capped-run` resolves the
+widget's bare `curl` through that `PATH`, so the shipped transport is what runs.
+The windows are shifted as a group so the furthest closes a week from now: the
+committed fixture stays a genuine payload with its real gaps, and never goes
+stale. `demo/run` and `demo/fixtures/` are the toolkit's demo layout, and the
+`omarchy-plugin-demo` skill's preflight validates both.
 
 ## Working on the widget
 
@@ -24,9 +41,12 @@ in `Model.js`: it runs in plain Node, so tests are fast and free of Quickshell.
 Fixtures live in `tests/fixtures/`. `steam-free.json` is a real captured Steam
 response; `epic-free-games.json` is hand-built to cover the cases that must be
 handled — live free offer, bundle, expired offer, paid promotion, upcoming offer,
-missing catalog mapping and a markup-shaped title. `gog-giveaway.json` is the
-documented success shape and is **fixture-only**: GOG had nothing running on
-9 October 2026, so that path is not live-verified. See `DESIGN.md`.
+missing catalog mapping and a markup-shaped title. Its live and upcoming windows
+are absolute dates, so the tests rebase them on `now` as the fixture loads
+(`epicFixture` in `model.test.mjs`) rather than storing windows that rot.
+`gog-giveaway.json` is the documented success shape and is **fixture-only**: GOG
+had nothing running on 9 October 2026, so that path is not live-verified. See
+`DESIGN.md`.
 
 ## Live testing on this machine
 

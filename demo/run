@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Renders the real Loot Drops panel against a committed fictional fixture, so
+# the ending-soon hourglass and the unseen coin can be seen without waiting for
+# a real giveaway.
+#
+# demo/bin goes first on PATH, where a curl shim serves the fixture instead of
+# the network. The shipped widget is untouched: it still runs a bare `curl`
+# through lib/capped-run, and capped-run resolves that through the PATH set
+# here. The demo runs its own isolated Quickshell against a temporary state
+# directory, so it never stops or reconfigures the running shell and there is
+# nothing to backup or restore.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+
+if [[ ! -d "$shell_dir/Ui" ]]; then
+  echo "SKIP: $shell_dir/Ui not found; is Omarchy 4 installed?" >&2
+  exit 0
+fi
+
+shim="$(mktemp -d)"
+state="$(mktemp -d)"
+cleanup() { rm -rf "$shim" "$state"; }
+trap cleanup EXIT INT TERM HUP
+
+mkdir -p "$shim/qs"
+ln -s "$shell_dir/Ui" "$shim/qs/Ui"
+ln -s "$shell_dir/Commons" "$shim/qs/Commons"
+
+echo "Demo: epic shows two games ending soon and two ending in a week."
+echo "Hover a row's marker for its tooltip. Close the window to finish."
+
+PATH="$here/bin:$PATH" \
+QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
+LOOT_DROPS_STATE="$state" \
+  quickshell -p "$here/shell.qml" "$@"

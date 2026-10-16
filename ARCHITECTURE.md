@@ -20,6 +20,7 @@ while notifications must continue, and document the shutdown path when you do.
 | `lib/capped-run` | Byte cap on a child's stdout, killing its process group when the cap is exceeded. |
 | `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json`. |
 | `tests/` | Portable checks, plus a live harness. |
+| `demo/` | Renders the real widget against a committed fixture, via a `curl` shim on `PATH`. Not part of the widget. |
 
 ## State
 
