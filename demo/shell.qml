@@ -66,9 +66,13 @@ ShellRoot {
             steamEnabled: false,
             epicEnabled: true,
             gogEnabled: false,
+            // The demo renders Epic from a fixture; Amazon needs a browser
+            // render, so it stays off and never leaves the shim.
+            amazonEnabled: false,
             steamNotify: false,
             epicNotify: false,
             gogNotify: false,
+            amazonNotify: false,
             steamCountry: "US"
           }
         }

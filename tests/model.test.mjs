@@ -17,7 +17,7 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   staleAfterMs, STALE_MULTIPLIER,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
   normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
-  parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
+  parseEpic, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
@@ -80,7 +80,7 @@ test('titles are scrubbed before they reach any sink', () => {
 
 test('ids are constrained to a safe character set', () => {
   assert.equal(Model.scrubId('abc-123_x.y'), 'abc-123_x.y');
-  for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(41), null]) {
+  for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(65), null]) {
     assert.equal(Model.scrubId(bad), '', `unsafe id accepted: ${bad}`);
   }
 });
@@ -250,9 +250,88 @@ test('parseStore routes each store and refuses an unknown one', () => {
   assert.equal(Model.parseStore('steam', fixture('steam-free.json')).ok, true);
   assert.equal(Model.parseStore('epic', epicFixture()).ok, true);
   assert.equal(Model.parseStore('gog', fixture('gog-giveaway.json')).ok, true);
+  assert.equal(Model.parseStore('amazon', fixture('amazon-claims.html')).ok, true);
   const unknown = Model.parseStore('nintendo', '{}');
   assert.equal(unknown.ok, false);
   assert.equal(unknown.error, 'invalid-response');
+});
+
+test('amazon fixture parses the claim grid into games', () => {
+  const result = Model.parseAmazon(fixture('amazon-claims.html'));
+  assert.equal(result.ok, true);
+  assert.ok(result.games.length >= 10, `only ${result.games.length} games parsed`);
+
+  const titles = result.games.map(g => g.title);
+  assert.ok(titles.includes('DOOM'), 'DOOM should be in the captured grid');
+  assert.ok(titles.includes('High on Life'), 'High on Life should be in the captured grid');
+
+  const doom = result.games.find(g => g.title === 'DOOM');
+  assert.equal(doom.store, 'amazon');
+  // The id is the canonical claim id, which is longer than the other stores'.
+  assert.match(doom.id, /^amzn1\.pg\.item\.[0-9a-f-]{36}$/);
+  assert.equal(doom.url,
+    'https://luna.amazon.com/claims/doom-gog/dp/' + doom.id);
+
+  // A card whose call to action is an Amazon Games app button has no link of
+  // its own, but its wrapper still carries the claim path.
+  const caravan = result.games.find(g => g.title === 'Caravan SandWitch');
+  assert.ok(caravan, 'button-only card was dropped');
+  assert.match(caravan.url,
+    /^https:\/\/luna\.amazon\.com\/claims\/caravan-sandwitch-aga\/dp\/amzn1\.pg\.item\./);
+
+  // The featured carousel above the grid repeats the same games; the grid must
+  // not list anything twice.
+  const ids = result.games.map(g => g.id);
+  assert.equal(new Set(ids).size, ids.length, 'duplicate ids listed');
+  assert.ok(result.games.length <= 40, 'the game cap was exceeded');
+});
+
+test('amazon rejects a page without the claim grid', () => {
+  const shell = '<html><body><p>We are having technical difficulties.</p>'
+    + '<input name="csrf-key" value="TEST"></body></html>';
+  for (const body of ['', 'not html', shell,
+    '<html><body><form action="/ap/signin"></form></body></html>',
+    // A grid that renders no cards is a markup change, not a healthy empty
+    // store: Luna always has a current lineup, and silence would hide drops.
+    '<div data-a-target="offer-list-FGWP_FULL"></div>']) {
+    const result = Model.parseAmazon(body);
+    assert.equal(result.ok, false, `accepted ${body.slice(0, 40)}`);
+    assert.equal(result.error, 'invalid-response');
+    assert.deepEqual(result.games, []);
+  }
+});
+
+test('amazon scopes to the grid, scrubs titles and rebuilds links', () => {
+  const card = (title, slug, id) =>
+    '<a aria-label="' + title + '" data-a-target="learn-more-card"'
+    + ' href="/claims/' + slug + '/dp/' + id + '?ingress=amzn&amp;ref_=x">'
+    + '<h3 title="' + title + '">' + title + '</h3>'
+    + '<div data-a-target="FGWPOffer">Claim game</div></a>';
+  const outside = card('Carousel Game', 'carousel-game', 'amzn1.pg.item.aaaa');
+  const inside = card('Grid Game', 'grid-game', 'amzn1.pg.item.bbbb')
+    + card('<b>Hostile</b> Title', 'hostile', 'amzn1.pg.item.cccc');
+  const html = '<html><body>' + outside
+    + '<div data-a-target="offer-list-FGWP_FULL">' + inside + '</div></body></html>';
+
+  const result = Model.parseAmazon(html);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.games.map(g => g.title), ['Grid Game', 'Hostile Title']);
+  assert.equal(result.games[0].url,
+    'https://luna.amazon.com/claims/grid-game/dp/amzn1.pg.item.bbbb');
+  assert.ok(!result.games.some(g => g.title === 'Carousel Game'),
+    'a card outside the grid leaked into the list');
+
+  // The Amazon host is allowlisted on its own, and no other store accepts it.
+  assert.equal(Model.safeUrl('amazon', 'https://luna.amazon.com/claims/x/dp/y'),
+    'https://luna.amazon.com/claims/x/dp/y');
+  assert.equal(Model.safeUrl('amazon', 'https://evil.test/claims/x/dp/y'), '');
+  assert.equal(Model.safeUrl('steam', 'https://luna.amazon.com/claims/x/dp/y'), '');
+});
+
+test('amazon claim ids fit the shared id cap', () => {
+  const id = 'amzn1.pg.item.' + 'a'.repeat(36);
+  assert.equal(id.length, 50);
+  assert.equal(Model.scrubId(id), id, 'a real claim id was refused');
 });
 
 test('first fetch is silent for every store', () => {
@@ -436,6 +515,10 @@ test('settings are normalised into safe ranges', () => {
   assert.equal(on.steam, false);
   assert.equal(on.epic, true, 'an absent setting keeps its default');
   assert.equal(Model.enabled(undefined).gog, true);
+  // Amazon is the one store that costs a browser render, so it ships off.
+  assert.equal(on.amazon, false, 'Amazon must default to off');
+  assert.equal(Model.enabled({ amazonEnabled: true }).amazon, true);
+  assert.equal(Model.notifyFor({}).amazon, true);
 });
 
 test('the panel headline is the plugin name and the count is a subtitle', () => {
@@ -459,8 +542,12 @@ test('the store list names only the stores being watched', () => {
   assert.equal(Model.storeList({ steam: true, epic: true, gog: true }),
     'Steam, Epic, and GOG');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, and GOG');
+  assert.equal(Model.storeList({ steam: true, epic: true, gog: true, amazon: true }),
+    'Steam, Epic, GOG, and Amazon');
   assert.equal(Model.STORE_LABELS.epic, 'Epic Games', 'headers keep the full name');
+  assert.equal(Model.STORE_LABELS.amazon, 'Amazon Luna');
   assert.equal(Model.STORE_SHORT.epic, 'Epic');
+  assert.equal(Model.STORE_SHORT.amazon, 'Amazon');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: false }), 'Steam');
   assert.equal(Model.storeList({ steam: false, epic: false, gog: false }), '');
   assert.equal(Model.storeList(null), '');
@@ -590,21 +677,24 @@ test('acknowledged ids survive a round trip and ignore junk', () => {
 });
 
 test('every store has a header mark, and the real logos are private-use', () => {
-  // Steam and GOG use the Material Design marks in Nerd Fonts 3.5.1. Both are
-  // private-use codepoints, so they render monochrome and take the theme colour;
-  // an emoji-presentation codepoint here would paint its own colour instead.
+  // Steam and GOG use the Material Design marks in Nerd Fonts 3.5.1, and Amazon
+  // the Font Awesome one. All are private-use codepoints, so they render
+  // monochrome and take the theme colour; an emoji-presentation codepoint here
+  // would paint its own colour instead.
   const steam = Model.STORE_GLYPHS.steam.codePointAt(0);
   const gog = Model.STORE_GLYPHS.gog.codePointAt(0);
+  const amazon = Model.STORE_GLYPHS.amazon.codePointAt(0);
   // Two private-use planes: BMP U+E000-F8FF, and Plane 15 at U+F0000-FFFFD.
   // The Nerd Fonts Material Design block sits in the second of these.
   const privateUse = c => (c >= 0xe000 && c <= 0xf8ff)
     || (c >= 0xf0000 && c <= 0xffffd);
-  for (const [name, code] of [['steam', steam], ['gog', gog]]) {
+  for (const [name, code] of [['steam', steam], ['gog', gog], ['amazon', amazon]]) {
     assert.ok(privateUse(code),
       `the ${name} mark U+${code.toString(16)} is not private-use`);
   }
   assert.equal(steam, 0xf04d3, 'the steam mark moved between Nerd Fonts releases');
   assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
+  assert.equal(amazon, 0xf270, 'the amazon mark moved between Nerd Fonts releases');
 
   // Nerd Fonts ships no Epic mark. The real Epic shield was tried here and is
   // unusable at eleven pixels: carrying "EPIC GAMES" lettering inside the

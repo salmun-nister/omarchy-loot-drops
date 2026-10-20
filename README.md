@@ -1,6 +1,6 @@
 <h1 align="center">Loot Drops</h1>
 
-<p align="center">Never miss a free game drop. Loot Drops watches Steam, Epic Games, and GOG for games that are free for a limited time, and alerts you the moment a new one appears.</p>
+<p align="center">Never miss a free game drop. Loot Drops watches Steam, Epic Games, GOG, and Amazon Luna for games that are free for a limited time, and alerts you the moment a new one appears.</p>
 
 <p align="center"><a href="https://github.com/tcballard/omarchy-badges"><img alt="Built for Omarchy: Plugin" height="20" src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg"></a></p>
 
@@ -33,7 +33,8 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable salmun-nister.loot-drops right
 ```
 
-Nothing else to install. `python3` and `curl` are already present on Omarchy.
+Nothing else to install. `python3`, `curl` and Chromium — all Omarchy base
+packages — are already present.
 
 ## Removing
 
@@ -55,8 +56,10 @@ of deleting it, so remove it yourself if you want the space back.
 Your state file is deliberately kept:
 `~/.local/state/salmun-nister.loot-drops/seen.json`. It records what was
 already free, so reinstalling does not re-announce games that were free before,
-and which games you have marked seen, so your markers survive a reinstall.
-Delete that directory if you want a clean slate.
+and which games you have marked seen, so your markers survive a reinstall. If
+you have used Amazon Luna, that directory also holds the anonymous Chromium
+profile its render uses; it carries no account or login. Delete the directory if
+you want a clean slate.
 
 Nothing else is changed: no Hyprland setting, and no other entry in
 `~/.config/omarchy/shell.json`.
@@ -66,10 +69,10 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | Action | What happens |
 | --- | --- |
 | Left-click the chest | Open the panel |
-| Middle-click the chest | Refresh the three stores now |
+| Middle-click the chest | Refresh the stores now |
 | Click a game | Open its store page and close the panel |
 | Click a game's coin | Mark that game as seen, without opening it |
-| `r` | Refresh the three stores now |
+| `r` | Refresh the stores now |
 | `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
 | `s` | Toggle the highlighted game's seen state (press again to bring its coin back) |
@@ -93,8 +96,8 @@ looked at. Like the notification-center badge, it is drawn over the icon rather
 than beside it, so the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel, headed by the store's mark
-— the real Steam and GOG logos, and a storefront for Epic, which Nerd Fonts has
-no mark for. The header carries two controls: a **switch** that stops or resumes
+— the real Steam, GOG and Amazon logos, and a storefront for Epic, which Nerd
+Fonts has no mark for. The header carries two controls: a **switch** that stops or resumes
 watching that store entirely, and a **bell** that mutes or unmutes its
 notifications. Games sit slightly indented under their store name. The bell is a
 bordered button, the same kind as the footer's Refresh and `?`, so all three
@@ -150,9 +153,11 @@ Omarchy settings UI. They hot-reload on save.
 | `steamEnabled` | `true` | Watch Steam. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
 | `gogEnabled` | `true` | Watch GOG. |
+| `amazonEnabled` | `false` | Watch Amazon Luna. Off by default because it renders a page in headless Chromium; no account or key is needed. |
 | `steamNotify` | `true` | Notify when a Steam game goes free. |
 | `epicNotify` | `true` | Notify when an Epic game goes free. |
 | `gogNotify` | `true` | Notify when a GOG giveaway runs. |
+| `amazonNotify` | `true` | Notify when an Amazon Luna game goes free. |
 | `steamCountry` | `""` | Optional two-letter Steam store country (`US`, `DE`, `GB`). Empty lets Steam choose. |
 
 ```json
@@ -176,7 +181,7 @@ announcing it, so installing the plugin does not produce a wall of notifications
 for games that were free before you asked.
 
 Each store is fetched separately, so one being slow or down never delays or hides
-the other two. A failed check never erases what you already had: the panel keeps
+the others. A failed check never erases what you already had: the panel keeps
 showing the last good list with the reason attached.
 
 The states are kept apart rather than collapsed into one "no games" message:
@@ -187,34 +192,45 @@ The states are kept apart rather than collapsed into one "no games" message:
 | `Nothing free right now` | Fetched, and there are none. |
 | A store header on its own | That store is on and has nothing free today. Normal, and it can still be switched off from there. |
 | `Could not reach <store>` | The request failed; the old list is still shown. |
+| `Chromium is required but was not installed` | Amazon Luna is switched on but Chromium, its renderer, is missing. |
 | `Store returned an unexpected response` | The page did not look like what we expected. |
 
 ## What it talks to
 
-Three public endpoints, one request each per refresh, and nothing else:
+Steam, Epic and GOG are one public request each per refresh. Amazon Luna has no
+endpoint a script may read, so its signed-out claims page is rendered in
+headless Chromium — a base Omarchy package — and the rendered page is what gets
+read. That is the only store that launches a browser at refresh time.
 
 | Store | Host |
 | --- | --- |
 | Steam | `store.steampowered.com` |
 | Epic | `store-site-backend-static.ak.epicgames.com` |
 | GOG | `www.gog.com` |
+| Amazon Luna | `luna.amazon.com` |
 
-Only those three hosts are ever opened. Every link is checked against the store's
-own address before your browser is launched, and every game title is stripped of
-markup and control characters before it is displayed or sent to the notification
-server. See [security](SECURITY.md).
+Every game link is checked against the store's own host before your browser is
+launched, and every game title is stripped of markup and control characters
+before it is displayed or sent to the notification server. The Luna render uses
+no account, cookie or key from your browser: it opens a fresh signed-out page,
+which loads that page's own assets, and nothing else. See
+[security](SECURITY.md).
 
-Your plugin state lives in one file, `seen.json`, under
-`~/.local/state/salmun-nister.loot-drops/`. Removing the plugin leaves it
-behind; delete that directory if you want a clean slate. Nothing else on your
-system is touched.
+Your plugin state lives in `~/.local/state/salmun-nister.loot-drops/`:
+`seen.json`, plus — only while Amazon Luna is switched on — the anonymous
+Chromium profile the render uses. Removing the plugin leaves both behind;
+delete that directory if you want a clean slate. Nothing else on your system is
+touched.
 
 ## Not included
 
 Upcoming and announced games, cover art, countdown timers, permanently-free and
 free-to-play titles, and store selection for Epic or GOG. GOG's giveaway is a
 limited-time claim-and-keep promotion, which is what this tracks — not GOG's
-larger free catalogue.
+larger free catalogue. Amazon Luna is tracked the same way: its claim-and-keep
+games only, so in-game content and Luna's streaming catalogue are out of scope.
+The claims grid exposes no end dates, so Amazon rows never carry the
+ending-soon hourglass.
 
 ## Development
 
@@ -230,10 +246,13 @@ larger free catalogue.
 
 Intended target: Omarchy 4 / Hyprland. Tested live on **Omarchy 4.0.4-1** with
 Hyprland on X11-less Wayland, kernel 7.2.5-3-omarchy: the widget loads on the bar,
-the panel opens and closes, all three stores resolve, a desktop notification
-fires on a newly free game and does not repeat, and the per-store switch and bell
-states render. GOG's success path is still fixture-only, because no giveaway was
-live when it was tested. A vertical bar has not been observed.
+the panel opens and closes, all stores resolve, a desktop notification fires on a
+newly free game and does not repeat, and the per-store switch and bell states
+render. GOG's success path is still fixture-only, because no giveaway was live
+when it was tested. Amazon Luna resolved live through the widget's own fetch
+path on 19 October 2026: the signed-out claims page rendered in headless
+Chromium and listed 15 games, with no login. A vertical bar has not been
+observed.
 
 Portable validation additionally covers parsing, the URL allowlist and the
 notification diff. See [acceptance evidence](docs/ACCEPTANCE.json) for the exact
@@ -246,9 +265,9 @@ nille, which watches Steam alone for games that are free to keep. Loot Drops is
 an independent work: it adds Epic and GOG, per-store switches and bells, and
 keeps a separate baseline for each store.
 
-Steam, Epic Games, and GOG are trademarks of their respective owners. Loot Drops
-is an independent project, not affiliated with, endorsed by, or sponsored by
-them; it only reads their public pages.
+Steam, Epic Games, GOG, and Amazon Luna are trademarks of their respective
+owners. Loot Drops is an independent project, not affiliated with, endorsed by,
+or sponsored by them; it only reads their public pages.
 
 Built from [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins)
 guidance and the Omarchy template set. No third-party code is vendored; full

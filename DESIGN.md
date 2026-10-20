@@ -35,14 +35,16 @@ remaining work are at the bottom.
 
 ## Data sources
 
-All three were checked live on 9 October 2026. No credentials, no accounts, no
-API keys, no login, no privileged operations.
+All three request-based stores were checked live on 9 October 2026; Amazon Luna
+on 19 October 2026. No credentials, no accounts, no API keys, no login, no
+privileged operations.
 
 | Store | Endpoint | Currently-free test | Live result |
 | --- | --- | --- | --- |
 | Steam | `store.steampowered.com/search/results/?maxprice=free&specials=1&infinite=1` | scrape `results_html`; `specials=1` already excludes free-to-play | 200, 2 games |
 | Epic | `store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US` | `promotions.promotionalOffers[].promotionalOffers[]` with `discountPercentage: 0` **and** `endDate > now` | 200, 13 elements, 2 free |
 | GOG | `www.gog.com/giveaway/api/get` | non-404 JSON body | **404** — no giveaway running |
+| Amazon Luna | `luna.amazon.com/claims/home`, rendered signed out in headless Chromium | cards inside `data-a-target="offer-list-FGWP_FULL"`, each wrapped in a `/claims/<slug>/dp/<id>` link | 200, 15 games, no login |
 
 ### Findings that change the implementation
 
@@ -56,6 +58,16 @@ API keys, no login, no privileged operations.
 - **Steam has no clean API.** `search/results/` returns JSON wrapping an HTML
   blob. The parse treats the embedded HTML as untrusted and sanitises before
   rendering; see [Security invariants](#security-invariants).
+- **Amazon Luna requires a browser, not curl.** Its claims grid exists only
+  after the page's scripts run. `POST luna.amazon.com/graphql` with the page's
+  `csrf-token` and anonymous cookies answered once with an empty `primeOffers`
+  and then returned HTTP 418 to every retry; `gaming.amazon.com/graphql` now
+  answers 418/403. That is Amazon's WAF fingerprinting a non-browser client, so
+  the render is the transport. Chromium is an Omarchy base package, the render
+  takes about 2.5 seconds, and the grid marker is absent from the pre-script
+  shell — which is what makes "no grid" an error rather than an empty store.
+- **Amazon's item ids are 50 characters** (`amzn1.pg.item.` plus a UUID), so the
+  shared id cap is 64 rather than 40.
 
 ### Rejected: GOG catalogue endpoint
 
@@ -75,7 +87,7 @@ feature from "notify me when a game goes free to keep" and are deferred.
 - **Durable, plugin-owned**: `seen.json` in
   `$XDG_STATE_HOME/salmun-nister.loot-drops`, written through the plugin's own
   `lib/seen-state` helper. Shape is
-  `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed}}}`,
+  `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed},amazon:{ids,primed}}}`,
   keyed per store so toggling one store never disturbs another store's baseline.
   Measured worst case is 3,929 bytes against a 65,536-byte cap.
 - **Durable user configuration**: inline in `shell.json` as booleans plus one
@@ -85,7 +97,11 @@ feature from "notify me when a game goes free to keep" and are deferred.
 ## Settings
 
 `refreshMinutes` (integer, 30–720, default 90), `steamEnabled`, `epicEnabled`,
-`gogEnabled`, `steamNotify`, `epicNotify`, `gogNotify`, `steamCountry`.
+`gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`, `gogNotify`,
+`amazonNotify`, `steamCountry`. `amazonEnabled` defaults to false: it is the one
+store whose fetch renders a page in a browser, so it is opt-in. Its notify
+setting still defaults to true, like the others, and only matters once the store
+is on.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
 headroom above the default rather than starting at its ceiling. The **stale
@@ -146,6 +162,7 @@ Kept distinct per store, never collapsed into generic fallback:
 | `none-free` | fetched successfully, nothing currently free |
 | `unreachable` | network failure or non-200 status |
 | `invalid-response` | body did not parse or had an unexpected shape |
+| `renderer-missing` | Amazon Luna is on but `/usr/bin/chromium` is not installed |
 
 A failed fetch **never** overwrites the last good list. The panel degrades to
 stale-with-error rather than empty.
@@ -153,11 +170,12 @@ stale-with-error rather than empty.
 ## External commands
 
 `/usr/bin/python3` (interpreter for this plugin's own helpers; already an
-Omarchy desktop dependency, pulled in by `uwsm`), `curl`,
-`omarchy-notification-send`, `omarchy-shell`. The interpreter is named
-absolutely rather than taken from `PATH`, so a user with a version manager
-installed does not run the helpers under a different Python than the one they
-were tested against. **No credentials. No privilege. No `sudo`.**
+Omarchy desktop dependency, pulled in by `uwsm`), `/usr/bin/timeout` and
+`/usr/bin/chromium` (Amazon Luna's renderer; both Omarchy base packages), `curl`,
+`omarchy-notification-send`, `omarchy-shell`. The interpreter, `timeout` and the
+browser are named absolutely rather than taken from `PATH`, so neither a version
+manager nor a user-writable directory can substitute them. **No credentials. No
+privilege. No `sudo`.**
 
 `curl` is deliberately **not** pinned the way the interpreter is: it is resolved
 through `PATH`. The transport it performs is a public, unauthenticated GET with
@@ -187,12 +205,12 @@ These are properties of the plugin, not policy. Callers cannot bypass them.
 4. Leading dashes are stripped from notification titles, because the headline
    occupies an option position that is parsed before the positional argument.
 5. The reader's endpoint set is **closed**. `sourceUrl` is exhaustive over the
-   three stores; no environment variable, file path or fixture hook can point a
+   stores; no environment variable, file path or fixture hook can point a
    fetch anywhere else. The demo substitutes `curl` on `PATH` instead, entirely
    outside the widget.
 
-All three feeds are attacker-controlled if a store is compromised or the
-connection is intercepted.
+Every feed is attacker-controlled if a store is compromised or the connection
+is intercepted.
 
 ## Ownership and attribution
 
@@ -288,15 +306,16 @@ ability never worked.
 
 ## Verification plan
 
-- Parser unit tests against saved fixtures for all three shapes, including
-  GOG's 404 and Epic's expired-promotion case.
+- Parser unit tests against saved fixtures for every store's shape, including
+  GOG's 404, Epic's expired-promotion case and a real signed-out Amazon Luna
+  claims page.
 - Diff tests proving first-run silence, mute silence and re-enable silence.
 - Helper behaviour tests: byte cap, FIFO and symlink refusal, private directory,
   atomic replacement under concurrent writers, and process-group teardown.
 - A QML lint pass against the real Qt `qmllint`, which fails on any error or
   syntax warning.
 - A live harness that loads the real widget into a real Quickshell instance
-  against all three stores.
+  against all four stores.
 - A manual demo (`./demo/run`) that renders the real panel against a committed
   fixture, so the ending-soon marker can be seen without waiting for a giveaway.
 
@@ -309,7 +328,8 @@ over.
 ## Deferred
 
 Upcoming and announced games, cover images, countdown timers, permanently-free
-and free-to-play catalogues, and region selection beyond Steam's `country`.
+and free-to-play catalogues, region selection beyond Steam's `country`, and
+Amazon's in-game content or Luna streaming catalogue.
 
 ## Progress
 

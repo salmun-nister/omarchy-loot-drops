@@ -105,7 +105,7 @@ if content_height < rows * MIN_ROW_HEIGHT:
           % (content_height, rows * MIN_ROW_HEIGHT, rows), file=sys.stderr)
     raise SystemExit(1)
 
-for store in ("steam", "epic", "gog"):
+for store in ("steam", "epic", "gog", "amazon"):
     if store not in headers:
         print("FAIL: no header for %s in %s" % (store, headers), file=sys.stderr)
         raise SystemExit(1)

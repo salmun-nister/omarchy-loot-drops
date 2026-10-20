@@ -65,9 +65,11 @@ ShellRoot {
             steamEnabled: true,
             epicEnabled: true,
             gogEnabled: true,
+            amazonEnabled: true,
             steamNotify: false,
             epicNotify: false,
             gogNotify: false,
+            amazonNotify: false,
             steamCountry: "US"
           }
         }

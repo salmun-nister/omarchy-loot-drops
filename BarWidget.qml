@@ -13,9 +13,9 @@ import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Watch Steam, Epic and GOG for games that are free to keep. Parsing, URL
-// allowlisting, seen-id transitions and notification copy live in Model.js;
-// this file owns transport, persistence and rendering.
+// Watch Steam, Epic, GOG and Amazon Luna for games that are free to keep.
+// Parsing, URL allowlisting, seen-id transitions and notification copy live in
+// Model.js; this file owns transport, persistence and rendering.
 //
 // The bar widget is always loaded, so it owns the refresh timer itself. There
 // is deliberately no service kind: a process-wide singleton would be a second
@@ -61,12 +61,14 @@ Panel {
   readonly property var storesOn: Model.enabled({
     "steamEnabled": setting("steamEnabled", true),
     "epicEnabled": setting("epicEnabled", true),
-    "gogEnabled": setting("gogEnabled", true)
+    "gogEnabled": setting("gogEnabled", true),
+    "amazonEnabled": setting("amazonEnabled", false)
   })
   readonly property var notifyOn: Model.notifyFor({
     "steamNotify": setting("steamNotify", true),
     "epicNotify": setting("epicNotify", true),
-    "gogNotify": setting("gogNotify", true)
+    "gogNotify": setting("gogNotify", true),
+    "amazonNotify": setting("amazonNotify", true)
   })
   readonly property int refreshMinutes:
     // undefined, not 0: an absent setting must land on the default, and 0 would
@@ -75,11 +77,12 @@ Panel {
   readonly property string steamCountry: Model.normalizeCountry(setting("steamCountry", ""))
 
   // Per-store results. Each bucket keeps its own games, error and timestamp so
-  // one store failing never blanks the other two.
+  // one store failing never blanks the others.
   property var buckets: ({
     "steam": newBucket(),
     "epic": newBucket(),
-    "gog": newBucket()
+    "gog": newBucket(),
+    "amazon": newBucket()
   })
 
   property var seenState: Model.emptySeen()
@@ -301,6 +304,15 @@ Panel {
     return out
   }
 
+  // Whether any store currently carries an error, so the hero can turn urgent
+  // without naming each store in the binding.
+  function hasStoreError() {
+    for (var i = 0; i < Model.STORES.length; i++) {
+      if (bucket(Model.STORES[i]).error) return true
+    }
+    return false
+  }
+
   // Acknowledge one game, clearing its marker and letting the bar dot go out
   // once every new game has been marked.
   function markSeen(store, id) {
@@ -373,6 +385,8 @@ Panel {
   }
 
   function fetchArgs(store) {
+    // Amazon is rendered rather than requested, so a browser is its transport.
+    if (store === "amazon") return amazonArgs()
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     return [
       "curl", "-fsS", "--max-time", String(deadlineSeconds),
@@ -387,6 +401,26 @@ Panel {
       // network failure; curl -f alone would make both a non-zero exit.
       "--write-out", "\n%{http_code}",
       sourceUrl(store)
+    ]
+  }
+
+  // Luna's claims grid exists only after its scripts run, and the GraphQL
+  // behind it rejects clients that do not look like a browser, so this store is
+  // fetched by rendering the signed-out page in Chromium — a base Omarchy
+  // package. Both the browser and `timeout`, which supplies the deadline curl
+  // gives itself, are named absolutely so PATH cannot shadow them; capped-run
+  // still bounds the DOM printed to stdout.
+  // shortcut: no sign-in-wall detection; a wall requires a session this store
+  // does not have, and it surfaces as the generic unexpected-response error.
+  function amazonArgs() {
+    var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
+    return [
+      "/usr/bin/timeout", "-k", "2", String(deadlineSeconds),
+      "/usr/bin/chromium", "--headless", "--no-first-run", "--disable-logging",
+      "--user-data-dir=" + stateDir + "/browser-profile",
+      "--virtual-time-budget=10000",
+      "--dump-dom",
+      sourceUrl("amazon")
     ]
   }
 
@@ -405,6 +439,7 @@ Panel {
       return "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
         + "?locale=en-US&country=US&allowCountries=US"
     }
+    if (store === "amazon") return Model.SEARCH_URLS.amazon
     return "https://www.gog.com/giveaway/api/get"
   }
 
@@ -414,10 +449,14 @@ Panel {
   function publish(store, raw) {
     var body = String(raw || "")
     var code = "200"
-    var split = body.lastIndexOf("\n")
-    if (split >= 0) {
-      code = body.slice(split + 1).trim()
-      body = body.slice(0, split)
+    // curl appends its status code; the Amazon render is raw DOM, whose last
+    // line is markup rather than a status.
+    if (store !== "amazon") {
+      var split = body.lastIndexOf("\n")
+      if (split >= 0) {
+        code = body.slice(split + 1).trim()
+        body = body.slice(0, split)
+      }
     }
 
     if (code === "404" && store === "gog") {
@@ -696,10 +735,26 @@ Panel {
     }
   }
 
+  Process {
+    id: amazonProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.publish("amazon", text)
+    }
+    onExited: function(exitCode) {
+      // 127 is "command not found": the browser this store needs is absent.
+      if (exitCode === 127 && root.bucket("amazon").busy)
+        root.fail("amazon", "Chromium is required but was not installed")
+      else if (exitCode !== 0 && root.bucket("amazon").busy)
+        root.fail("amazon", "Could not reach Amazon Luna")
+    }
+  }
+
   readonly property var fetchProcs: ({
     "steam": steamProc,
     "epic": epicProc,
-    "gog": gogProc
+    "gog": gogProc,
+    "amazon": amazonProc
   })
 
   // --- Timers ------------------------------------------------------------
@@ -846,8 +901,7 @@ Panel {
           id: hero
           readonly property color tint: root.hasGames
             ? root.foreground
-            : (root.bucket("steam").error || root.bucket("epic").error
-                || root.bucket("gog").error ? root.urgent : root.dim)
+            : (root.hasStoreError() ? root.urgent : root.dim)
           width: parent.width
           height: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 

@@ -4,7 +4,7 @@
 
 ```bash
 ./tests/run         # portable: structure, model, QML lint, helper behaviour
-./tests/harness/run # live: the real widget against the three real stores
+./tests/harness/run # live: the real widget against the four real stores
 ./demo/run          # manual: the real widget against a committed fixture
 ```
 
@@ -56,13 +56,15 @@ omarchy-shell shell rescanPlugins
 ```
 
 The harness redirects the state directory, so running it will not disturb the
-real `seen.json` and will not fire notifications — its settings mute all three
-bells. To exercise notifications for real, install it and wait for an actual
-giveaway, or temporarily point the widget at a fixture.
+real `seen.json` and will not fire notifications — its settings mute every
+store's bell. To exercise notifications for real, install it and wait for an
+actual giveaway, or temporarily point the widget at a fixture.
 
 Worth checking by hand: the panel with one store disabled, with a bell muted,
 with an empty store (GOG is empty right now, which is the easy case to observe),
-and while a store is unreachable. Vertical bars are untested; the widget uses
+and while a store is unreachable. Amazon Luna is off by default; switching it on
+adds a Chromium render to each refresh, so its first live check should confirm
+the grid arrives and the panel lists the games. Vertical bars are untested; the widget uses
 `bar.fontFamily` and inherits the host orientation, but nothing has been observed
 on one.
 

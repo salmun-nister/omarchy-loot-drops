@@ -37,21 +37,35 @@ Everything else is per-instance and in memory: the game list, each store's error
 and timestamp, and the cursor. Settings live inline in `shell.json` as widget
 settings, not in this file.
 
+The Amazon Luna render keeps its anonymous Chromium profile at
+`~/.local/state/salmun-nister.loot-drops/browser-profile`. It is a cache, not
+state: removing it only makes the next render slower, and it holds no account.
+
 Baselines are per store so disabling one store cannot disturb another. A store
 with no baseline records silently; a store that was disabled re-records silently
 on return rather than announcing what it missed.
 
 ## Fetching
 
-`curl` per enabled store, each in its own `Process`, so a slow or hanging store
-cannot delay the others and one failure cannot mask the rest. Output is capped by
-`lib/capped-run` before anything is parsed.
+`curl` per enabled store, plus one Chromium render for Amazon Luna, each in its
+own `Process`, so a slow or hanging store cannot delay the others and one
+failure cannot mask the rest. Output is capped by `lib/capped-run` before
+anything is parsed.
 
 Steam has no clean giveaway API, so its infinite-scroll search endpoint is read
 and the HTML rows parsed. Epic returns JSON, filtered to zero-discount windows
 whose `endDate` is still in the future, because Epic keeps expired promotions in
 the array. GOG answers `404` when nothing is running, which is a healthy empty
 store rather than an error.
+
+Amazon Luna has no endpoint a script may read: its claims grid exists only after
+the page's scripts run, and its GraphQL rejects clients without a browser's TLS
+fingerprint (a `curl` POST is answered with a bot block). So the widget renders
+the signed-out claims page with `chromium --headless --dump-dom`, under
+`lib/capped-run`, with `timeout` supplying the deadline `curl` gives itself. The
+profile lives inside the state directory and holds only what any signed-out
+visitor's session holds; no account, cookie or token from the user's browser is
+read. A page without the grid is an error, not an empty store.
 
 ## Trust boundary
 
@@ -60,10 +74,11 @@ if a store is compromised or the connection is intercepted. Two rules hold
 everywhere, and both are enforced in `Model.js` rather than at call sites:
 
 1. **Links are rebuilt or allowlisted.** Steam URLs are rebuilt from a
-   digits-only id; Epic and GOG links pass `safeUrl`, which requires https, the
-   store's exact host, and a bounded, credential-free authority. Anything else
-   becomes the store's search page. `diffStore` re-applies this before an alert
-   reaches the notification server.
+   digits-only id and Amazon's from the claim path's slug and item id; Epic and
+   GOG links pass `safeUrl`, which requires https, the store's exact host, and a
+   bounded, credential-free authority. Anything else becomes the store's search
+   page. `diffStore` re-applies this before an alert reaches the notification
+   server.
 2. **Titles are plain text.** Tags are stripped, entities are decoded, then
    angle brackets, control characters and bidirectional overrides are removed
    and the result is capped. Every `Text` element that shows a store-provided
@@ -85,8 +100,9 @@ External text uses `Text.PlainText` throughout, including inside delegates.
 
 `tests/model.test.mjs` loads `Model.js` as plain JavaScript and drives it against
 saved fixtures: the real Steam payload, a hand-built Epic payload covering
-expired, paid and upcoming offers, and GOG's giveaway and 404 shapes. It is where
-the URL allowlist, the title scrub and the three silencing rules are pinned.
+expired, paid and upcoming offers, GOG's giveaway and 404 shapes, and a real
+signed-out Amazon Luna claims page. It is where the URL allowlist, the title
+scrub and the three silencing rules are pinned.
 
 `tests/qml/lint` runs the real Qt `qmllint` against a shim for `qs.Commons` and
 `qs.Ui`. The `qmllint` on `PATH` is a stub that reports nothing; the script uses

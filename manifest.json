@@ -5,12 +5,12 @@
   "version": "0.2.0",
   "author": "salmun-nister",
   "license": "MIT",
-  "description": "Watch Steam, Epic, and GOG for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
+  "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
   "kinds": ["bar-widget"],
   "entryPoints": {"barWidget": "BarWidget.qml"},
   "barWidget": {
     "displayName": "Loot Drops",
-    "description": "Watch Steam, Epic, and GOG for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
+    "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
     "category": "Info",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -19,9 +19,11 @@
       "steamEnabled": true,
       "epicEnabled": true,
       "gogEnabled": true,
+      "amazonEnabled": false,
       "steamNotify": true,
       "epicNotify": true,
       "gogNotify": true,
+      "amazonNotify": true,
       "steamCountry": ""
     },
     "schema": [
@@ -57,6 +59,13 @@
         "description": "Watch GOG. A disabled store is not fetched at all, is hidden from the panel and does not notify."
       },
       {
+        "key": "amazonEnabled",
+        "type": "boolean",
+        "label": "Amazon Luna",
+        "defaultValue": false,
+        "description": "Off by default. Watch Amazon Luna's free games with Prime by rendering its public claims page in headless Chromium, a base Omarchy package. No account, login or key is needed; games are claimed on Luna. The render costs more than the other stores' single request, so it only runs while this is switched on."
+      },
+      {
         "key": "steamNotify",
         "type": "boolean",
         "label": "Steam notifications",
@@ -76,6 +85,13 @@
         "label": "GOG notifications",
         "defaultValue": true,
         "description": "Notify when a newly free game appears on GOG. Turn this off to keep watching a store without notifications; the panel shows a crossed-out bell."
+      },
+      {
+        "key": "amazonNotify",
+        "type": "boolean",
+        "label": "Amazon Luna notifications",
+        "defaultValue": true,
+        "description": "Notify when a newly free game appears on Amazon Luna. Turn this off to keep watching the store without notifications; the panel shows a crossed-out bell."
       },
       {
         "key": "steamCountry",
