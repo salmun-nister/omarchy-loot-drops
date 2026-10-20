@@ -1236,10 +1236,19 @@ Panel {
               readonly property bool overGlyph: gameMark.visible
                 && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
               // The pointer picks the store the keyboard acts on, so e and n do
-              // not depend on where the keyboard cursor happens to be. It also
-              // claims the highlight, dismissing the keyboard cursor so the two
-              // do not both draw, and becomes the base for the next j/k move.
+              // not depend on where the keyboard cursor happens to be.
+              // Entering only records the pointer row: a row can enter under a
+              // stationary pointer when a keypress scrolls the list, and
+              // claiming the highlight there would yank the cursor back to
+              // wherever the scroll left the pointer.
               onEntered: {
+                root.pointerIndex = row.index
+                root.targetStore = row.modelData.store
+              }
+              // Real pointer movement claims the highlight, dismissing the
+              // keyboard cursor so the two do not both draw, and becomes the
+              // base for the next j/k move.
+              onPositionChanged: {
                 root.pointerIndex = row.index
                 root.cursorActive = false
                 root.targetStore = row.modelData.store
