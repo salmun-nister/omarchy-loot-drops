@@ -16,7 +16,7 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE,
   staleAfterMs, STALE_MULTIPLIER,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
-  normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
+  normalizeCountry, normalizeRefreshMinutes, countrySetting, countryPatch, epicQuery, parseStore, parseSteam,
   parseEpic, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
@@ -161,6 +161,7 @@ test('epic lists only live zero-discount offers', () => {
   assert.equal(result.ok, true);
   const titles = result.games.map(g => g.title);
   assert.ok(titles.includes('Out of Sight'));
+  assert.ok(titles.includes('GetHigh.EXE'), 'a developer giveaway should be listed');
   assert.ok(titles.includes('TerraScape Bundle'), 'bundle should still be listed');
 
   // The three cases that must not appear.
@@ -176,6 +177,9 @@ test('epic builds links from the catalog mapping, with urlSlug fallback', () => 
 
   assert.equal(byTitle['Out of Sight'].url,
     'https://store.epicgames.com/p/out-of-sight-b96ca8');
+  assert.equal(byTitle['GetHigh.EXE'].url,
+    'https://store.epicgames.com/p/gethighexe-c83d1f',
+    'a developer giveaway uses its catalog mapping too');
   assert.equal(byTitle['TerraScape Bundle'].url,
     'https://store.epicgames.com/bundles/terrascape-2b12b1',
     'a BUNDLE offer uses the /bundles/ path');
@@ -190,6 +194,15 @@ test('epic scrubs markup-shaped titles', () => {
   assert.ok(hostile, 'the markup title should still be listed');
   assert.ok(!hostile.title.includes('<'), 'angle brackets survived');
   assert.ok(!hostile.title.includes('\u202e'), 'bidi override survived');
+});
+
+test('epic asks the catalog for zero-price offers', () => {
+  const blank = JSON.parse(Model.epicQuery(''));
+  assert.equal(blank.variables.country, null, 'a blank country must be null, not ""');
+  assert.equal(blank.variables.priceRange, '[0,0]');
+  assert.match(blank.query, /onSale:\s*true/);
+  assert.equal(JSON.parse(Model.epicQuery('de')).variables.country, 'DE');
+  assert.equal(JSON.parse(Model.epicQuery('USA')).variables.country, null);
 });
 
 test('epic rejects a payload without the expected shape', () => {
@@ -520,6 +533,18 @@ test('settings are normalised into safe ranges', () => {
   assert.equal(on.amazon, false, 'Amazon must default to off');
   assert.equal(Model.enabled({ amazonEnabled: true }).amazon, true);
   assert.equal(Model.notifyFor({}).amazon, true);
+});
+
+test('the shared country setting keeps reading the pre-Epic key', () => {
+  assert.equal(Model.countrySetting({ country: 'de' }), 'DE');
+  assert.equal(Model.countrySetting({ steamCountry: 'GB' }), 'GB');
+  assert.equal(Model.countrySetting({ country: '', steamCountry: 'GB' }), '',
+    'clearing the new key must not resurrect the old one');
+
+  assert.deepEqual(Model.countryPatch({ steamCountry: 'de' }), { country: 'DE' });
+  assert.equal(Model.countryPatch({}), null, 'nothing to migrate');
+  assert.equal(Model.countryPatch({ country: '', steamCountry: 'DE' }), null);
+  assert.equal(Model.countryPatch({ steamCountry: 'USA' }), null);
 });
 
 test('Amazon Luna ships off by default in the manifest', () => {

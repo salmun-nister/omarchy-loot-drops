@@ -73,7 +73,7 @@ ShellRoot {
             epicNotify: false,
             gogNotify: false,
             amazonNotify: false,
-            steamCountry: "US"
+            country: "US"
           }
         }
       }

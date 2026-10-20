@@ -40,9 +40,10 @@ in `Model.js`: it runs in plain Node, so tests are fast and free of Quickshell.
 
 Fixtures live in `tests/fixtures/`. `steam-free.json` is a real captured Steam
 response; `epic-free-games.json` is hand-built to cover the cases that must be
-handled — live free offer, bundle, expired offer, paid promotion, upcoming offer,
-missing catalog mapping and a markup-shaped title. Its live and upcoming windows
-are absolute dates, so the tests rebase them on `now` as the fixture loads
+handled — live free offer, developer giveaway, bundle, expired offer, paid
+promotion, upcoming offer, missing catalog mapping and a markup-shaped title.
+Its live and upcoming windows are absolute dates, so the tests rebase them on
+`now` as the fixture loads
 (`epicFixture` in `model.test.mjs`) rather than storing windows that rot.
 `gog-giveaway.json` is the documented success shape and is **fixture-only**: GOG
 had nothing running on 9 October 2026, so that path is not live-verified. See

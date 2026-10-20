@@ -35,14 +35,14 @@ remaining work are at the bottom.
 
 ## Data sources
 
-All three request-based stores were checked live on 9 October 2026; Amazon Luna
-on 19 October 2026. No credentials, no accounts, no API keys, no login, no
-privileged operations.
+All three request-based stores were checked live on 9 October 2026, Epic's
+catalog query again on 20 October 2026, and Amazon Luna on 19 October 2026. No
+credentials, no accounts, no API keys, no login, no privileged operations.
 
 | Store | Endpoint | Currently-free test | Live result |
 | --- | --- | --- | --- |
 | Steam | `store.steampowered.com/search/results/?maxprice=free&specials=1&infinite=1` | scrape `results_html`; `specials=1` already excludes free-to-play | 200, 2 games |
-| Epic | `store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US` | `promotions.promotionalOffers[].promotionalOffers[]` with `discountPercentage: 0` **and** `endDate > now` | 200, 13 elements, 2 free |
+| Epic | `store.epicgames.com/graphql`, `searchStore` with `onSale: true` and `priceRange: "[0,0]"` | `promotions.promotionalOffers[].promotionalOffers[]` with `discountPercentage: 0` **and** `endDate > now` | 200, 3 free, including a developer giveaway |
 | GOG | `www.gog.com/giveaway/api/get` | non-404 JSON body | **404** — no giveaway running |
 | Amazon Luna | `luna.amazon.com/claims/home`, rendered signed out in headless Chromium | cards inside `data-a-target="offer-list-FGWP_FULL"`, each wrapped in a `/claims/<slug>/dp/<id>` link | 200, 15 games, no login |
 
@@ -51,6 +51,11 @@ privileged operations.
 - **Epic returns an empty `url` field.** Links are built as
   `https://store.epicgames.com/p/<catalogNs.mappings[0].pageSlug>`, falling back
   to `urlSlug` when `catalogNs.mappings` is empty.
+- **Epic's free-games feed omits developer giveaways.** Its
+  `freeGamesPromotions` feed and the `freegames` catalog category carry Epic's
+  own weekly programme only; a 100%-off promotion set by a developer never
+  appears there. The catalog query with `onSale: true` and `priceRange: "[0,0]"`
+  returns those, and `onSale` keeps permanently free-to-play titles out.
 - **Epic retains expired promotions.** Without an `endDate > now` check the panel
   shows dead offers.
 - **GOG's 404 is a healthy empty store**, not a failure. It must never render as
@@ -98,11 +103,13 @@ feature from "notify me when a game goes free to keep" and are deferred.
 
 `refreshMinutes` (integer, 30–720, default 90), `hideSeen`, `steamEnabled`,
 `epicEnabled`, `gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`,
-`gogNotify`, `amazonNotify`, `steamCountry`. `amazonEnabled` defaults to false:
+`gogNotify`, `amazonNotify`, `country`. `amazonEnabled` defaults to false:
 it is the one store whose fetch renders a page in a browser, so it is opt-in.
 Its notify setting still defaults to true, like the others, and only matters once
 the store is on. `hideSeen` defaults to false and is a view filter, not a second
-baseline.
+baseline. `country` is shared by Steam and Epic; it replaced `steamCountry`,
+which is still read as a fallback and copied into `country` on first load, so an
+upgrade keeps the user's choice.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
 headroom above the default rather than starting at its ceiling. The **stale
@@ -356,7 +363,7 @@ over.
 ## Deferred
 
 Upcoming and announced games, cover images, countdown timers, permanently-free
-and free-to-play catalogues, region selection beyond Steam's `country`, and
+and free-to-play catalogues, region selection beyond the shared `country`, and
 Amazon's in-game content or Luna streaming catalogue.
 
 ## Progress

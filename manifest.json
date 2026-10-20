@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
@@ -25,7 +25,7 @@
       "epicNotify": true,
       "gogNotify": true,
       "amazonNotify": true,
-      "steamCountry": ""
+      "country": ""
     },
     "schema": [
       {
@@ -102,11 +102,11 @@
         "description": "Notify when a newly free game appears on Amazon Luna. Turn this off to keep watching the store without notifications; the panel shows a crossed-out bell."
       },
       {
-        "key": "steamCountry",
+        "key": "country",
         "type": "string",
-        "label": "Steam country code",
+        "label": "Store country code",
         "defaultValue": "",
-        "description": "Optional two-letter Steam store country (US, DE, GB). Leave empty to let Steam choose from your network."
+        "description": "Optional two-letter store country code (ISO 3166-1: US, DE, GB) used by Steam and Epic. Empty lets each store choose."
       }
     ]
   }

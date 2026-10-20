@@ -176,7 +176,7 @@ Omarchy settings UI. They hot-reload on save.
 | `epicNotify` | `true` | Notify when an Epic game goes free. |
 | `gogNotify` | `true` | Notify when a GOG giveaway runs. |
 | `amazonNotify` | `true` | Notify when an Amazon Luna game goes free. |
-| `steamCountry` | `""` | Optional two-letter Steam store country (`US`, `DE`, `GB`). Empty lets Steam choose. |
+| `country` | `""` | Optional two-letter store country code (ISO 3166-1: US, DE, GB) used by Steam and Epic. Empty lets each store choose. |
 
 ```json
 { "id": "salmun-nister.loot-drops", "refreshMinutes": 90, "gogNotify": false }
@@ -224,7 +224,7 @@ opt-in: claiming its games needs an Amazon Prime membership.
 | Store | Host |
 | --- | --- |
 | Steam | `store.steampowered.com` |
-| Epic | `store-site-backend-static.ak.epicgames.com` |
+| Epic | `store.epicgames.com` |
 | GOG | `www.gog.com` |
 | Amazon Luna | `luna.amazon.com` |
 

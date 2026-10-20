@@ -215,6 +215,24 @@ function normalizeCountry(value) {
   return /^[A-Z]{2}$/.test(cc) ? cc : ""
 }
 
+// The shared store country. "steamCountry" is the key from when the setting
+// only covered Steam; it stays as a read fallback so an upgrade does not reset
+// a country the user chose.
+function countrySetting(settings) {
+  return normalizeCountry(setting(settings, "country", setting(settings, "steamCountry", "")))
+}
+
+// The one-time copy of the old key into the shared one. Null means there is
+// nothing to move: no usable legacy value, or the new key is already present —
+// even as "" — because then the user has seen the new setting and their value
+// wins over the migration.
+function countryPatch(settings) {
+  if (!settings || typeof settings !== "object") return null
+  if (settings.country !== undefined && settings.country !== null) return null
+  var legacy = normalizeCountry(settings.steamCountry)
+  return legacy ? { "country": legacy } : null
+}
+
 function normalizeRefreshMinutes(value) {
   var minutes = Math.round(Number(value))
   if (!isFinite(minutes)) minutes = REFRESH_DEFAULT
@@ -346,6 +364,26 @@ function matchSteamTitle(text) {
   var match = block.match(/<span[^>]*class="[^"]*\btitle\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i)
   if (!match) return ""
   return scrubTitle(decodeEntities(match[1].replace(/<[^>]+>/g, "")))
+}
+
+// Epic's site feed only lists its own weekly free-games programme, so a
+// developer-run 100%-off promotion never appears there. This catalog query asks
+// for everything currently on sale in the zero-price band; onSale is what keeps
+// permanently free-to-play titles out, since those have no sale window.
+// priceRange must travel as a variable: its brackets are rejected inline.
+var EPIC_QUERY = "query freeGames($country: String, $locale: String, $priceRange: String){Catalog{searchStore(country:$country,locale:$locale,onSale:true,priceRange:$priceRange,count:40){elements{title id offerType productSlug urlSlug catalogNs{mappings(pageType:\"productHome\"){pageSlug pageType}} promotions{promotionalOffers{promotionalOffers{startDate endDate discountSetting{discountType discountPercentage}}}}}}}}"
+
+function epicQuery(country) {
+  return JSON.stringify({
+    "query": EPIC_QUERY,
+    "variables": {
+      // Null, not "": Epic rejects an empty country code, and null reads as
+      // "unset", which is what a blank setting should mean.
+      "country": normalizeCountry(country) || null,
+      "locale": "en-US",
+      "priceRange": "[0,0]"
+    }
+  })
 }
 
 // Epic keeps a promotion array that includes finished offers, so a game counts

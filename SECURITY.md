@@ -13,7 +13,7 @@ and explicit.
 
 | Kind | Detail |
 | --- | --- |
-| Network | Four store hosts. One GET each per refresh for Steam, Epic and GOG; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
+| Network | Four store hosts. One GET each per refresh for Steam and GOG, one POST for Epic; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
 | Process | `omarchy-shell`, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
 | Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. |
 | Privileged operations | None. |

@@ -81,7 +81,7 @@ Panel {
     // undefined, not 0: an absent setting must land on the default, and 0 would
     // clamp to the floor instead.
     Model.normalizeRefreshMinutes(setting("refreshMinutes", undefined))
-  readonly property string steamCountry: Model.normalizeCountry(setting("steamCountry", ""))
+  readonly property string country: Model.countrySetting(root.settings)
   // Whether the panel hides games already marked seen. This is a view filter,
   // not a second baseline: the seen state itself is untouched.
   readonly property bool hideSeen: setting("hideSeen", false)
@@ -308,6 +308,20 @@ Panel {
     }
   }
 
+  // One-time copy of the pre-Epic country key. Fires on either injection order:
+  // `bar` supplies the write path, `settings` the values, and the patch check
+  // makes a second call harmless.
+  onBarChanged: migrateCountry()
+  onSettingsChanged: migrateCountry()
+
+  function migrateCountry() {
+    var patch = Model.countryPatch(root.settings)
+    if (!patch) return
+    if (!root.bar || !root.bar.shell
+        || typeof root.bar.shell.updateEntryInline !== "function") return
+    persist(patch)
+  }
+
   function enabledKey(store) { return store + "Enabled" }
   function notifyKey(store) { return store + "Notify" }
 
@@ -439,7 +453,7 @@ Panel {
     // Amazon is rendered rather than requested, so a browser is its transport.
     if (store === "amazon") return amazonArgs()
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
-    return [
+    var args = [
       "curl", "-fsS", "--max-time", String(deadlineSeconds),
       // --max-filesize is only honoured against a declared Content-Length, so
       // capped-run is what actually bounds a response that streams.
@@ -450,9 +464,16 @@ Panel {
       "-H", "X-Requested-With: XMLHttpRequest",
       // The status code is appended so GOG's 404 can be told apart from a
       // network failure; curl -f alone would make both a non-zero exit.
-      "--write-out", "\n%{http_code}",
-      sourceUrl(store)
+      "--write-out", "\n%{http_code}"
     ]
+    // Epic is the only store queried with a POST. The GraphQL body is one argv
+    // element handed straight to curl, so no shell quoting is involved.
+    if (store === "epic") {
+      args.push("-H", "Content-Type: application/json",
+        "--data", Model.epicQuery(country))
+    }
+    args.push(sourceUrl(store))
+    return args
   }
 
   // Luna's claims grid exists only after its scripts run, and the GraphQL
@@ -483,13 +504,10 @@ Panel {
         + "&supportedlang=english&specials=1"
       var url = "https://store.steampowered.com/search/results/?" + filters
         + "&query=&start=0&count=50&infinite=1&l=english"
-      var cc = steamCountry
+      var cc = country
       return cc ? url + "&cc=" + encodeURIComponent(cc) : url
     }
-    if (store === "epic") {
-      return "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
-        + "?locale=en-US&country=US&allowCountries=US"
-    }
+    if (store === "epic") return "https://store.epicgames.com/graphql"
     if (store === "amazon") return Model.SEARCH_URLS.amazon
     return "https://www.gog.com/giveaway/api/get"
   }

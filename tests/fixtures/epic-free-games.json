@@ -37,6 +37,39 @@
       }
      },
      {
+      "title": "GetHigh.EXE",
+      "id": "795d3f4dbb65443aad43c54b9223699d",
+      "urlSlug": "39cc6fff91fc474dbf6bd8a3d7e1b283",
+      "productSlug": null,
+      "offerType": "BASE_GAME",
+      "url": "",
+      "promotions": {
+       "promotionalOffers": [
+        {
+         "promotionalOffers": [
+          {
+           "startDate": "2026-10-08T15:00:00.000Z",
+           "endDate": "2026-10-15T15:00:00.000Z",
+           "discountSetting": {
+            "discountType": "PERCENTAGE",
+            "discountPercentage": 0
+           }
+          }
+         ]
+        }
+       ],
+       "upcomingPromotionalOffers": []
+      },
+      "catalogNs": {
+       "mappings": [
+        {
+         "pageSlug": "gethighexe-c83d1f",
+         "pageType": "productHome"
+        }
+       ]
+      }
+     },
+     {
       "title": "TerraScape Bundle",
       "id": "id-terrascape",
       "urlSlug": "terrascape-2b12b1",

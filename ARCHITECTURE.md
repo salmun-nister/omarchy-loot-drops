@@ -53,7 +53,10 @@ failure cannot mask the rest. Output is capped by `lib/capped-run` before
 anything is parsed.
 
 Steam has no clean giveaway API, so its infinite-scroll search endpoint is read
-and the HTML rows parsed. Epic returns JSON, filtered to zero-discount windows
+and the HTML rows parsed. Epic's site feed only carries Epic's own weekly
+free-games programme, so a developer-run 100%-off promotion never appeared
+there; Epic is asked through the store's catalog GraphQL instead, filtered to
+offers currently on sale in the zero-price band, then to zero-discount windows
 whose `endDate` is still in the future, because Epic keeps expired promotions in
 the array. GOG answers `404` when nothing is running, which is a healthy empty
 store rather than an error.
