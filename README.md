@@ -77,6 +77,7 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | `e` | Enable or disable that store |
 | `n` | Mute or unmute notifications for that store |
 | `s` | Toggle the highlighted game's seen state (press again to bring its coin back) |
+| `v` | Hide or show the games you have marked seen |
 | `j` / `k` | Scroll down / up |
 | `?` | Show or hide the shortcut list |
 | `Esc` | Close the panel |
@@ -124,8 +125,8 @@ its switch stays live so you can turn it back on from there.
 The **eye** in the panel's bottom row hides the games you have already marked
 seen, store by store. Each store that had some hidden then ends with a dim line
 saying how many — `3 seen games hidden` — so the unseen games always read first.
-Click it again, or set `hideSeen`, to bring them back; the count in the subtitle
-still includes the hidden games.
+Click it again, press `v`, or set `hideSeen`, to bring them back; the count in
+the subtitle still includes the hidden games.
 
 Right-click does nothing, deliberately.
 

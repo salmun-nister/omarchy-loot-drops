@@ -920,6 +920,7 @@ Panel {
         else if (key === "e") root.toggleSelectedStore()
         else if (key === "n") root.toggleSelectedBell()
         else if (key === "s") root.toggleHighlighted()
+        else if (key === "v") root.toggleHideSeen()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
@@ -1457,7 +1458,7 @@ Panel {
           visible: root.showShortcuts
           wrapMode: Text.WordWrap
           horizontalAlignment: Text.AlignHCenter
-          text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
+          text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · v hide/show seen · j/k scroll · enter open"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
