@@ -172,6 +172,12 @@ free game, so hiding never makes the head line disagree with the store, and the
 bar icon's dimming follows whether an enabled store has any game rather than
 whether the filter leaves rows. The cursor skips the summary row.
 
+Store marks are drawn at the theme's 16px heading size. Steam, GOG and Amazon are
+Nerd Font glyphs; Epic has no such glyph, so it uses a bundled monochrome
+wordmark (Simple Icons, CC0) colorized to the theme with `MultiEffect`. Labels
+and game titles share an indent derived from the mark size, so they stay aligned
+when a theme changes the font scale.
+
 ## Failure states
 
 Kept distinct per store, never collapsed into generic fallback:

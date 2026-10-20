@@ -703,8 +703,8 @@ test('acknowledged ids survive a round trip and ignore junk', () => {
 });
 
 test('every store has a header mark, and the real logos are private-use', () => {
-  // Steam and GOG use the Material Design marks in Nerd Fonts 3.5.1, and Amazon
-  // the Font Awesome one. All are private-use codepoints, so they render
+  // Steam, GOG and Amazon use the Material Design and Font Awesome marks in
+  // Nerd Fonts 3.5.1. All are private-use codepoints, so they render
   // monochrome and take the theme colour; an emoji-presentation codepoint here
   // would paint its own colour instead.
   const steam = Model.STORE_GLYPHS.steam.codePointAt(0);
@@ -722,17 +722,18 @@ test('every store has a header mark, and the real logos are private-use', () => 
   assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
   assert.equal(amazon, 0xf270, 'the amazon mark moved between Nerd Fonts releases');
 
-  // Nerd Fonts ships no Epic mark. The real Epic shield was tried here and is
-  // unusable at eleven pixels: carrying "EPIC GAMES" lettering inside the
-  // outline it fills into a blob, and stripped to just the outer edge it is
-  // still a featureless silhouette. So Epic gets the one generic mark that
-  // still reads as a shop at that size.
-  const epic = Model.STORE_GLYPHS.epic.codePointAt(0);
-  assert.ok(privateUse(epic), `the epic mark U+${epic.toString(16)} is not private-use`);
-  assert.equal(epic, 0xf04dc, 'the epic mark moved between Nerd Fonts releases');
+  // Nerd Fonts ships no Epic mark, so Epic is drawn from a bundled monochrome
+  // logo. The widget must load it, and it must be a real SVG, not a stub.
+  assert.equal(Model.STORE_GLYPHS.epic, undefined,
+    'Epic should use the bundled logo, not a glyph');
+  const logo = readFileSync(new URL('assets/epic.svg', root), 'utf8');
+  assert.match(logo, /<svg[\s\S]*<path[^>]*d="[^"]{50,}"/,
+    'the Epic logo is missing or empty');
+  const widget = readFileSync(new URL('BarWidget.qml', root), 'utf8');
+  assert.ok(widget.includes('assets/epic.svg'), 'BarWidget does not load the Epic logo');
 
-  // No store may be left without a mark.
-  for (const store of Model.STORES) {
+  // No glyph store may be left without a mark.
+  for (const store of ['steam', 'gog', 'amazon']) {
     const mark = Model.STORE_GLYPHS[store];
     assert.equal(typeof mark, 'string', `${store} has no mark`);
     assert.ok(mark.length > 0, `${store} has an empty mark`);

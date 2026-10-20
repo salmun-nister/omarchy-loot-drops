@@ -97,8 +97,8 @@ looked at. Like the notification-center badge, it is drawn over the icon rather
 than beside it, so the bar does not change width as games arrive.
 
 Each enabled store gets its own section in the panel, headed by the store's mark
-— the real Steam, GOG and Amazon logos, and a storefront for Epic, which Nerd
-Fonts has no mark for. The header carries two controls: a **switch** that stops or resumes
+— the real Steam, GOG, Amazon and Epic logos; Epic's is bundled because Nerd
+Fonts has no mark for it. The header carries two controls: a **switch** that stops or resumes
 watching that store entirely, and a **bell** that mutes or unmutes its
 notifications. Games sit slightly indented under their store name. The bell is a
 bordered button, the same kind as the footer's Refresh, eye and `?`, so all four

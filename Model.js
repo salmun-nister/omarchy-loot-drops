@@ -15,11 +15,11 @@ var STORE_LABELS = {
   "amazon": "Amazon Luna"
 }
 
-// Store marks beside each header. Steam, GOG and Amazon are the real logos,
-// taken from the Material Design and Font Awesome sets in Nerd Fonts 3.5.1
-// (U+F04D3, U+F0BA1 and U+F270; GOG's codepoint moves between releases, so the
-// version matters). Nerd Fonts ships no Epic mark at all, so Epic borrows its
-// initial rather than wearing a storefront icon that is not its own.
+// Store marks beside each header. Steam, GOG and Amazon use the real logos from
+// the Material Design and Font Awesome sets in Nerd Fonts 3.5.1 (U+F04D3,
+// U+F0BA1 and U+F270; GOG's codepoint moves between releases, so the version
+// matters). Nerd Fonts ships no Epic mark at all, so the widget draws Epic from
+// a bundled monochrome logo (assets/epic.svg) colorized to the theme.
 // The IpcHandler target the bar widget registers and the notification's click
 // action addresses. Both sides read it from here so they cannot drift apart:
 // a notification that calls a target the widget no longer publishes would
@@ -28,7 +28,6 @@ var IPC_TARGET = "salmun-nister.loot-drops"
 
 var STORE_GLYPHS = {
   "steam": "\u{F04D3}",
-  "epic": "\u{F04DC}",
   "gog": "\u{F0BA1}",
   "amazon": "\u{F270}"
 }

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -57,6 +58,12 @@ Panel {
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+
+  // The store marks and the gutter they occupy. `heading` is the theme's 16px
+  // token, so the marks follow a theme's font scale; labels and game titles
+  // share the indent derived from it so the two levels stay aligned.
+  readonly property int markSize: Style.font.heading
+  readonly property int storeIndent: Style.spacing.sm + markSize + Style.space(8)
 
   readonly property var storesOn: Model.enabled({
     "steamEnabled": setting("steamEnabled", true),
@@ -1061,16 +1068,51 @@ Panel {
               onEntered: root.targetStore = row.modelData.store
             }
 
-            Text {
+            // The store's mark, in a fixed box so every header starts its label
+            // at the same inset. Epic has no Nerd Font glyph, so it uses the
+            // bundled logo, colorized to the theme; the rest are glyphs.
+            Item {
               id: headerMark
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: Model.STORE_GLYPHS[row.modelData.store] || ""
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
+              width: root.markSize
+              height: root.markSize
+
+              Text {
+                anchors.centerIn: parent
+                visible: row.modelData.store !== "epic"
+                textFormat: Text.PlainText
+                text: Model.STORE_GLYPHS[row.modelData.store] || ""
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: root.markSize
+              }
+
+              Image {
+                id: epicLogo
+                anchors.fill: parent
+                // Only the Epic header loads the asset; the same delegate is
+                // reused for game rows, which must not read it.
+                source: row.modelData.store === "epic"
+                  ? root.pluginFile("assets/epic.svg") : ""
+                fillMode: Image.PreserveAspectFit
+                // Decode at physical pixels, as the shell's tray icons do, so
+                // the small mark stays crisp on a scaled display.
+                sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+                sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+                // Hidden but layered, so the effect can sample it as a texture.
+                visible: false
+                layer.enabled: row.modelData.store === "epic"
+              }
+
+              MultiEffect {
+                anchors.fill: epicLogo
+                source: epicLogo
+                visible: row.modelData.store === "epic"
+                colorization: 1.0
+                colorizationColor: root.dim
+              }
             }
 
             Text {
@@ -1146,8 +1188,8 @@ Panel {
             anchors.top: parent.top
             anchors.topMargin: row.headerRowHeight
             anchors.left: parent.left
-            anchors.leftMargin: Style.space(22)
-            width: parent.width - Style.space(22) - Style.spacing.sm
+            anchors.leftMargin: root.storeIndent
+            width: parent.width - root.storeIndent - Style.spacing.sm
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             visible: text !== ""
@@ -1210,7 +1252,7 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               // Indented under the store name so the two levels read apart.
-              anchors.leftMargin: Style.space(22)
+              anchors.leftMargin: root.storeIndent
               anchors.rightMargin: Style.spacing.sm
               // Titles from the network are plain text, never markup. A header
               // row has no `game`, and hiding a row does not stop this binding
@@ -1275,7 +1317,7 @@ Panel {
             id: hiddenNote
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.leftMargin: Style.space(22)
+            anchors.leftMargin: root.storeIndent
             anchors.rightMargin: Style.spacing.sm
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText

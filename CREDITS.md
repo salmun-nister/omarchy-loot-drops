@@ -26,12 +26,16 @@ implementation.
 
 ## Third-party material
 
-- No badge artwork, wallpaper, screenshot or product logo is bundled.
-- Steam, Epic Games, and GOG are trademarks of their respective owners, used
-  only to name the stores whose public pages are read. Loot Drops is not
-  affiliated with, endorsed by, or sponsored by them.
-- The bar icon and status glyphs are Nerd Font glyphs already present in the
-  shell's font, not redistributed artwork.
+- `assets/epic.svg` is the Epic Games wordmark from
+  [Simple Icons](https://github.com/simple-icons/simple-icons) (`epicgames`),
+  released under CC0 1.0. The logo itself is a trademark of Epic Games, used
+  only to name the store whose public pages are read.
+- Steam, Epic Games, GOG, and Amazon Luna are trademarks of their respective
+  owners, used only to name the stores whose public pages are read. Loot Drops
+  is not affiliated with, endorsed by, or sponsored by them.
+- The bar icon, status glyphs, and the Steam, GOG and Amazon store marks are
+  Nerd Font glyphs already present in the shell's font, not redistributed
+  artwork.
 
 Crediting an inspiration does not grant permission to copy its code, and an
 absent licence is not permission to copy. If code from another project is ever
