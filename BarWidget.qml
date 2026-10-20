@@ -108,6 +108,10 @@ Panel {
   // hover claims it and dismisses the keyboard cursor, and a keyboard move
   // claims it back. Only one row is ever highlighted.
   property int pointerIndex: -1
+  // Where the pointer last was, in scene coordinates. A row sliding under a
+  // still pointer reports the same scene point; only a changed point means the
+  // mouse itself moved.
+  property point lastPointerScene: Qt.point(-1, -1)
   // Whichever store the e and n keys act on. It follows the pointer when the
   // pointer is over a row, and the keyboard cursor otherwise, so pressing e
   // acts on the store you are looking at rather than on whichever one happens
@@ -227,6 +231,19 @@ Panel {
   function gameUnseen(store, id) {
     var set = acknowledgedIds[store]
     return !(set && set[id])
+  }
+
+  // True when the hover position differs enough from the previous one to be the
+  // pointer moving, rather than a row scrolling underneath a still pointer.
+  // Both arrive as position changes, so the scene point is what tells them
+  // apart: scrolling changes the row's position, not the pointer's.
+  function pointerMoved(scenePoint) {
+    var threshold = Style.space(4)
+    var moved = lastPointerScene.x < 0
+      || Math.abs(scenePoint.x - lastPointerScene.x) >= threshold
+      || Math.abs(scenePoint.y - lastPointerScene.y) >= threshold
+    lastPointerScene = scenePoint
+    return moved
   }
 
   // Flat, store-ordered list for the single cursor. Reordered on every change
@@ -1289,8 +1306,11 @@ Panel {
               }
               // Real pointer movement claims the highlight, dismissing the
               // keyboard cursor so the two do not both draw, and becomes the
-              // base for the next j/k move.
-              onPositionChanged: {
+              // base for the next j/k move. A row scrolling under a still
+              // pointer also reports a position change, so only a change in the
+              // pointer's scene point counts as movement.
+              onPositionChanged: function(mouse) {
+                if (!root.pointerMoved(mapToItem(null, mouse.x, mouse.y))) return
                 root.pointerIndex = row.index
                 root.cursorActive = false
                 root.targetStore = row.modelData.store
