@@ -263,15 +263,16 @@ ending-soon hourglass.
 
 ## Compatibility
 
-Intended target: Omarchy 4 / Hyprland. Tested live on **Omarchy 4.0.4-1** with
-Hyprland on X11-less Wayland, kernel 7.2.5-3-omarchy: the widget loads on the bar,
-the panel opens and closes, all stores resolve, a desktop notification fires on a
-newly free game and does not repeat, and the per-store switch and bell states
-render. GOG's success path is still fixture-only, because no giveaway was live
-when it was tested. Amazon Luna resolved live through the widget's own fetch
-path on 19 October 2026: the signed-out claims page rendered in headless
-Chromium and listed 15 games, with no login. A vertical bar has not been
-observed.
+Intended target: Omarchy 4 / Hyprland. Tested live on **Omarchy 4.0.6-1** with
+Hyprland 0.56.2 on X11-less Wayland, kernel 7.2.8-9-omarchy: the widget loads on
+the bar, the panel opens and closes, all four stores resolve, a desktop
+notification fires and opens the panel, the hide-seen eye and `v` key work, the
+footer stays pinned while the games scroll, and fresh install, update from
+0.2.0, removal and restore were re-run. GOG's success path is still fixture-only,
+because no giveaway was live when it was tested. Amazon Luna is opt-in and was
+verified signed out in the live panel (15 games, no login); its claims page
+depends on Amazon's regional availability and anti-bot behaviour. A vertical bar
+has not been observed.
 
 Portable validation additionally covers parsing, the URL allowlist and the
 notification diff. See [acceptance evidence](docs/ACCEPTANCE.json) for the exact
