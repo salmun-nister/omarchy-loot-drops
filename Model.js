@@ -653,6 +653,38 @@ function hasUnseen(state, perStore) {
   return unseenIds(state, perStore).length > 0
 }
 
+// Splits one store's games into the ones the user has not acknowledged and a
+// count of the ones they have. Store order is preserved, so with the seen games
+// hidden the remaining rows keep the order they arrived in.
+function splitSeenGames(games, acknowledgedIds) {
+  var acknowledged = {}
+  var list = Array.isArray(acknowledgedIds) ? acknowledgedIds : []
+  for (var i = 0; i < list.length; i++) {
+    var acked = scrubId(list[i])
+    if (acked) acknowledged[acked] = true
+  }
+
+  var shown = []
+  var hidden = 0
+  var source = Array.isArray(games) ? games : []
+  for (var j = 0; j < source.length; j++) {
+    var game = source[j]
+    var id = game ? scrubId(game.id) : ""
+    if (id && acknowledged[id]) {
+      hidden++
+      continue
+    }
+    if (game) shown.push(game)
+  }
+  return { shown: shown, hidden: hidden }
+}
+
+// The summary row's copy when seen games are hidden from the panel.
+function hiddenSeenLabel(count) {
+  var n = Math.max(0, Math.round(Number(count) || 0))
+  return n === 1 ? "1 seen game hidden" : n + " seen games hidden"
+}
+
 function parseSeen(raw) {
   var text = String(raw == null ? "" : raw).trim()
   if (!text || text.length > MAX_SEEN_BYTES) return emptySeen()

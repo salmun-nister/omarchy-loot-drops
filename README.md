@@ -70,6 +70,7 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | --- | --- |
 | Left-click the chest | Open the panel |
 | Middle-click the chest | Refresh the stores now |
+| Click the eye in the footer | Hide or show the games you have marked seen |
 | Click a game | Open its store page and close the panel |
 | Click a game's coin | Mark that game as seen, without opening it |
 | `r` | Refresh the stores now |
@@ -100,10 +101,10 @@ Each enabled store gets its own section in the panel, headed by the store's mark
 Fonts has no mark for. The header carries two controls: a **switch** that stops or resumes
 watching that store entirely, and a **bell** that mutes or unmutes its
 notifications. Games sit slightly indented under their store name. The bell is a
-bordered button, the same kind as the footer's Refresh and `?`, so all three
+bordered button, the same kind as the footer's Refresh, eye and `?`, so all four
 share their outline and hover highlight. Hovering any panel control — the bell,
-the switch, Refresh or `?` — names what it does. Both take effect immediately,
-and both are saved to your `shell.json`.
+the switch, Refresh, the eye or `?` — names what it does. Every one takes effect
+immediately, and all are saved to your `shell.json`.
 
 `e` and `n` act on whichever store your **pointer is over**, falling back to
 whichever store the keyboard cursor last landed on. Hovering a store's name or any
@@ -120,10 +121,18 @@ different from one you have switched off. A store you have switched off collapse
 to a faded row with no games under it, because it is no longer being watched;
 its switch stays live so you can turn it back on from there.
 
+The **eye** in the panel's bottom row hides the games you have already marked
+seen, store by store. Each store that had some hidden then ends with a dim line
+saying how many — `3 seen games hidden` — so the unseen games always read first.
+Click it again, or set `hideSeen`, to bring them back; the count in the subtitle
+still includes the hidden games.
+
 Right-click does nothing, deliberately.
 
-The panel lists every free game, however many there are; it scrolls with the
-wheel, and the keyboard cursor scrolls itself into view.
+The panel lists every free game, however many there are. The games scroll between
+the two rules while the header and the buttons stay put, and a fade at the top or
+bottom edge means there is more in that direction; the scrollbar itself stays out
+of the way until you scroll. The keyboard cursor scrolls itself into view.
 
 ## Theming
 
@@ -150,6 +159,7 @@ Omarchy settings UI. They hot-reload on save.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `refreshMinutes` | `90` | How often to check the enabled stores (30–720). |
+| `hideSeen` | `false` | Hide the games you have marked seen, replacing them with a per-store count. The footer's eye toggles it. |
 | `steamEnabled` | `true` | Watch Steam. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
 | `gogEnabled` | `true` | Watch GOG. |

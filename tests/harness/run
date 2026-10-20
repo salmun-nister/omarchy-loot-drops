@@ -96,6 +96,24 @@ if abs(pinned_bottom - list_y) > 1.5:
           % (pinned_bottom, list_y), file=sys.stderr)
     raise SystemExit(1)
 
+# The footer must stay below the list rather than ride along as list content:
+# the games scroll between the two rules and the controls stay put.
+footer_y = metrics.get("footerY")
+footer_height = metrics.get("footerHeight")
+list_bottom = metrics.get("listBottom")
+if footer_y is None or footer_height is None or list_bottom is None:
+    print("FAIL: the harness cannot see the pinned footer", file=sys.stderr)
+    raise SystemExit(1)
+if footer_height <= 0:
+    print("FAIL: the pinned footer has no height; the controls would vanish",
+          file=sys.stderr)
+    raise SystemExit(1)
+if abs(footer_y - list_bottom) > 1.5:
+    print("FAIL: the footer is not directly below the scrolling list "
+          "(list bottom %s, footer top %s)" % (list_bottom, footer_y),
+          file=sys.stderr)
+    raise SystemExit(1)
+
 # Every row is at least a caption tall, so a list of N rows cannot legitimately
 # be shorter than N pixels. A blank panel measured 18px for 7 rows.
 content_height = metrics.get("contentHeight") or 0

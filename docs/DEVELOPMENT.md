@@ -62,9 +62,11 @@ actual giveaway, or temporarily point the widget at a fixture.
 
 Worth checking by hand: the panel with one store disabled, with a bell muted,
 with an empty store (GOG is empty right now, which is the easy case to observe),
-and while a store is unreachable. Amazon Luna is off by default; switching it on
-adds a Chromium render to each refresh, so its first live check should confirm
-the grid arrives and the panel lists the games. Vertical bars are untested; the widget uses
+and while a store is unreachable. Use the eye to hide a seen game and confirm the
+per-store count replaces it, and that the footer stays put while a long list
+scrolls. Amazon Luna is off by default; switching it on adds a Chromium render to
+each refresh, so its first live check should confirm the grid arrives and the
+panel lists the games. Vertical bars are untested; the widget uses
 `bar.fontFamily` and inherits the host orientation, but nothing has been observed
 on one.
 

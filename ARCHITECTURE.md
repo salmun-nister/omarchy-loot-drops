@@ -94,6 +94,13 @@ lists enabled stores in a fixed order, each with its games and a state line.
 Games from all stores form one flat list for the cursor, so arrow keys move
 through the whole panel while the layout stays grouped.
 
+The hero and its rule are pinned above the list, and the footer's rule and
+controls are pinned below it, so only the rows scroll between them. A fade at
+either edge of the list marks content continuing that way, because the scrollbar
+is auto-hidden. With `hideSeen` on, each store's seen games are dropped and a
+non-game `hidden` summary row is appended last; the cursor skips it and the
+counts still include it.
+
 External text uses `Text.PlainText` throughout, including inside delegates.
 
 ## Testing

@@ -75,6 +75,9 @@ Panel {
     // clamp to the floor instead.
     Model.normalizeRefreshMinutes(setting("refreshMinutes", undefined))
   readonly property string steamCountry: Model.normalizeCountry(setting("steamCountry", ""))
+  // Whether the panel hides games already marked seen. This is a view filter,
+  // not a second baseline: the seen state itself is untouched.
+  readonly property bool hideSeen: setting("hideSeen", false)
 
   // Per-store results. Each bucket keeps its own games, error and timestamp so
   // one store failing never blanks the others.
@@ -142,7 +145,10 @@ Panel {
       height: panelList.height,
       pinnedHeight: pinned.height,
       pinnedBottom: pinned.y + pinned.height,
-      listY: panelList.y
+      listY: panelList.y,
+      listBottom: panelList.y + panelList.height,
+      footerY: panelFooter.y,
+      footerHeight: panelFooter.height
     }
   }
 
@@ -152,10 +158,10 @@ Panel {
     return m.contentHeight > 0 && m.height > 0
   }
 
-  // The row list contains a header per store, so its length is not a count of
-  // games. Count the game rows only, or the bar mark would stop dimming
-  // whenever a store is merely switched on.
-  readonly property bool hasGames: gameCount() > 0
+  // Whether an enabled store has any game at all. This reads the buckets rather
+  // than the filtered rows, so hiding seen games cannot make the mark look
+  // empty while the store still has something.
+  readonly property bool hasGames: Model.totalGames(enabledBuckets()) > 0
 
   // Games on offer that the user has not acknowledged yet. Independent of
   // notifications: a muted store still has something you have not looked at.
@@ -241,9 +247,19 @@ Panel {
         errorLabel: on ? Model.storeErrorLabel(store, errorsByStore()) : ""
       })
       if (!on) continue
-      for (var j = 0; j < current.games.length; j++) {
-        list.push({ kind: "game", store: store, game: current.games[j] })
+      var shown = current.games
+      var hidden = 0
+      if (hideSeen) {
+        var split = Model.splitSeenGames(current.games,
+          Model.acknowledgedOf(seenState, store))
+        shown = split.shown
+        hidden = split.hidden
       }
+      for (var j = 0; j < shown.length; j++) {
+        list.push({ kind: "game", store: store, game: shown[j] })
+      }
+      // The summary is the store's last entry, so every unseen game reads first.
+      if (hidden > 0) list.push({ kind: "hidden", store: store, count: hidden })
     }
     return list
   }
@@ -284,6 +300,13 @@ Panel {
     persist({ [notifyKey(store)]: !notifyOn[store] })
   }
 
+  // The eye hides games the user has already marked seen. Persisted like the
+  // switches and bells so it survives a restart.
+  function toggleHideSeen() {
+    persist({ hideSeen: !hideSeen })
+    reanchorCursor()
+  }
+
   function toggleSelectedStore() {
     var store = cursorStore()
     if (store) toggleStore(store)
@@ -319,6 +342,9 @@ Panel {
     if (!seenLoaded) return
     seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
+    // With seen games hidden, marking one removes its row underneath the
+    // cursor, so re-anchor rather than leaving a stale index behind.
+    reanchorCursor()
   }
 
   // The game the highlight is on, keyboard or pointer, so h marks whichever row
@@ -340,6 +366,7 @@ Panel {
       ? Model.acknowledgeGame(seenState, store, id)
       : Model.forgetGame(seenState, store, id)
     persistSeen()
+    reanchorCursor()
   }
 
   function toggleHighlighted() {
@@ -556,16 +583,9 @@ Panel {
     anyBusy = busy
   }
 
-  // The cursor walks game rows only, skipping headers, and never leaves the
-  // viewport: the selected row is fetched from the Repeater and scrolled to.
-  function gameCount() {
-    var n = 0
-    for (var i = 0; i < visibleGames.length; i++) {
-      if (visibleGames[i].kind === "game") n++
-    }
-    return n
-  }
-
+  // The cursor walks game rows only, skipping headers and the hidden summary,
+  // and never leaves the viewport: the selected row is fetched from the
+  // Repeater and scrolled to.
   function gameRowIndexes() {
     var out = []
     for (var i = 0; i < visibleGames.length; i++) {
@@ -828,10 +848,11 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    // The hero is no longer part of the list's content, so it is added back in
-    // to keep the card tall enough to hold both.
+    // The hero and the pinned footer are no longer part of the list's content,
+    // so both are added back in to keep the card tall enough to hold them.
     contentHeight: panel.fittedContentHeight(pinned.height
-                                             + panelList.contentHeight,
+                                             + panelList.contentHeight
+                                             + panelFooter.implicitHeight,
                                              Style.space(620))
 
     PanelKeyCatcher {
@@ -966,7 +987,7 @@ Panel {
       ListView {
         id: panelList
         anchors.top: pinned.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: panelFooter.top
         anchors.left: parent.left
         anchors.right: parent.right
         clip: true
@@ -992,6 +1013,7 @@ Panel {
           width: panelList.width
 
           readonly property bool isHeader: modelData.kind === "header"
+          readonly property bool isHidden: modelData.kind === "hidden"
 
           // Whether this row's game has not been acknowledged, and whether its
           // giveaway is within a day of ending (or past its end but still
@@ -1019,7 +1041,9 @@ Panel {
             ? headerRowHeight
               + (modelData && modelData.errorLabel
                 ? storeError.implicitHeight + Style.space(8) : 0)
-            : gameTitle.implicitHeight + Style.spacing.sm
+            : isHidden
+              ? hiddenNote.implicitHeight + Style.spacing.sm
+              : gameTitle.implicitHeight + Style.spacing.sm
 
           // Store header: mark, name, bell, switch.
           Item {
@@ -1140,7 +1164,7 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             height: gameTitle.implicitHeight + Style.spacing.sm
-            visible: !row.isHeader
+            visible: row.modelData.kind === "game"
             radius: Style.cornerRadius
             // One highlight, owned by whichever input was used last: the
             // keyboard cursor while it is active, the pointer otherwise. They
@@ -1235,105 +1259,187 @@ Panel {
               }
             }
           }
+
+          // Where seen games are hidden, the summary stands in for them, so a
+          // store whose games are all seen still says why its list is short.
+          Text {
+            id: hiddenNote
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Style.space(22)
+            anchors.rightMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            visible: row.isHidden
+            text: row.isHidden && row.modelData
+              ? Model.hiddenSeenLabel(row.modelData.count) : ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+        }
+      }
+
+      // The scrollbar auto-hides, so a fade at an edge says there is more
+      // content in that direction. It uses the surface colour and fades to the
+      // same RGB at zero alpha, so it works over rows and highlights alike.
+      Rectangle {
+        id: topFade
+        anchors.top: panelList.top
+        anchors.left: panelList.left
+        anchors.right: panelList.right
+        height: Style.space(18)
+        visible: panelList.interactive && !panelList.atYBeginning
+        gradient: Gradient {
+          GradientStop { position: 0.0; color: Commons.Color.popups.background }
+          GradientStop {
+            position: 1.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
+        }
+      }
+
+      Rectangle {
+        id: bottomFade
+        anchors.bottom: panelList.bottom
+        anchors.left: panelList.left
+        anchors.right: panelList.right
+        height: Style.space(18)
+        visible: panelList.interactive && !panelList.atYEnd
+        gradient: Gradient {
+          GradientStop {
+            position: 0.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
+          GradientStop { position: 1.0; color: Commons.Color.popups.background }
+        }
+      }
+
+      // --- Pinned footer -----------------------------------------------
+      // Outside the list, so the games scroll between the hero's rule and this
+      // one instead of carrying the controls off-screen.
+      Column {
+        id: panelFooter
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        // Tighter than the panel's usual gap: the footer is a block of small
+        // controls, and panelGap left a visible hole between them.
+        spacing: Style.space(6)
+        // Clearance above the rule, matching the gap under the hero's rule, so
+        // the last game row is not flush against the footer.
+        topPadding: Style.space(8)
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          visible: root.activeStores.length === 0
+          wrapMode: Text.WordWrap
+          text: "Every store is switched off. Turn one on with the switch above to start watching."
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
         }
 
-        // --- Below the list ---------------------------------------------
-        footer: Column {
-          width: panelList.width
-          // Tighter than the panel's usual gap: the footer is a block of small
-          // controls, and panelGap left a visible hole between them.
-          spacing: Style.space(6)
-          // Clearance above the rule, matching the gap under the hero's rule, so
-          // the last game row is not flush against the footer.
-          topPadding: Style.space(8)
+        // A rule between the list and the controls, so the buttons are not
+        // read as part of a store's rows. The gap above it is the footer's
+        // own topPadding, and the gap below the hero's rule is the same size,
+        // so both sides of the rule match.
+        PanelSeparator {
+          id: footerRule
+          width: parent.width
+          foreground: root.foreground
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          visible: root.showShortcuts
+          wrapMode: Text.WordWrap
+          horizontalAlignment: Text.AlignHCenter
+          text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        // The very last row: refresh in the near corner, the seen toggle and
+        // help in the far one, and the freshness centred between them.
+        //
+        // The text is centred with anchors rather than by filling the row and
+        // centring within it, so no button can shift it off centre. Its width
+        // is capped at whatever is left between them, which keeps a long
+        // freshness string from running under a button.
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(bottomText.implicitHeight,
+                                   refreshButton.implicitHeight,
+                                   seenButton.implicitHeight,
+                                   helpButton.implicitHeight)
 
           Text {
-            width: parent.width
+            id: bottomText
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width
+                            - refreshButton.implicitWidth
+                            - seenButton.implicitWidth
+                            - helpButton.implicitWidth - Style.space(20))
             textFormat: Text.PlainText
-            visible: root.activeStores.length === 0
-            wrapMode: Text.WordWrap
-            text: "Every store is switched off. Turn one on with the switch above to start watching."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          // A rule between the list and the controls, so the buttons are not
-          // read as part of a store's rows. The gap above it is the footer's
-          // own topPadding, and the gap below the hero's rule is the same size,
-          // so both sides of the rule match.
-          PanelSeparator {
-            id: footerRule
-            width: parent.width
-            foreground: root.foreground
-          }
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            visible: root.showShortcuts
-            wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
-            color: root.dim
+            elide: Text.ElideRight
+            text: root.freshness
+            color: root.stale ? root.dim : root.footerInk
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
 
-          // The very last row: refresh in the near corner, help in the far one,
-          // and the freshness centred between them.
-          //
-          // The text is centred with anchors rather than by filling the row and
-          // centring within it, so neither button can shift it off centre. Its
-          // width is capped at whatever is left between them, which keeps a long
-          // freshness string from running under a button.
-          Item {
-            width: parent.width
-            implicitHeight: Math.max(bottomText.implicitHeight,
-                                     refreshButton.implicitHeight,
-                                     helpButton.implicitHeight)
+          Button {
+            id: refreshButton
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "\u{F021}"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Refresh now"
+            onClicked: root.refresh()
+          }
 
-            Text {
-              id: bottomText
-              anchors.horizontalCenter: parent.horizontalCenter
-              anchors.verticalCenter: parent.verticalCenter
-              width: Math.min(implicitWidth, parent.width
-                              - refreshButton.implicitWidth
-                              - helpButton.implicitWidth - Style.space(12))
-              textFormat: Text.PlainText
-              horizontalAlignment: Text.AlignHCenter
-              elide: Text.ElideRight
-              text: root.freshness
-              color: root.stale ? root.dim : root.footerInk
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
+          // Eye: hide or show the games already marked seen. Like the bell it
+          // swaps glyph and tooltip with the state it is in.
+          Button {
+            id: seenButton
+            anchors.right: helpButton.left
+            anchors.rightMargin: Style.spacing.xs
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.hideSeen ? "\u{F070}" : "\u{F06E}"
+            bordered: true
+            foreground: root.hideSeen ? root.footerInk
+                                      : Qt.darker(root.footerInk, 1.35)
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: root.hideSeen ? "Show seen games" : "Hide seen games"
+            onClicked: root.toggleHideSeen()
+          }
 
-            Button {
-              id: refreshButton
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              text: "\u{F021}"
-              bordered: true
-              foreground: root.footerInk
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              tooltipText: "Refresh now"
-              onClicked: root.refresh()
-            }
-
-            Button {
-              id: helpButton
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: "?"
-              bordered: true
-              foreground: root.footerInk
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              tooltipText: "Shortcuts"
-              onClicked: root.showShortcuts = !root.showShortcuts
-            }
+          Button {
+            id: helpButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "?"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Shortcuts"
+            onClicked: root.showShortcuts = !root.showShortcuts
           }
         }
       }

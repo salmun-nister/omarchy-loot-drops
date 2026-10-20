@@ -16,6 +16,7 @@
     "defaultSection": "right",
     "defaults": {
       "refreshMinutes": 90,
+      "hideSeen": false,
       "steamEnabled": true,
       "epicEnabled": true,
       "gogEnabled": true,
@@ -36,6 +37,13 @@
         "step": 5,
         "defaultValue": 90,
         "description": "How often to check the enabled stores. Giveaways usually run for days, so a short interval mostly buys noise rather than earlier news. Anything below about 90 minutes is rarely worth it; the panel also refreshes when you open it and the data has gone stale."
+      },
+      {
+        "key": "hideSeen",
+        "type": "boolean",
+        "label": "Hide seen games",
+        "defaultValue": false,
+        "description": "Keep each store's list to the games you have not marked seen, followed by a line saying how many were hidden. The footer's eye button toggles the same setting. The headline count still includes the hidden games."
       },
       {
         "key": "steamEnabled",

@@ -22,6 +22,7 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
   acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
+  splitSeenGames, hiddenSeenLabel,
   IPC_TARGET, NEW_GAME_GLYPH, HOURGLASS_GLYPH, endingSoon,
 };`)();
 
@@ -647,6 +648,31 @@ test('the unseen set is independent of the notification baseline', () => {
   const muted = Model.diffStore(state, 'steam', [{ id: 'a' }, { id: 'z' }], true, false);
   const withZ = { steam: { games: [{ id: 'a' }, { id: 'z' }] }, epic: { games: [] }, gog: { games: [] } };
   assert.deepEqual(Model.unseenIds(muted.state, withZ), ['z']);
+});
+
+test('hiding seen games keeps order and counts only what is hidden', () => {
+  const games = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const split = Model.splitSeenGames(games, ['b', 'd']);
+  assert.deepEqual(split.shown.map(g => g.id), ['a', 'c'],
+    'unseen games must keep their original order');
+  assert.equal(split.hidden, 2);
+
+  // Nothing seen, nothing hidden.
+  assert.deepEqual(Model.splitSeenGames(games, []), { shown: games, hidden: 0 });
+  // A seen game that is no longer on offer is not counted.
+  assert.deepEqual(Model.splitSeenGames([{ id: 'a' }], ['b']).hidden, 0);
+  // Junk and duplicates in the acknowledged list cannot hide or double-count.
+  assert.deepEqual(Model.splitSeenGames(games, ['a b', '../../etc/passwd']).hidden, 0);
+  assert.equal(Model.splitSeenGames(games, ['b', 'b']).hidden, 1);
+  // A game without a usable id can never match a seen record.
+  assert.deepEqual(Model.splitSeenGames([{ title: 'No id' }], ['a']),
+    { shown: [{ title: 'No id' }], hidden: 0 });
+  assert.deepEqual(Model.splitSeenGames(null, ['a']), { shown: [], hidden: 0 });
+
+  assert.equal(Model.hiddenSeenLabel(0), '0 seen games hidden');
+  assert.equal(Model.hiddenSeenLabel(1), '1 seen game hidden');
+  assert.equal(Model.hiddenSeenLabel(6), '6 seen games hidden');
+  assert.equal(Model.hiddenSeenLabel('nonsense'), '0 seen games hidden');
 });
 
 test('acknowledged ids survive a round trip and ignore junk', () => {

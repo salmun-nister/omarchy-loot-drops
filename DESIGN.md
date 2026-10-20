@@ -96,12 +96,13 @@ feature from "notify me when a game goes free to keep" and are deferred.
 
 ## Settings
 
-`refreshMinutes` (integer, 30–720, default 90), `steamEnabled`, `epicEnabled`,
-`gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`, `gogNotify`,
-`amazonNotify`, `steamCountry`. `amazonEnabled` defaults to false: it is the one
-store whose fetch renders a page in a browser, so it is opt-in. Its notify
-setting still defaults to true, like the others, and only matters once the store
-is on.
+`refreshMinutes` (integer, 30–720, default 90), `hideSeen`, `steamEnabled`,
+`epicEnabled`, `gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`,
+`gogNotify`, `amazonNotify`, `steamCountry`. `amazonEnabled` defaults to false:
+it is the one store whose fetch renders a page in a browser, so it is opt-in.
+Its notify setting still defaults to true, like the others, and only matters once
+the store is on. `hideSeen` defaults to false and is a view filter, not a second
+baseline.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
 headroom above the default rather than starting at its ceiling. The **stale
@@ -150,6 +151,25 @@ those rows read exactly as before.
   of the feature with a failure mode, and it buys at most the gap between the
   lapse and the next poll: Epic and GOG already drop expired offers at parse time,
   so the row goes on the next refresh regardless.
+
+## Panel layout
+
+The hero and its rule are pinned above the list, and the footer — its rule, the
+shortcut line and the controls — is pinned below it. The `ListView` is the space
+between the two, so a long list scrolls without carrying the controls away. The
+panel height is the sum of the three before the 620px clamp, which keeps a short
+list looking exactly as it did when the footer was list content. Two edge fades,
+drawn in the popup's own surface colour and fading to the same RGB at zero alpha,
+appear only on a side with more content; the scrollbar is deliberately
+auto-hidden, so the fade is the persistent hint.
+
+`hideSeen` is a view filter, not a second baseline: it reads the same
+acknowledged set the coin markers use. Unseen games keep their store order, and a
+per-store `N seen games hidden` row is appended last, so a store with nothing
+unseen still says why its list is short. The hero and tooltip keep counting every
+free game, so hiding never makes the head line disagree with the store, and the
+bar icon's dimming follows whether an enabled store has any game rather than
+whether the filter leaves rows. The cursor skips the summary row.
 
 ## Failure states
 
@@ -315,7 +335,8 @@ ability never worked.
 - A QML lint pass against the real Qt `qmllint`, which fails on any error or
   syntax warning.
 - A live harness that loads the real widget into a real Quickshell instance
-  against all four stores.
+  against all four stores, asserting that the hero and the footer are pinned
+  around the scrolling list.
 - A manual demo (`./demo/run`) that renders the real panel against a committed
   fixture, so the ending-soon marker can be seen without waiting for a giveaway.
 
