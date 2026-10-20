@@ -13,14 +13,14 @@ and explicit.
 
 | Kind | Detail |
 | --- | --- |
-| Network | Three hosts, one GET each per refresh. No credentials, no accounts, no `sudo`. |
-, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
-| Files | One: `~/.local/state/salmun-nister.loot-drops/seen.json`, written atomically through a no-follow helper. |
+| Network | Four store hosts. One GET each per refresh for Steam, Epic and GOG; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
+| Process | `omarchy-shell`, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
+| Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. |
 | Privileged operations | None. |
 | Credentials read | None. |
 
-Nothing is sent anywhere except to the three store endpoints and, when you click,
-your own browser.
+Nothing is sent anywhere except to the store endpoints and the assets their pages
+load, and, when you click, your own browser.
 
 ## The trust boundary
 
@@ -30,8 +30,9 @@ are enforced in `Model.js` so no call site can skip them:
 
 **Links.** A URL is never launched because the network said so.
 
-- Steam URLs are rebuilt from a digits-only app id; the response's `href` is
-  discarded rather than validated.
+- Steam URLs are rebuilt from a digits-only app id and Amazon's from the claim
+  path's slug and item id; the response's host and query string are discarded
+  rather than validated.
 - Epic and GOG links pass `safeUrl`, which requires `https`, the store's exact
   host, an authority with no credentials and no port, and a bounded length. The
   check compares the whole authority, so `store.steampowered.com.evil.test` and
@@ -65,7 +66,9 @@ refused, and that a failed write leaves the previous file whole.
 
 No agent, model or AI integration. No credential broker. No privileged setup. No
 install hook, and nothing is fetched at plugin-add time. No store account is ever
-read, and no cookie or token is stored, forwarded or accepted.
+read, and no account cookie or token is stored, forwarded or accepted. The
+Amazon Luna store is rendered signed out; its profile holds only the anonymous
+cookies that page sets for any visitor.
 
 Because there is no automated claim or purchase path, the worst outcome of a
 compromised response is a wrong game title and a link to a store page you can

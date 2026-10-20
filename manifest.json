@@ -2,26 +2,29 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "salmun-nister",
   "license": "MIT",
-  "description": "Watch Steam, Epic, and GOG for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
+  "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
   "kinds": ["bar-widget"],
   "entryPoints": {"barWidget": "BarWidget.qml"},
   "barWidget": {
     "displayName": "Loot Drops",
-    "description": "Watch Steam, Epic, and GOG for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
+    "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
     "category": "Info",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "refreshMinutes": 90,
+      "hideSeen": false,
       "steamEnabled": true,
       "epicEnabled": true,
       "gogEnabled": true,
+      "amazonEnabled": false,
       "steamNotify": true,
       "epicNotify": true,
       "gogNotify": true,
+      "amazonNotify": true,
       "steamCountry": ""
     },
     "schema": [
@@ -34,6 +37,13 @@
         "step": 5,
         "defaultValue": 90,
         "description": "How often to check the enabled stores. Giveaways usually run for days, so a short interval mostly buys noise rather than earlier news. Anything below about 90 minutes is rarely worth it; the panel also refreshes when you open it and the data has gone stale."
+      },
+      {
+        "key": "hideSeen",
+        "type": "boolean",
+        "label": "Hide seen games",
+        "defaultValue": false,
+        "description": "Keep each store's list to the games you have not marked seen, followed by a line saying how many were hidden. The footer's eye button toggles the same setting. The headline count still includes the hidden games."
       },
       {
         "key": "steamEnabled",
@@ -57,6 +67,13 @@
         "description": "Watch GOG. A disabled store is not fetched at all, is hidden from the panel and does not notify."
       },
       {
+        "key": "amazonEnabled",
+        "type": "boolean",
+        "label": "Amazon Luna",
+        "defaultValue": false,
+        "description": "Off by default. Watch Amazon Luna's free games with Prime by rendering its public claims page in headless Chromium, a base Omarchy package. No account, login or key is needed to watch it; claiming the games needs an Amazon Prime membership. The render costs more than the other stores' single request, so it only runs while this is switched on."
+      },
+      {
         "key": "steamNotify",
         "type": "boolean",
         "label": "Steam notifications",
@@ -76,6 +93,13 @@
         "label": "GOG notifications",
         "defaultValue": true,
         "description": "Notify when a newly free game appears on GOG. Turn this off to keep watching a store without notifications; the panel shows a crossed-out bell."
+      },
+      {
+        "key": "amazonNotify",
+        "type": "boolean",
+        "label": "Amazon Luna notifications",
+        "defaultValue": true,
+        "description": "Notify when a newly free game appears on Amazon Luna. Turn this off to keep watching the store without notifications; the panel shows a crossed-out bell."
       },
       {
         "key": "steamCountry",

@@ -17,15 +17,30 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   staleAfterMs, STALE_MULTIPLIER,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
   normalizeCountry, normalizeRefreshMinutes, parseStore, parseSteam,
-  parseEpic, parseGog, emptySeen, parseSeen, serializeSeen, diffStore,
+  parseEpic, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
   storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
   acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
-  IPC_TARGET, NEW_GAME_GLYPH,
+  splitSeenGames, hiddenSeenLabel,
+  IPC_TARGET, NEW_GAME_GLYPH, HOURGLASS_GLYPH, endingSoon,
 };`)();
 
 const fixture = name => readFileSync(new URL(`fixtures/${name}`, here), 'utf8');
+
+// The captured Epic payload carries absolute window dates, so its live and
+// upcoming windows are rebased on "now" as it loads. Stored as-is they stop
+// meaning live the day the window lapses, which is how these tests silently
+// went red. Only the ordering matters, so the offsets are arbitrary.
+function epicFixture() {
+  const day = 24 * 60 * 60 * 1000;
+  const at = days => new Date(Date.now() + days * day).toISOString();
+  return fixture('epic-free-games.json')
+    .replaceAll('2026-10-08T15:00:00.000Z', at(-10))  // live window opens
+    .replaceAll('2026-10-15T15:00:00.000Z', at(10))   // live window closes
+    .replaceAll('2026-10-22T15:00:00.000Z', at(20))   // upcoming opens
+    .replaceAll('2026-10-29T15:00:00.000Z', at(27));  // upcoming closes
+}
 
 test('URL allowlist accepts only the store host over https', () => {
   assert.equal(Model.safeUrl('steam', 'https://store.steampowered.com/app/405640/'),
@@ -66,7 +81,7 @@ test('titles are scrubbed before they reach any sink', () => {
 
 test('ids are constrained to a safe character set', () => {
   assert.equal(Model.scrubId('abc-123_x.y'), 'abc-123_x.y');
-  for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(41), null]) {
+  for (const bad of ['a b', 'a/b', 'a"b', "a'b", 'a;b', 'a&b', 'x'.repeat(65), null]) {
     assert.equal(Model.scrubId(bad), '', `unsafe id accepted: ${bad}`);
   }
 });
@@ -142,7 +157,7 @@ test('steam rejects a body that is not the search payload', () => {
 });
 
 test('epic lists only live zero-discount offers', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   assert.equal(result.ok, true);
   const titles = result.games.map(g => g.title);
   assert.ok(titles.includes('Out of Sight'));
@@ -156,7 +171,7 @@ test('epic lists only live zero-discount offers', () => {
 });
 
 test('epic builds links from the catalog mapping, with urlSlug fallback', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   const byTitle = Object.fromEntries(result.games.map(g => [g.title, g]));
 
   assert.equal(byTitle['Out of Sight'].url,
@@ -170,7 +185,7 @@ test('epic builds links from the catalog mapping, with urlSlug fallback', () => 
 });
 
 test('epic scrubs markup-shaped titles', () => {
-  const result = Model.parseEpic(fixture('epic-free-games.json'));
+  const result = Model.parseEpic(epicFixture());
   const hostile = result.games.find(g => g.id === 'id-markup');
   assert.ok(hostile, 'the markup title should still be listed');
   assert.ok(!hostile.title.includes('<'), 'angle brackets survived');
@@ -234,11 +249,90 @@ test('gog does not leak the slug url between responses', () => {
 
 test('parseStore routes each store and refuses an unknown one', () => {
   assert.equal(Model.parseStore('steam', fixture('steam-free.json')).ok, true);
-  assert.equal(Model.parseStore('epic', fixture('epic-free-games.json')).ok, true);
+  assert.equal(Model.parseStore('epic', epicFixture()).ok, true);
   assert.equal(Model.parseStore('gog', fixture('gog-giveaway.json')).ok, true);
+  assert.equal(Model.parseStore('amazon', fixture('amazon-claims.html')).ok, true);
   const unknown = Model.parseStore('nintendo', '{}');
   assert.equal(unknown.ok, false);
   assert.equal(unknown.error, 'invalid-response');
+});
+
+test('amazon fixture parses the claim grid into games', () => {
+  const result = Model.parseAmazon(fixture('amazon-claims.html'));
+  assert.equal(result.ok, true);
+  assert.ok(result.games.length >= 10, `only ${result.games.length} games parsed`);
+
+  const titles = result.games.map(g => g.title);
+  assert.ok(titles.includes('DOOM'), 'DOOM should be in the captured grid');
+  assert.ok(titles.includes('High on Life'), 'High on Life should be in the captured grid');
+
+  const doom = result.games.find(g => g.title === 'DOOM');
+  assert.equal(doom.store, 'amazon');
+  // The id is the canonical claim id, which is longer than the other stores'.
+  assert.match(doom.id, /^amzn1\.pg\.item\.[0-9a-f-]{36}$/);
+  assert.equal(doom.url,
+    'https://luna.amazon.com/claims/doom-gog/dp/' + doom.id);
+
+  // A card whose call to action is an Amazon Games app button has no link of
+  // its own, but its wrapper still carries the claim path.
+  const caravan = result.games.find(g => g.title === 'Caravan SandWitch');
+  assert.ok(caravan, 'button-only card was dropped');
+  assert.match(caravan.url,
+    /^https:\/\/luna\.amazon\.com\/claims\/caravan-sandwitch-aga\/dp\/amzn1\.pg\.item\./);
+
+  // The featured carousel above the grid repeats the same games; the grid must
+  // not list anything twice.
+  const ids = result.games.map(g => g.id);
+  assert.equal(new Set(ids).size, ids.length, 'duplicate ids listed');
+  assert.ok(result.games.length <= 40, 'the game cap was exceeded');
+});
+
+test('amazon rejects a page without the claim grid', () => {
+  const shell = '<html><body><p>We are having technical difficulties.</p>'
+    + '<input name="csrf-key" value="TEST"></body></html>';
+  for (const body of ['', 'not html', shell,
+    '<html><body><form action="/ap/signin"></form></body></html>',
+    // A grid that renders no cards is a markup change, not a healthy empty
+    // store: Luna always has a current lineup, and silence would hide drops.
+    '<div data-a-target="offer-list-FGWP_FULL"></div>']) {
+    const result = Model.parseAmazon(body);
+    assert.equal(result.ok, false, `accepted ${body.slice(0, 40)}`);
+    assert.equal(result.error, 'invalid-response');
+    assert.deepEqual(result.games, []);
+  }
+});
+
+test('amazon scopes to the grid, scrubs titles and rebuilds links', () => {
+  const card = (title, slug, id) =>
+    '<a aria-label="' + title + '" data-a-target="learn-more-card"'
+    + ' href="/claims/' + slug + '/dp/' + id + '?ingress=amzn&amp;ref_=x">'
+    + '<h3 title="' + title + '">' + title + '</h3>'
+    + '<div data-a-target="FGWPOffer">Claim game</div></a>';
+  const outside = card('Carousel Game', 'carousel-game', 'amzn1.pg.item.aaaa');
+  const inside = card('Grid Game', 'grid-game', 'amzn1.pg.item.bbbb')
+    + card('<b>Hostile</b> Title', 'hostile', 'amzn1.pg.item.cccc');
+  const html = '<html><body>' + outside
+    + '<div data-a-target="offer-list-FGWP_FULL">' + inside + '</div></body></html>';
+
+  const result = Model.parseAmazon(html);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.games.map(g => g.title), ['Grid Game', 'Hostile Title']);
+  assert.equal(result.games[0].url,
+    'https://luna.amazon.com/claims/grid-game/dp/amzn1.pg.item.bbbb');
+  assert.ok(!result.games.some(g => g.title === 'Carousel Game'),
+    'a card outside the grid leaked into the list');
+
+  // The Amazon host is allowlisted on its own, and no other store accepts it.
+  assert.equal(Model.safeUrl('amazon', 'https://luna.amazon.com/claims/x/dp/y'),
+    'https://luna.amazon.com/claims/x/dp/y');
+  assert.equal(Model.safeUrl('amazon', 'https://evil.test/claims/x/dp/y'), '');
+  assert.equal(Model.safeUrl('steam', 'https://luna.amazon.com/claims/x/dp/y'), '');
+});
+
+test('amazon claim ids fit the shared id cap', () => {
+  const id = 'amzn1.pg.item.' + 'a'.repeat(36);
+  assert.equal(id.length, 50);
+  assert.equal(Model.scrubId(id), id, 'a real claim id was refused');
 });
 
 test('first fetch is silent for every store', () => {
@@ -422,6 +516,21 @@ test('settings are normalised into safe ranges', () => {
   assert.equal(on.steam, false);
   assert.equal(on.epic, true, 'an absent setting keeps its default');
   assert.equal(Model.enabled(undefined).gog, true);
+  // Amazon is the one store that costs a browser render, so it ships off.
+  assert.equal(on.amazon, false, 'Amazon must default to off');
+  assert.equal(Model.enabled({ amazonEnabled: true }).amazon, true);
+  assert.equal(Model.notifyFor({}).amazon, true);
+});
+
+test('Amazon Luna ships off by default in the manifest', () => {
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', root), 'utf8'));
+  assert.equal(manifest.barWidget.defaults.amazonEnabled, false,
+    'Amazon must not be enabled by default');
+  const entry = manifest.barWidget.schema.find(item => item.key === 'amazonEnabled');
+  assert.ok(entry, 'amazonEnabled is missing from the settings schema');
+  assert.equal(entry.defaultValue, false, 'the settings UI must start it off');
+  assert.equal(Model.enabled({}).amazon, false,
+    'the runtime fallback must match the manifest');
 });
 
 test('the panel headline is the plugin name and the count is a subtitle', () => {
@@ -445,8 +554,12 @@ test('the store list names only the stores being watched', () => {
   assert.equal(Model.storeList({ steam: true, epic: true, gog: true }),
     'Steam, Epic, and GOG');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, and GOG');
+  assert.equal(Model.storeList({ steam: true, epic: true, gog: true, amazon: true }),
+    'Steam, Epic, GOG, and Amazon');
   assert.equal(Model.STORE_LABELS.epic, 'Epic Games', 'headers keep the full name');
+  assert.equal(Model.STORE_LABELS.amazon, 'Amazon Luna');
   assert.equal(Model.STORE_SHORT.epic, 'Epic');
+  assert.equal(Model.STORE_SHORT.amazon, 'Amazon');
   assert.equal(Model.storeList({ steam: true, epic: false, gog: false }), 'Steam');
   assert.equal(Model.storeList({ steam: false, epic: false, gog: false }), '');
   assert.equal(Model.storeList(null), '');
@@ -548,6 +661,31 @@ test('the unseen set is independent of the notification baseline', () => {
   assert.deepEqual(Model.unseenIds(muted.state, withZ), ['z']);
 });
 
+test('hiding seen games keeps order and counts only what is hidden', () => {
+  const games = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const split = Model.splitSeenGames(games, ['b', 'd']);
+  assert.deepEqual(split.shown.map(g => g.id), ['a', 'c'],
+    'unseen games must keep their original order');
+  assert.equal(split.hidden, 2);
+
+  // Nothing seen, nothing hidden.
+  assert.deepEqual(Model.splitSeenGames(games, []), { shown: games, hidden: 0 });
+  // A seen game that is no longer on offer is not counted.
+  assert.deepEqual(Model.splitSeenGames([{ id: 'a' }], ['b']).hidden, 0);
+  // Junk and duplicates in the acknowledged list cannot hide or double-count.
+  assert.deepEqual(Model.splitSeenGames(games, ['a b', '../../etc/passwd']).hidden, 0);
+  assert.equal(Model.splitSeenGames(games, ['b', 'b']).hidden, 1);
+  // A game without a usable id can never match a seen record.
+  assert.deepEqual(Model.splitSeenGames([{ title: 'No id' }], ['a']),
+    { shown: [{ title: 'No id' }], hidden: 0 });
+  assert.deepEqual(Model.splitSeenGames(null, ['a']), { shown: [], hidden: 0 });
+
+  assert.equal(Model.hiddenSeenLabel(0), '0 seen games hidden');
+  assert.equal(Model.hiddenSeenLabel(1), '1 seen game hidden');
+  assert.equal(Model.hiddenSeenLabel(6), '6 seen games hidden');
+  assert.equal(Model.hiddenSeenLabel('nonsense'), '0 seen games hidden');
+});
+
 test('acknowledged ids survive a round trip and ignore junk', () => {
   let state = Model.acknowledgeGame(Model.emptySeen(), 'steam', '405640');
   state = Model.acknowledgeGame(state, 'steam', '2990600');
@@ -576,35 +714,64 @@ test('acknowledged ids survive a round trip and ignore junk', () => {
 });
 
 test('every store has a header mark, and the real logos are private-use', () => {
-  // Steam and GOG use the Material Design marks in Nerd Fonts 3.5.1. Both are
-  // private-use codepoints, so they render monochrome and take the theme colour;
-  // an emoji-presentation codepoint here would paint its own colour instead.
+  // Steam, GOG and Amazon use the Material Design and Font Awesome marks in
+  // Nerd Fonts 3.5.1. All are private-use codepoints, so they render
+  // monochrome and take the theme colour; an emoji-presentation codepoint here
+  // would paint its own colour instead.
   const steam = Model.STORE_GLYPHS.steam.codePointAt(0);
   const gog = Model.STORE_GLYPHS.gog.codePointAt(0);
+  const amazon = Model.STORE_GLYPHS.amazon.codePointAt(0);
   // Two private-use planes: BMP U+E000-F8FF, and Plane 15 at U+F0000-FFFFD.
   // The Nerd Fonts Material Design block sits in the second of these.
   const privateUse = c => (c >= 0xe000 && c <= 0xf8ff)
     || (c >= 0xf0000 && c <= 0xffffd);
-  for (const [name, code] of [['steam', steam], ['gog', gog]]) {
+  for (const [name, code] of [['steam', steam], ['gog', gog], ['amazon', amazon]]) {
     assert.ok(privateUse(code),
       `the ${name} mark U+${code.toString(16)} is not private-use`);
   }
   assert.equal(steam, 0xf04d3, 'the steam mark moved between Nerd Fonts releases');
   assert.equal(gog, 0xf0ba1, 'the gog mark moved between Nerd Fonts releases');
+  assert.equal(amazon, 0xf270, 'the amazon mark moved between Nerd Fonts releases');
 
-  // Nerd Fonts ships no Epic mark. The real Epic shield was tried here and is
-  // unusable at eleven pixels: carrying "EPIC GAMES" lettering inside the
-  // outline it fills into a blob, and stripped to just the outer edge it is
-  // still a featureless silhouette. So Epic gets the one generic mark that
-  // still reads as a shop at that size.
-  const epic = Model.STORE_GLYPHS.epic.codePointAt(0);
-  assert.ok(privateUse(epic), `the epic mark U+${epic.toString(16)} is not private-use`);
-  assert.equal(epic, 0xf04dc, 'the epic mark moved between Nerd Fonts releases');
+  // Nerd Fonts ships no Epic mark, so Epic is drawn from a bundled monochrome
+  // logo. The widget must load it, and it must be a real SVG, not a stub.
+  assert.equal(Model.STORE_GLYPHS.epic, undefined,
+    'Epic should use the bundled logo, not a glyph');
+  const logo = readFileSync(new URL('assets/epic.svg', root), 'utf8');
+  assert.match(logo, /<svg[\s\S]*<path[^>]*d="[^"]{50,}"/,
+    'the Epic logo is missing or empty');
+  const widget = readFileSync(new URL('BarWidget.qml', root), 'utf8');
+  assert.ok(widget.includes('assets/epic.svg'), 'BarWidget does not load the Epic logo');
 
-  // No store may be left without a mark.
-  for (const store of Model.STORES) {
+  // No glyph store may be left without a mark.
+  for (const store of ['steam', 'gog', 'amazon']) {
     const mark = Model.STORE_GLYPHS[store];
     assert.equal(typeof mark, 'string', `${store} has no mark`);
     assert.ok(mark.length > 0, `${store} has an empty mark`);
+  }
+});
+
+test('the hourglass is a private-use mark, pinned to its Nerd Fonts codepoint', () => {
+  const code = Model.HOURGLASS_GLYPH.codePointAt(0);
+  assert.ok(code >= 0xe000 && code <= 0xf8ff,
+    `the hourglass U+${code.toString(16)} is not private-use`);
+  assert.equal(code, 0xf253, 'the hourglass moved between Nerd Fonts releases');
+});
+
+test('ending soon is a one-day window that survives an elapsed end date', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z');
+  const iso = hours => new Date(now + hours * 3600 * 1000).toISOString();
+
+  assert.equal(Model.endingSoon(iso(48), now), false, 'two days out is not soon');
+  assert.equal(Model.endingSoon(iso(24.5), now), false, 'just beyond the window');
+  assert.equal(Model.endingSoon(iso(24), now), true, 'exactly one day counts');
+  assert.equal(Model.endingSoon(iso(1), now), true, 'within the window');
+  // The whole point of the unbounded check: a lapsed giveaway keeps its mark
+  // until a refresh drops the row or moves the date back out.
+  assert.equal(Model.endingSoon(iso(-48), now), true, 'an elapsed end date stays marked');
+
+  // Unknown or malformed dates must not mark a row, so those rows read as before.
+  for (const bad of ['', 'not a date', null, undefined]) {
+    assert.equal(Model.endingSoon(bad, now), false, `marked on a bad date: ${bad}`);
   }
 });

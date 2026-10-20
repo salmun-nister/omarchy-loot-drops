@@ -35,14 +35,16 @@ remaining work are at the bottom.
 
 ## Data sources
 
-All three were checked live on 9 October 2026. No credentials, no accounts, no
-API keys, no login, no privileged operations.
+All three request-based stores were checked live on 9 October 2026; Amazon Luna
+on 19 October 2026. No credentials, no accounts, no API keys, no login, no
+privileged operations.
 
 | Store | Endpoint | Currently-free test | Live result |
 | --- | --- | --- | --- |
 | Steam | `store.steampowered.com/search/results/?maxprice=free&specials=1&infinite=1` | scrape `results_html`; `specials=1` already excludes free-to-play | 200, 2 games |
 | Epic | `store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US` | `promotions.promotionalOffers[].promotionalOffers[]` with `discountPercentage: 0` **and** `endDate > now` | 200, 13 elements, 2 free |
 | GOG | `www.gog.com/giveaway/api/get` | non-404 JSON body | **404** — no giveaway running |
+| Amazon Luna | `luna.amazon.com/claims/home`, rendered signed out in headless Chromium | cards inside `data-a-target="offer-list-FGWP_FULL"`, each wrapped in a `/claims/<slug>/dp/<id>` link | 200, 15 games, no login |
 
 ### Findings that change the implementation
 
@@ -56,6 +58,16 @@ API keys, no login, no privileged operations.
 - **Steam has no clean API.** `search/results/` returns JSON wrapping an HTML
   blob. The parse treats the embedded HTML as untrusted and sanitises before
   rendering; see [Security invariants](#security-invariants).
+- **Amazon Luna requires a browser, not curl.** Its claims grid exists only
+  after the page's scripts run. `POST luna.amazon.com/graphql` with the page's
+  `csrf-token` and anonymous cookies answered once with an empty `primeOffers`
+  and then returned HTTP 418 to every retry; `gaming.amazon.com/graphql` now
+  answers 418/403. That is Amazon's WAF fingerprinting a non-browser client, so
+  the render is the transport. Chromium is an Omarchy base package, the render
+  takes about 2.5 seconds, and the grid marker is absent from the pre-script
+  shell — which is what makes "no grid" an error rather than an empty store.
+- **Amazon's item ids are 50 characters** (`amzn1.pg.item.` plus a UUID), so the
+  shared id cap is 64 rather than 40.
 
 ### Rejected: GOG catalogue endpoint
 
@@ -75,7 +87,7 @@ feature from "notify me when a game goes free to keep" and are deferred.
 - **Durable, plugin-owned**: `seen.json` in
   `$XDG_STATE_HOME/salmun-nister.loot-drops`, written through the plugin's own
   `lib/seen-state` helper. Shape is
-  `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed}}}`,
+  `{primed, stores:{steam:{ids,primed},epic:{ids,primed},gog:{ids,primed},amazon:{ids,primed}}}`,
   keyed per store so toggling one store never disturbs another store's baseline.
   Measured worst case is 3,929 bytes against a 65,536-byte cap.
 - **Durable user configuration**: inline in `shell.json` as booleans plus one
@@ -84,8 +96,13 @@ feature from "notify me when a game goes free to keep" and are deferred.
 
 ## Settings
 
-`refreshMinutes` (integer, 30–720, default 90), `steamEnabled`, `epicEnabled`,
-`gogEnabled`, `steamNotify`, `epicNotify`, `gogNotify`, `steamCountry`.
+`refreshMinutes` (integer, 30–720, default 90), `hideSeen`, `steamEnabled`,
+`epicEnabled`, `gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`,
+`gogNotify`, `amazonNotify`, `steamCountry`. `amazonEnabled` defaults to false:
+it is the one store whose fetch renders a page in a browser, so it is opt-in.
+Its notify setting still defaults to true, like the others, and only matters once
+the store is on. `hideSeen` defaults to false and is a view filter, not a second
+baseline.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
 headroom above the default rather than starting at its ceiling. The **stale
@@ -112,6 +129,55 @@ different settings.
 - **Store turned off then on** — re-primes that store's baseline silently, so
   re-enabling does not produce a flood of backfill notifications.
 
+## Ending soon
+
+A game row carries a mark when its giveaway is within a day of ending, or has
+already ended but is still listed. It reuses the unseen coin's slot in the left
+gutter; when both apply the hourglass wins and the coin is withheld, but the game
+stays unacknowledged underneath, so the bar dot and the click that clears it are
+unchanged.
+
+The window is `end - now <= 24h` with **no lower bound**. Dropping the lower bound
+is the whole feature: an elapsed giveaway keeps its mark, and the mark clears only
+when a refresh drops the game or moves its end date back beyond the window. So it
+holds no state of its own — it is derived from the row's `endsAt` and the widget's
+`nowMs`, which the always-on 30s tick already updates.
+
+Only Epic and GOG publish an end date; Steam's search rows carry none, so a Steam
+row never shows the mark. A missing or malformed date means no mark either, so
+those rows read exactly as before.
+
+- **Rejected: refetching the store the moment a mark lapses.** It is the only part
+  of the feature with a failure mode, and it buys at most the gap between the
+  lapse and the next poll: Epic and GOG already drop expired offers at parse time,
+  so the row goes on the next refresh regardless.
+
+## Panel layout
+
+The hero and its rule are pinned above the list, and the footer — its rule, the
+shortcut line and the controls — is pinned below it. The `ListView` is the space
+between the two, so a long list scrolls without carrying the controls away. The
+panel height is the sum of the three before the 620px clamp, which keeps a short
+list looking exactly as it did when the footer was list content. Two edge fades,
+drawn in the popup's own surface colour and fading to the same RGB at zero alpha,
+appear only on a side with more content, each carrying a small chevron so the
+hint survives a gap between rows; the scrollbar is deliberately auto-hidden, so
+this pair is the persistent cue.
+
+`hideSeen` is a view filter, not a second baseline: it reads the same
+acknowledged set the coin markers use. Unseen games keep their store order, and a
+per-store `N seen games hidden` row is appended last, so a store with nothing
+unseen still says why its list is short. The hero and tooltip keep counting every
+free game, so hiding never makes the head line disagree with the store, and the
+bar icon's dimming follows whether an enabled store has any game rather than
+whether the filter leaves rows. The cursor skips the summary row.
+
+Store marks are drawn at the theme's 16px heading size. Steam, GOG and Amazon are
+Nerd Font glyphs; Epic has no such glyph, so it uses a bundled monochrome
+wordmark (Simple Icons, CC0) colorized to the theme with `MultiEffect`. Labels
+and game titles share an indent derived from the mark size, so they stay aligned
+when a theme changes the font scale.
+
 ## Failure states
 
 Kept distinct per store, never collapsed into generic fallback:
@@ -123,6 +189,7 @@ Kept distinct per store, never collapsed into generic fallback:
 | `none-free` | fetched successfully, nothing currently free |
 | `unreachable` | network failure or non-200 status |
 | `invalid-response` | body did not parse or had an unexpected shape |
+| `renderer-missing` | Amazon Luna is on but `/usr/bin/chromium` is not installed |
 
 A failed fetch **never** overwrites the last good list. The panel degrades to
 stale-with-error rather than empty.
@@ -130,11 +197,23 @@ stale-with-error rather than empty.
 ## External commands
 
 `/usr/bin/python3` (interpreter for this plugin's own helpers; already an
-Omarchy desktop dependency, pulled in by `uwsm`), `curl`,
-`omarchy-notification-send`, `omarchy-shell`. The interpreter is named
-absolutely rather than taken from `PATH`, so a user with a version manager
-installed does not run the helpers under a different Python than the one they
-were tested against. **No credentials. No privilege. No `sudo`.**
+Omarchy desktop dependency, pulled in by `uwsm`), `/usr/bin/timeout` and
+`/usr/bin/chromium` (Amazon Luna's renderer; both Omarchy base packages), `curl`,
+`omarchy-notification-send`, `omarchy-shell`. The interpreter, `timeout` and the
+browser are named absolutely rather than taken from `PATH`, so neither a version
+manager nor a user-writable directory can substitute them. **No credentials. No
+privilege. No `sudo`.**
+
+`curl` is deliberately **not** pinned the way the interpreter is: it is resolved
+through `PATH`. The transport it performs is a public, unauthenticated GET with
+no privilege to protect, and leaving the name bare is what lets `demo/run`
+substitute a shim. The tradeoff is taken knowingly — a reviewer boundary states
+that a bare name and a user-writable shim are not a trusted executable identity —
+and it buys the closed reader boundary below.
+
+`demo/run` is a development harness, not part of the widget: it starts its own
+isolated Quickshell against a temporary state directory and never stops or
+reconfigures the running shell.
 
 ## Security invariants
 
@@ -152,9 +231,13 @@ These are properties of the plugin, not policy. Callers cannot bypass them.
    shape-checked on read.
 4. Leading dashes are stripped from notification titles, because the headline
    occupies an option position that is parsed before the positional argument.
+5. The reader's endpoint set is **closed**. `sourceUrl` is exhaustive over the
+   stores; no environment variable, file path or fixture hook can point a
+   fetch anywhere else. The demo substitutes `curl` on `PATH` instead, entirely
+   outside the widget.
 
-All three feeds are attacker-controlled if a store is compromised or the
-connection is intercepted.
+Every feed is attacker-controlled if a store is compromised or the connection
+is intercepted.
 
 ## Ownership and attribution
 
@@ -250,15 +333,19 @@ ability never worked.
 
 ## Verification plan
 
-- Parser unit tests against saved fixtures for all three shapes, including
-  GOG's 404 and Epic's expired-promotion case.
+- Parser unit tests against saved fixtures for every store's shape, including
+  GOG's 404, Epic's expired-promotion case and a real signed-out Amazon Luna
+  claims page.
 - Diff tests proving first-run silence, mute silence and re-enable silence.
 - Helper behaviour tests: byte cap, FIFO and symlink refusal, private directory,
   atomic replacement under concurrent writers, and process-group teardown.
 - A QML lint pass against the real Qt `qmllint`, which fails on any error or
   syntax warning.
 - A live harness that loads the real widget into a real Quickshell instance
-  against all three stores.
+  against all four stores, asserting that the hero and the footer are pinned
+  around the scrolling list.
+- A manual demo (`./demo/run`) that renders the real panel against a committed
+  fixture, so the ending-soon marker can be seen without waiting for a giveaway.
 
 **GOG's success-path parser is fixture-only until a real giveaway is captured.**
 GOG had nothing running on 9 October 2026, so the 200 shape is implemented from
@@ -269,7 +356,8 @@ over.
 ## Deferred
 
 Upcoming and announced games, cover images, countdown timers, permanently-free
-and free-to-play catalogues, and region selection beyond Steam's `country`.
+and free-to-play catalogues, region selection beyond Steam's `country`, and
+Amazon's in-game content or Luna streaming catalogue.
 
 ## Progress
 
@@ -438,6 +526,31 @@ Completed evidence:
   panel's text-key handler.
   The dot is computed from enabled stores only, because a switched-off store's
   hidden rows could otherwise hold the dot on with no marker left to clear it.
+
+- The **ending-soon marker**. A game whose giveaway closes within a day, or that
+  has closed already but is still listed, wears `fa-hourglass-end` (U+F253, Nerd
+  Fonts 3.5.1) in the unseen coin's slot, in `urgent`. When both apply the
+  hourglass wins and the coin is withheld, but the game stays unacknowledged, so
+  the bar dot and the click that clears it are unchanged. The window is
+  `end - now <= 24h` **with no lower bound**, so an elapsed giveaway keeps its
+  mark until a refresh drops the row or moves its date back out; the mark holds
+  no state of its own. Only Epic and GOG publish an end date, so a Steam row
+  never shows one, and an absent or malformed date means no mark. The marker
+  marks seen only for an unseen game, so an already-seen game's hourglass
+  launches instead of dead-ending.
+
+- The **`demo/` harness** (`demo/run`, `demo/bin/curl`,
+  `demo/fixtures/ending-soon.json`) renders the real panel against a committed
+  fixture: two games end inside the day, two in a week. The widget is unmodified.
+  The demo puts a `curl` shim first on `PATH`, and `lib/capped-run` resolves the
+  widget's bare `curl` through it, so the shipped transport is what runs. The
+  fixture's windows are shifted as a group so the furthest closes a week from
+  now, keeping a genuine payload that never goes stale. `demo_preflight.py`
+  passes, warning only about the two `mktemp` directories it deletes.
+  **Rejected: a fixture override in the widget.** A first cut had `sourceUrl`
+  read `LOOT_DROPS_FIXTURE_<STORE>` and fetch `file://`; that widened a closed
+  reader boundary into a general local-file read. The demo substitutes the
+  process instead, and the invariant above records why.
 
 Remaining:
 

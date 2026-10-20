@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -13,9 +14,9 @@ import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Watch Steam, Epic and GOG for games that are free to keep. Parsing, URL
-// allowlisting, seen-id transitions and notification copy live in Model.js;
-// this file owns transport, persistence and rendering.
+// Watch Steam, Epic, GOG and Amazon Luna for games that are free to keep.
+// Parsing, URL allowlisting, seen-id transitions and notification copy live in
+// Model.js; this file owns transport, persistence and rendering.
 //
 // The bar widget is always loaded, so it owns the refresh timer itself. There
 // is deliberately no service kind: a process-wide singleton would be a second
@@ -58,28 +59,40 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
+  // The store marks and the gutter they occupy. `heading` is the theme's 16px
+  // token, so the marks follow a theme's font scale; labels and game titles
+  // share the indent derived from it so the two levels stay aligned.
+  readonly property int markSize: Style.font.heading
+  readonly property int storeIndent: Style.spacing.sm + markSize + Style.space(8)
+
   readonly property var storesOn: Model.enabled({
     "steamEnabled": setting("steamEnabled", true),
     "epicEnabled": setting("epicEnabled", true),
-    "gogEnabled": setting("gogEnabled", true)
+    "gogEnabled": setting("gogEnabled", true),
+    "amazonEnabled": setting("amazonEnabled", false)
   })
   readonly property var notifyOn: Model.notifyFor({
     "steamNotify": setting("steamNotify", true),
     "epicNotify": setting("epicNotify", true),
-    "gogNotify": setting("gogNotify", true)
+    "gogNotify": setting("gogNotify", true),
+    "amazonNotify": setting("amazonNotify", true)
   })
   readonly property int refreshMinutes:
     // undefined, not 0: an absent setting must land on the default, and 0 would
     // clamp to the floor instead.
     Model.normalizeRefreshMinutes(setting("refreshMinutes", undefined))
   readonly property string steamCountry: Model.normalizeCountry(setting("steamCountry", ""))
+  // Whether the panel hides games already marked seen. This is a view filter,
+  // not a second baseline: the seen state itself is untouched.
+  readonly property bool hideSeen: setting("hideSeen", false)
 
   // Per-store results. Each bucket keeps its own games, error and timestamp so
-  // one store failing never blanks the other two.
+  // one store failing never blanks the others.
   property var buckets: ({
     "steam": newBucket(),
     "epic": newBucket(),
-    "gog": newBucket()
+    "gog": newBucket(),
+    "amazon": newBucket()
   })
 
   property var seenState: Model.emptySeen()
@@ -95,6 +108,10 @@ Panel {
   // hover claims it and dismisses the keyboard cursor, and a keyboard move
   // claims it back. Only one row is ever highlighted.
   property int pointerIndex: -1
+  // Where the pointer last was, in scene coordinates. A row sliding under a
+  // still pointer reports the same scene point; only a changed point means the
+  // mouse itself moved.
+  property point lastPointerScene: Qt.point(-1, -1)
   // Whichever store the e and n keys act on. It follows the pointer when the
   // pointer is over a row, and the keyboard cursor otherwise, so pressing e
   // acts on the store you are looking at rather than on whichever one happens
@@ -139,7 +156,10 @@ Panel {
       height: panelList.height,
       pinnedHeight: pinned.height,
       pinnedBottom: pinned.y + pinned.height,
-      listY: panelList.y
+      listY: panelList.y,
+      listBottom: panelList.y + panelList.height,
+      footerY: panelFooter.y,
+      footerHeight: panelFooter.height
     }
   }
 
@@ -149,10 +169,10 @@ Panel {
     return m.contentHeight > 0 && m.height > 0
   }
 
-  // The row list contains a header per store, so its length is not a count of
-  // games. Count the game rows only, or the bar mark would stop dimming
-  // whenever a store is merely switched on.
-  readonly property bool hasGames: gameCount() > 0
+  // Whether an enabled store has any game at all. This reads the buckets rather
+  // than the filtered rows, so hiding seen games cannot make the mark look
+  // empty while the store still has something.
+  readonly property bool hasGames: Model.totalGames(enabledBuckets()) > 0
 
   // Games on offer that the user has not acknowledged yet. Independent of
   // notifications: a muted store still has something you have not looked at.
@@ -213,6 +233,19 @@ Panel {
     return !(set && set[id])
   }
 
+  // True when the hover position differs enough from the previous one to be the
+  // pointer moving, rather than a row scrolling underneath a still pointer.
+  // Both arrive as position changes, so the scene point is what tells them
+  // apart: scrolling changes the row's position, not the pointer's.
+  function pointerMoved(scenePoint) {
+    var threshold = Style.space(4)
+    var moved = lastPointerScene.x < 0
+      || Math.abs(scenePoint.x - lastPointerScene.x) >= threshold
+      || Math.abs(scenePoint.y - lastPointerScene.y) >= threshold
+    lastPointerScene = scenePoint
+    return moved
+  }
+
   // Flat, store-ordered list for the single cursor. Reordered on every change
   // so the highlighted row stays on the same game when a refresh lands.
   // Flat list of row entries: a header ahead of every store, then that store's
@@ -238,9 +271,19 @@ Panel {
         errorLabel: on ? Model.storeErrorLabel(store, errorsByStore()) : ""
       })
       if (!on) continue
-      for (var j = 0; j < current.games.length; j++) {
-        list.push({ kind: "game", store: store, game: current.games[j] })
+      var shown = current.games
+      var hidden = 0
+      if (hideSeen) {
+        var split = Model.splitSeenGames(current.games,
+          Model.acknowledgedOf(seenState, store))
+        shown = split.shown
+        hidden = split.hidden
       }
+      for (var j = 0; j < shown.length; j++) {
+        list.push({ kind: "game", store: store, game: shown[j] })
+      }
+      // The summary is the store's last entry, so every unseen game reads first.
+      if (hidden > 0) list.push({ kind: "hidden", store: store, count: hidden })
     }
     return list
   }
@@ -281,6 +324,13 @@ Panel {
     persist({ [notifyKey(store)]: !notifyOn[store] })
   }
 
+  // The eye hides games the user has already marked seen. Persisted like the
+  // switches and bells so it survives a restart.
+  function toggleHideSeen() {
+    persist({ hideSeen: !hideSeen })
+    reanchorCursor()
+  }
+
   function toggleSelectedStore() {
     var store = cursorStore()
     if (store) toggleStore(store)
@@ -301,12 +351,24 @@ Panel {
     return out
   }
 
+  // Whether any store currently carries an error, so the hero can turn urgent
+  // without naming each store in the binding.
+  function hasStoreError() {
+    for (var i = 0; i < Model.STORES.length; i++) {
+      if (bucket(Model.STORES[i]).error) return true
+    }
+    return false
+  }
+
   // Acknowledge one game, clearing its marker and letting the bar dot go out
   // once every new game has been marked.
   function markSeen(store, id) {
     if (!seenLoaded) return
     seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
+    // With seen games hidden, marking one removes its row underneath the
+    // cursor, so re-anchor rather than leaving a stale index behind.
+    reanchorCursor()
   }
 
   // The game the highlight is on, keyboard or pointer, so h marks whichever row
@@ -328,6 +390,7 @@ Panel {
       ? Model.acknowledgeGame(seenState, store, id)
       : Model.forgetGame(seenState, store, id)
     persistSeen()
+    reanchorCursor()
   }
 
   function toggleHighlighted() {
@@ -373,6 +436,8 @@ Panel {
   }
 
   function fetchArgs(store) {
+    // Amazon is rendered rather than requested, so a browser is its transport.
+    if (store === "amazon") return amazonArgs()
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     return [
       "curl", "-fsS", "--max-time", String(deadlineSeconds),
@@ -387,6 +452,26 @@ Panel {
       // network failure; curl -f alone would make both a non-zero exit.
       "--write-out", "\n%{http_code}",
       sourceUrl(store)
+    ]
+  }
+
+  // Luna's claims grid exists only after its scripts run, and the GraphQL
+  // behind it rejects clients that do not look like a browser, so this store is
+  // fetched by rendering the signed-out page in Chromium — a base Omarchy
+  // package. Both the browser and `timeout`, which supplies the deadline curl
+  // gives itself, are named absolutely so PATH cannot shadow them; capped-run
+  // still bounds the DOM printed to stdout.
+  // shortcut: no sign-in-wall detection; a wall requires a session this store
+  // does not have, and it surfaces as the generic unexpected-response error.
+  function amazonArgs() {
+    var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
+    return [
+      "/usr/bin/timeout", "-k", "2", String(deadlineSeconds),
+      "/usr/bin/chromium", "--headless", "--no-first-run", "--disable-logging",
+      "--user-data-dir=" + stateDir + "/browser-profile",
+      "--virtual-time-budget=10000",
+      "--dump-dom",
+      sourceUrl("amazon")
     ]
   }
 
@@ -405,6 +490,7 @@ Panel {
       return "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
         + "?locale=en-US&country=US&allowCountries=US"
     }
+    if (store === "amazon") return Model.SEARCH_URLS.amazon
     return "https://www.gog.com/giveaway/api/get"
   }
 
@@ -414,10 +500,14 @@ Panel {
   function publish(store, raw) {
     var body = String(raw || "")
     var code = "200"
-    var split = body.lastIndexOf("\n")
-    if (split >= 0) {
-      code = body.slice(split + 1).trim()
-      body = body.slice(0, split)
+    // curl appends its status code; the Amazon render is raw DOM, whose last
+    // line is markup rather than a status.
+    if (store !== "amazon") {
+      var split = body.lastIndexOf("\n")
+      if (split >= 0) {
+        code = body.slice(split + 1).trim()
+        body = body.slice(0, split)
+      }
     }
 
     if (code === "404" && store === "gog") {
@@ -517,16 +607,9 @@ Panel {
     anyBusy = busy
   }
 
-  // The cursor walks game rows only, skipping headers, and never leaves the
-  // viewport: the selected row is fetched from the Repeater and scrolled to.
-  function gameCount() {
-    var n = 0
-    for (var i = 0; i < visibleGames.length; i++) {
-      if (visibleGames[i].kind === "game") n++
-    }
-    return n
-  }
-
+  // The cursor walks game rows only, skipping headers and the hidden summary,
+  // and never leaves the viewport: the selected row is fetched from the
+  // Repeater and scrolled to.
   function gameRowIndexes() {
     var out = []
     for (var i = 0; i < visibleGames.length; i++) {
@@ -696,10 +779,26 @@ Panel {
     }
   }
 
+  Process {
+    id: amazonProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.publish("amazon", text)
+    }
+    onExited: function(exitCode) {
+      // 127 is "command not found": the browser this store needs is absent.
+      if (exitCode === 127 && root.bucket("amazon").busy)
+        root.fail("amazon", "Chromium is required but was not installed")
+      else if (exitCode !== 0 && root.bucket("amazon").busy)
+        root.fail("amazon", "Could not reach Amazon Luna")
+    }
+  }
+
   readonly property var fetchProcs: ({
     "steam": steamProc,
     "epic": epicProc,
-    "gog": gogProc
+    "gog": gogProc,
+    "amazon": amazonProc
   })
 
   // --- Timers ------------------------------------------------------------
@@ -773,10 +872,11 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    // The hero is no longer part of the list's content, so it is added back in
-    // to keep the card tall enough to hold both.
+    // The hero and the pinned footer are no longer part of the list's content,
+    // so both are added back in to keep the card tall enough to hold them.
     contentHeight: panel.fittedContentHeight(pinned.height
-                                             + panelList.contentHeight,
+                                             + panelList.contentHeight
+                                             + panelFooter.implicitHeight,
                                              Style.space(620))
 
     PanelKeyCatcher {
@@ -820,6 +920,7 @@ Panel {
         else if (key === "e") root.toggleSelectedStore()
         else if (key === "n") root.toggleSelectedBell()
         else if (key === "s") root.toggleHighlighted()
+        else if (key === "v") root.toggleHideSeen()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
 
@@ -846,8 +947,7 @@ Panel {
           id: hero
           readonly property color tint: root.hasGames
             ? root.foreground
-            : (root.bucket("steam").error || root.bucket("epic").error
-                || root.bucket("gog").error ? root.urgent : root.dim)
+            : (root.hasStoreError() ? root.urgent : root.dim)
           width: parent.width
           height: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 
@@ -912,7 +1012,7 @@ Panel {
       ListView {
         id: panelList
         anchors.top: pinned.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: panelFooter.top
         anchors.left: parent.left
         anchors.right: parent.right
         clip: true
@@ -938,6 +1038,17 @@ Panel {
           width: panelList.width
 
           readonly property bool isHeader: modelData.kind === "header"
+          readonly property bool isHidden: modelData.kind === "hidden"
+
+          // Whether this row's game has not been acknowledged, and whether its
+          // giveaway is within a day of ending (or past its end but still
+          // listed). Both guarded, so a header or a row without a game is
+          // neither. endingSoon reads root.nowMs, so the always-on 30s tick
+          // re-evaluates it without a timer of its own.
+          readonly property bool unseen: !isHeader && !!modelData.game
+            && root.gameUnseen(modelData.store, modelData.game.id)
+          readonly property bool endingSoon: !isHeader && !!modelData.game
+            && Model.endingSoon(modelData.game.endsAt, root.nowMs)
 
           // The switch draws its hover ring a few pixels outside its track, so
           // the header row must be at least as tall as the switch or the ring
@@ -955,7 +1066,9 @@ Panel {
             ? headerRowHeight
               + (modelData && modelData.errorLabel
                 ? storeError.implicitHeight + Style.space(8) : 0)
-            : gameTitle.implicitHeight + Style.spacing.sm
+            : isHidden
+              ? hiddenNote.implicitHeight + Style.spacing.sm
+              : gameTitle.implicitHeight + Style.spacing.sm
 
           // Store header: mark, name, bell, switch.
           Item {
@@ -973,16 +1086,51 @@ Panel {
               onEntered: root.targetStore = row.modelData.store
             }
 
-            Text {
+            // The store's mark, in a fixed box so every header starts its label
+            // at the same inset. Epic has no Nerd Font glyph, so it uses the
+            // bundled logo, colorized to the theme; the rest are glyphs.
+            Item {
               id: headerMark
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: Model.STORE_GLYPHS[row.modelData.store] || ""
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
+              width: root.markSize
+              height: root.markSize
+
+              Text {
+                anchors.centerIn: parent
+                visible: row.modelData.store !== "epic"
+                textFormat: Text.PlainText
+                text: Model.STORE_GLYPHS[row.modelData.store] || ""
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: root.markSize
+              }
+
+              Image {
+                id: epicLogo
+                anchors.fill: parent
+                // Only the Epic header loads the asset; the same delegate is
+                // reused for game rows, which must not read it.
+                source: row.modelData.store === "epic"
+                  ? root.pluginFile("assets/epic.svg") : ""
+                fillMode: Image.PreserveAspectFit
+                // Decode at physical pixels, as the shell's tray icons do, so
+                // the small mark stays crisp on a scaled display.
+                sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+                sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+                // Hidden but layered, so the effect can sample it as a texture.
+                visible: false
+                layer.enabled: row.modelData.store === "epic"
+              }
+
+              MultiEffect {
+                anchors.fill: epicLogo
+                source: epicLogo
+                visible: row.modelData.store === "epic"
+                colorization: 1.0
+                colorizationColor: root.dim
+              }
             }
 
             Text {
@@ -1058,8 +1206,8 @@ Panel {
             anchors.top: parent.top
             anchors.topMargin: row.headerRowHeight
             anchors.left: parent.left
-            anchors.leftMargin: Style.space(22)
-            width: parent.width - Style.space(22) - Style.spacing.sm
+            anchors.leftMargin: root.storeIndent
+            width: parent.width - root.storeIndent - Style.spacing.sm
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             visible: text !== ""
@@ -1076,7 +1224,7 @@ Panel {
             anchors.left: parent.left
             anchors.right: parent.right
             height: gameTitle.implicitHeight + Style.spacing.sm
-            visible: !row.isHeader
+            visible: row.modelData.kind === "game"
             radius: Style.cornerRadius
             // One highlight, owned by whichever input was used last: the
             // keyboard cursor while it is active, the pointer otherwise. They
@@ -1087,27 +1235,31 @@ Panel {
                           : "transparent")
               : "transparent"
 
-            // The marker for a game the user has not acknowledged. It sits in
-            // the left gutter, aligned with the store's own mark, so the title
-            // keeps its indent and nothing shifts as markers clear.
+            // The marker for a game the user has not acknowledged, or one whose
+            // giveaway is ending soon. It sits in the left gutter, aligned with
+            // the store's own mark, so the title keeps its indent and nothing
+            // shifts as markers clear. When both apply the hourglass wins and
+            // the coin is withheld; the game stays unacknowledged underneath.
             Text {
               id: gameMark
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
-              visible: !row.isHeader && row.modelData.game
-                && root.gameUnseen(row.modelData.store, row.modelData.game.id)
+              visible: row.unseen || row.endingSoon
               textFormat: Text.PlainText
-              text: Model.NEW_GAME_GLYPH
-              color: Commons.Color.accent
+              text: row.endingSoon ? Model.HOURGLASS_GLYPH : Model.NEW_GAME_GLYPH
+              color: row.endingSoon ? root.urgent : Commons.Color.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
 
-              // Declared inside the marker so the tooltip anchors over the coin
-              // rather than over the whole row.
+              // Declared inside the marker so the tooltip anchors over the glyph
+              // rather than over the whole row. A row that is both ending and
+              // unseen names both states, and the click clears the unseen one.
               PanelToolTip {
-                visible: gameMouse.containsMouse && gameMouse.overMark
-                text: "Mark as seen"
+                visible: gameMouse.containsMouse && gameMouse.overGlyph
+                text: row.endingSoon
+                  ? (row.unseen ? "Ending soon. Mark as seen" : "Ending soon")
+                  : "Mark as seen"
                 fontFamily: root.fontFamily
               }
             }
@@ -1118,7 +1270,7 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               // Indented under the store name so the two levels read apart.
-              anchors.leftMargin: Style.space(22)
+              anchors.leftMargin: root.storeIndent
               anchors.rightMargin: Style.spacing.sm
               // Titles from the network are plain text, never markup. A header
               // row has no `game`, and hiding a row does not stop this binding
@@ -1137,15 +1289,29 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              // Whether the pointer is over the marker, used to tell a click on
-              // the coin from a click on the rest of the row.
-              readonly property bool overMark: gameMark.visible
+              // Whether the pointer is over the marker glyph. This drives the
+              // tooltip whoever the glyph belongs to; the click uses it together
+              // with `row.unseen`, so an already-seen game still explains its
+              // hourglass on hover while its click falls through to launching.
+              readonly property bool overGlyph: gameMark.visible
                 && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
               // The pointer picks the store the keyboard acts on, so e and n do
-              // not depend on where the keyboard cursor happens to be. It also
-              // claims the highlight, dismissing the keyboard cursor so the two
-              // do not both draw, and becomes the base for the next j/k move.
+              // not depend on where the keyboard cursor happens to be.
+              // Entering only records the pointer row: a row can enter under a
+              // stationary pointer when a keypress scrolls the list, and
+              // claiming the highlight there would yank the cursor back to
+              // wherever the scroll left the pointer.
               onEntered: {
+                root.pointerIndex = row.index
+                root.targetStore = row.modelData.store
+              }
+              // Real pointer movement claims the highlight, dismissing the
+              // keyboard cursor so the two do not both draw, and becomes the
+              // base for the next j/k move. A row scrolling under a still
+              // pointer also reports a position change, so only a change in the
+              // pointer's scene point counts as movement.
+              onPositionChanged: function(mouse) {
+                if (!root.pointerMoved(mapToItem(null, mouse.x, mouse.y))) return
                 root.pointerIndex = row.index
                 root.cursorActive = false
                 root.targetStore = row.modelData.store
@@ -1154,113 +1320,222 @@ Panel {
               // the keyboard, so the keyboard's position does not come back.
               onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
               // One MouseArea covers the whole row, including the marker, so
-              // moving onto the coin cannot exit-and-clear the highlight. A
-              // click on the coin marks the game seen; anywhere else launches it.
+              // moving onto the glyph cannot exit-and-clear the highlight. A
+              // click on the marker of an unseen game marks it seen; anywhere
+              // else launches it. Marking an already-seen game would be a no-op,
+              // so there the hourglass click launches instead.
               onClicked: {
-                if (overMark) root.markSeen(row.modelData.store, row.modelData.game.id)
+                if (overGlyph && row.unseen)
+                  root.markSeen(row.modelData.store, row.modelData.game.id)
                 else root.openGame(row.modelData)
               }
             }
           }
+
+          // Where seen games are hidden, the summary stands in for them, so a
+          // store whose games are all seen still says why its list is short.
+          Text {
+            id: hiddenNote
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.storeIndent
+            anchors.rightMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            visible: row.isHidden
+            text: row.isHidden && row.modelData
+              ? Model.hiddenSeenLabel(row.modelData.count) : ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+        }
+      }
+
+      // The scrollbar auto-hides, so a fade and a chevron at an edge say there
+      // is more content in that direction. The fade uses the surface colour and
+      // fades to the same RGB at zero alpha, so it works over rows and
+      // highlights alike; the chevron keeps the hint visible even when a gap
+      // between rows leaves nothing behind the fade to darken.
+      Rectangle {
+        id: topFade
+        anchors.top: panelList.top
+        anchors.left: panelList.left
+        anchors.right: panelList.right
+        height: Style.space(30)
+        visible: panelList.interactive && !panelList.atYBeginning
+        gradient: Gradient {
+          GradientStop { position: 0.0; color: Commons.Color.popups.background }
+          GradientStop {
+            position: 1.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
         }
 
-        // --- Below the list ---------------------------------------------
-        footer: Column {
-          width: panelList.width
-          // Tighter than the panel's usual gap: the footer is a block of small
-          // controls, and panelGap left a visible hole between them.
-          spacing: Style.space(6)
-          // Clearance above the rule, matching the gap under the hero's rule, so
-          // the last game row is not flush against the footer.
-          topPadding: Style.space(8)
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.top: parent.top
+          anchors.topMargin: Style.space(2)
+          text: "\u{F077}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Rectangle {
+        id: bottomFade
+        anchors.bottom: panelList.bottom
+        anchors.left: panelList.left
+        anchors.right: panelList.right
+        height: Style.space(30)
+        visible: panelList.interactive && !panelList.atYEnd
+        gradient: Gradient {
+          GradientStop {
+            position: 0.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
+          GradientStop { position: 1.0; color: Commons.Color.popups.background }
+        }
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.bottom: parent.bottom
+          anchors.bottomMargin: Style.space(2)
+          text: "\u{F078}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      // --- Pinned footer -----------------------------------------------
+      // Outside the list, so the games scroll between the hero's rule and this
+      // one instead of carrying the controls off-screen.
+      Column {
+        id: panelFooter
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        // Tighter than the panel's usual gap: the footer is a block of small
+        // controls, and panelGap left a visible hole between them.
+        spacing: Style.space(6)
+        // Clearance above the rule, matching the gap under the hero's rule, so
+        // the last game row is not flush against the footer.
+        topPadding: Style.space(8)
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          visible: root.activeStores.length === 0
+          wrapMode: Text.WordWrap
+          text: "Every store is switched off. Turn one on with the switch above to start watching."
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        // A rule between the list and the controls, so the buttons are not
+        // read as part of a store's rows. The gap above it is the footer's
+        // own topPadding, and the gap below the hero's rule is the same size,
+        // so both sides of the rule match.
+        PanelSeparator {
+          id: footerRule
+          width: parent.width
+          foreground: root.foreground
+        }
+
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          visible: root.showShortcuts
+          wrapMode: Text.WordWrap
+          horizontalAlignment: Text.AlignHCenter
+          text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · v hide/show seen · j/k scroll · enter open"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        // The very last row: refresh in the near corner, the seen toggle and
+        // help in the far one, and the freshness centred between them.
+        //
+        // The text is centred with anchors rather than by filling the row and
+        // centring within it, so no button can shift it off centre. Its width
+        // is capped at whatever is left between them, which keeps a long
+        // freshness string from running under a button.
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(bottomText.implicitHeight,
+                                   refreshButton.implicitHeight,
+                                   seenButton.implicitHeight,
+                                   helpButton.implicitHeight)
 
           Text {
-            width: parent.width
+            id: bottomText
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width
+                            - refreshButton.implicitWidth
+                            - seenButton.implicitWidth
+                            - helpButton.implicitWidth - Style.space(20))
             textFormat: Text.PlainText
-            visible: root.activeStores.length === 0
-            wrapMode: Text.WordWrap
-            text: "Every store is switched off. Turn one on with the switch above to start watching."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-
-          // A rule between the list and the controls, so the buttons are not
-          // read as part of a store's rows. The gap above it is the footer's
-          // own topPadding, and the gap below the hero's rule is the same size,
-          // so both sides of the rule match.
-          PanelSeparator {
-            id: footerRule
-            width: parent.width
-            foreground: root.foreground
-          }
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            visible: root.showShortcuts
-            wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · j/k scroll · enter open"
-            color: root.dim
+            elide: Text.ElideRight
+            text: root.freshness
+            color: root.stale ? root.dim : root.footerInk
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
 
-          // The very last row: refresh in the near corner, help in the far one,
-          // and the freshness centred between them.
-          //
-          // The text is centred with anchors rather than by filling the row and
-          // centring within it, so neither button can shift it off centre. Its
-          // width is capped at whatever is left between them, which keeps a long
-          // freshness string from running under a button.
-          Item {
-            width: parent.width
-            implicitHeight: Math.max(bottomText.implicitHeight,
-                                     refreshButton.implicitHeight,
-                                     helpButton.implicitHeight)
+          Button {
+            id: refreshButton
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "\u{F021}"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Refresh now"
+            onClicked: root.refresh()
+          }
 
-            Text {
-              id: bottomText
-              anchors.horizontalCenter: parent.horizontalCenter
-              anchors.verticalCenter: parent.verticalCenter
-              width: Math.min(implicitWidth, parent.width
-                              - refreshButton.implicitWidth
-                              - helpButton.implicitWidth - Style.space(12))
-              textFormat: Text.PlainText
-              horizontalAlignment: Text.AlignHCenter
-              elide: Text.ElideRight
-              text: root.freshness
-              color: root.stale ? root.dim : root.footerInk
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
+          // Eye: hide or show the games already marked seen. Like the bell it
+          // swaps glyph and tooltip with the state it is in.
+          Button {
+            id: seenButton
+            anchors.right: helpButton.left
+            anchors.rightMargin: Style.spacing.xs
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.hideSeen ? "\u{F070}" : "\u{F06E}"
+            bordered: true
+            foreground: root.hideSeen ? root.footerInk
+                                      : Qt.darker(root.footerInk, 1.35)
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: root.hideSeen ? "Show seen games" : "Hide seen games"
+            onClicked: root.toggleHideSeen()
+          }
 
-            Button {
-              id: refreshButton
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              text: "\u{F021}"
-              bordered: true
-              foreground: root.footerInk
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              tooltipText: "Refresh now"
-              onClicked: root.refresh()
-            }
-
-            Button {
-              id: helpButton
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: "?"
-              bordered: true
-              foreground: root.footerInk
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              tooltipText: "Shortcuts"
-              onClicked: root.showShortcuts = !root.showShortcuts
-            }
+          Button {
+            id: helpButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "?"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Shortcuts"
+            onClicked: root.showShortcuts = !root.showShortcuts
           }
         }
       }

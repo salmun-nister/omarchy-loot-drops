@@ -1,24 +1,25 @@
 .pragma library
 
-// Parsing, allowlisting, seen-id transitions and notification copy for all
-// three stores. Every value here comes from a network response that is
+// Parsing, allowlisting, seen-id transitions and notification copy for every
+// store. Every value here comes from a network response that is
 // attacker-controlled if the store is wrong or the connection is intercepted,
 // so nothing leaves this file without passing the host allowlist or the title
 // scrub. The widget owns transport, persistence and rendering.
 
-var STORES = ["steam", "epic", "gog"]
+var STORES = ["steam", "epic", "gog", "amazon"]
 
 var STORE_LABELS = {
   "steam": "Steam",
   "epic": "Epic Games",
-  "gog": "GOG"
+  "gog": "GOG",
+  "amazon": "Amazon Luna"
 }
 
-// Store marks beside each header. Steam and GOG are the real logos, taken from
-// the Material Design set in Nerd Fonts 3.5.1 (U+F04D3 and U+F0BA1; the latter
-// moves between releases, so the version matters). Nerd Fonts ships no Epic
-// mark at all, so Epic borrows its initial rather than wearing a storefront
-// icon that is not its own.
+// Store marks beside each header. Steam, GOG and Amazon use the real logos from
+// the Material Design and Font Awesome sets in Nerd Fonts 3.5.1 (U+F04D3,
+// U+F0BA1 and U+F270; GOG's codepoint moves between releases, so the version
+// matters). Nerd Fonts ships no Epic mark at all, so the widget draws Epic from
+// a bundled monochrome logo (assets/epic.svg) colorized to the theme.
 // The IpcHandler target the bar widget registers and the notification's click
 // action addresses. Both sides read it from here so they cannot drift apart:
 // a notification that calls a target the widget no longer publishes would
@@ -27,8 +28,8 @@ var IPC_TARGET = "salmun-nister.loot-drops"
 
 var STORE_GLYPHS = {
   "steam": "\u{F04D3}",
-  "epic": "\u{F04DC}",
-  "gog": "\u{F0BA1}"
+  "gog": "\u{F0BA1}",
+  "amazon": "\u{F270}"
 }
 
 // Short forms, used only by the panel's subtitle. That line is uppercased and
@@ -37,7 +38,8 @@ var STORE_GLYPHS = {
 var STORE_SHORT = {
   "steam": "Steam",
   "epic": "Epic",
-  "gog": "GOG"
+  "gog": "GOG",
+  "amazon": "Amazon"
 }
 
 // The canonical host each store's links may point at. A title and a URL both
@@ -46,13 +48,15 @@ var STORE_SHORT = {
 var HOSTS = {
   "steam": "store.steampowered.com",
   "epic": "store.epicgames.com",
-  "gog": "www.gog.com"
+  "gog": "www.gog.com",
+  "amazon": "luna.amazon.com"
 }
 
 var SEARCH_URLS = {
   "steam": "https://store.steampowered.com/search/?maxprice=free&specials=1",
   "epic": "https://store.epicgames.com/free-games",
-  "gog": "https://www.gog.com/giveaways"
+  "gog": "https://www.gog.com/giveaways",
+  "amazon": "https://luna.amazon.com/claims/home"
 }
 
 // U+F0726, the Material Design treasure chest in the Nerd Font. Deliberately
@@ -68,11 +72,19 @@ var BAR_ICON = "󰜦"
 // between Nerd Fonts releases: F51E, the Font Awesome coins position in 3.0,
 // is oct-stack in 3.5.1, so the version matters here as it does for the GOG mark.
 var NEW_GAME_GLYPH = "\u{EDE8}"
+// U+F253, the Font Awesome "hourglass-end" (sand almost run out) in Nerd Fonts
+// 3.5.1. Private use like the other marks, so it paints monochrome and takes the
+// colour it is given. It stands in for the coin when a giveaway is ending soon.
+var HOURGLASS_GLYPH = "\u{F253}"
+// How close to a giveaway's end counts as "ending soon". A date already past
+// still counts (see endingSoon), so the mark survives until a refresh drops the
+// game or moves its end date back out of the window.
+var ENDING_SOON_MS = 24 * 60 * 60 * 1000
 var MAX_BYTES = 4000000
 var MAX_GAMES = 40
 var MAX_TITLE = 120
 var MAX_BLOCK = 20000
-var MAX_ID = 40
+var MAX_ID = 64
 var MAX_SEEN_BYTES = 32768
 var MAX_SEEN_IDS = 120
 var USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -88,9 +100,10 @@ var REFRESH_MAX = 720
 // one. 1.5x keeps "stale" meaning "we may have missed something" at any rate.
 var STALE_MULTIPLIER = 1.5
 
-// Steam ids are digits. Epic and GOG use opaque numeric or slug ids, so the
-// safe character set is shared and the host allowlist does the real work.
-var ID_RE = /^[A-Za-z0-9._-]{1,40}$/
+// Steam ids are digits. Epic, GOG and Amazon use opaque ids, so the safe
+// character set is shared and the host allowlist does the real work. Amazon
+// claim ids are 50 characters ("amzn1.pg.item." plus a UUID), hence the cap.
+var ID_RE = /^[A-Za-z0-9._-]{1,64}$/
 var STEAM_ID_RE = /^\d{1,10}$/
 
 var MAX_URL = 300
@@ -174,7 +187,11 @@ function enabled(settings) {
   return {
     "steam": setting(settings, "steamEnabled", true),
     "epic": setting(settings, "epicEnabled", true),
-    "gog": setting(settings, "gogEnabled", true)
+    "gog": setting(settings, "gogEnabled", true),
+    // Off by default: this store renders a page in headless Chromium, so it
+    // costs more than a single request and is only worth it if the user wants
+    // Amazon's giveaways.
+    "amazon": setting(settings, "amazonEnabled", false)
   }
 }
 
@@ -182,7 +199,8 @@ function notifyFor(settings) {
   return {
     "steam": setting(settings, "steamNotify", true),
     "epic": setting(settings, "epicNotify", true),
-    "gog": setting(settings, "gogNotify", true)
+    "gog": setting(settings, "gogNotify", true),
+    "amazon": setting(settings, "amazonNotify", true)
   }
 }
 
@@ -209,6 +227,17 @@ function staleAfterMs(refreshMinutes) {
   return Math.round(minutes * STALE_MULTIPLIER * 60 * 1000)
 }
 
+// Whether a giveaway's end is within ENDING_SOON_MS, or already past. A past end
+// date deliberately still counts: the row is still listed, and the date may have
+// been extended or the store simply not re-fetched yet. The mark therefore needs
+// no memory of its own; it clears when a refresh drops the game or moves its end
+// date more than the window away. An absent or malformed date yields no mark, so
+// those rows read exactly as they did before.
+function endingSoon(endsAt, nowMs) {
+  var end = parseTime(endsAt)
+  return end > 0 && end - Number(nowMs) <= ENDING_SOON_MS
+}
+
 // ---------------------------------------------------------------------------
 // Store parsers
 // ---------------------------------------------------------------------------
@@ -219,6 +248,7 @@ function parseStore(store, raw) {
   if (store === "steam") return parseSteam(text)
   if (store === "epic") return parseEpic(text)
   if (store === "gog") return parseGog(text)
+  if (store === "amazon") return parseAmazon(text)
   return { ok: false, games: [], error: "invalid-response" }
 }
 
@@ -454,6 +484,77 @@ function gogGame(payload, id) {
   }
 }
 
+// Amazon Luna has no endpoint a script may read: the claims grid exists only
+// after the page's own scripts run, and the GraphQL behind it rejects clients
+// without a browser's TLS fingerprint. The widget therefore renders the
+// signed-out claims page in headless Chromium and this parser reads the
+// produced DOM. The pre-script shell contains neither marker below, so a page
+// without the grid is a bot block, a sign-in wall or a redesign and must
+// surface as an error rather than as an empty store. A grid that yields no
+// cards is treated the same way: the container only exists once the app has
+// rendered, and Luna always has a current lineup, so an empty parse is a markup
+// change rather than a healthy empty store.
+function parseAmazon(text) {
+  var html = String(text == null ? "" : text)
+  if (!html || html.length > MAX_BYTES) {
+    return { ok: false, games: [], error: "invalid-response" }
+  }
+  var gridAt = html.indexOf('data-a-target="offer-list-FGWP_FULL"')
+  if (gridAt < 0) return { ok: false, games: [], error: "invalid-response" }
+
+  // Every card is wrapped in a learn-more anchor carrying the claim path, so
+  // cards are found by that marker rather than by the call-to-action text,
+  // which varies ("Claim game", "Get game"). Scoping to the grid skips the
+  // featured carousel above it, whose cards repeat the same games.
+  var marker = 'data-a-target="learn-more-card"'
+  var games = []
+  var seen = {}
+  var index = gridAt
+  while (games.length < MAX_GAMES) {
+    var at = html.indexOf(marker, index)
+    if (at < 0) break
+    var start = html.lastIndexOf("<a", at)
+    if (start < 0) start = at
+    var next = html.indexOf(marker, at + marker.length)
+    var card = html.slice(start, next < 0 ? html.length : next)
+    index = next < 0 ? html.length : next
+    var game = amazonCard(card)
+    if (!game || seen[game.id]) continue
+    seen[game.id] = true
+    games.push(game)
+  }
+  if (games.length === 0) return { ok: false, games: [], error: "invalid-response" }
+  return { ok: true, games: games }
+}
+
+// One card's wrapper anchor carries the title and a path shaped
+// /claims/<slug>/dp/<item id>. Both segments are parsed and the link is
+// rebuilt from them, so the network's host and query string are never used.
+function amazonCard(card) {
+  var path = String(matchAttr(card, "href") || "").split("#")[0].split("?")[0]
+  var parts = path.split("/")
+  if (parts.length !== 5 || parts[0] !== "" || parts[1] !== "claims" || parts[3] !== "dp") {
+    return null
+  }
+  var slug = scrubId(parts[2])
+  var id = scrubId(parts[4])
+  if (!slug || !id) return null
+
+  var heading = String(card).match(/<h3[^>]*\btitle="([^"]{1,512})"/i)
+  var title = heading ? scrubTitle(heading[1]) : ""
+  // The heading is the visible title; the wrapper's aria-label repeats it, so
+  // it is only a fallback for a variant that omits the heading.
+  if (!title) title = scrubTitle(matchAttr(card, "aria-label"))
+  if (!title) return null
+
+  return {
+    store: "amazon",
+    id: id,
+    title: title,
+    url: safeUrl("amazon", "https://" + HOSTS.amazon + "/claims/" + slug + "/dp/" + id)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Seen state
 // ---------------------------------------------------------------------------
@@ -549,6 +650,38 @@ function unseenIds(state, perStore) {
 
 function hasUnseen(state, perStore) {
   return unseenIds(state, perStore).length > 0
+}
+
+// Splits one store's games into the ones the user has not acknowledged and a
+// count of the ones they have. Store order is preserved, so with the seen games
+// hidden the remaining rows keep the order they arrived in.
+function splitSeenGames(games, acknowledgedIds) {
+  var acknowledged = {}
+  var list = Array.isArray(acknowledgedIds) ? acknowledgedIds : []
+  for (var i = 0; i < list.length; i++) {
+    var acked = scrubId(list[i])
+    if (acked) acknowledged[acked] = true
+  }
+
+  var shown = []
+  var hidden = 0
+  var source = Array.isArray(games) ? games : []
+  for (var j = 0; j < source.length; j++) {
+    var game = source[j]
+    var id = game ? scrubId(game.id) : ""
+    if (id && acknowledged[id]) {
+      hidden++
+      continue
+    }
+    if (game) shown.push(game)
+  }
+  return { shown: shown, hidden: hidden }
+}
+
+// The summary row's copy when seen games are hidden from the panel.
+function hiddenSeenLabel(count) {
+  var n = Math.max(0, Math.round(Number(count) || 0))
+  return n === 1 ? "1 seen game hidden" : n + " seen games hidden"
 }
 
 function parseSeen(raw) {

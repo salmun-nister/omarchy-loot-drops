@@ -1,193 +1,97 @@
 {
   "status": "passed",
-  "input_commit": "8f2dbaa2b4a7936f408a22e7e44ace15ce31ba0f",
-  "date": "2026-10-14",
-  "platform": "Omarchy 4.0.4-1, Hyprland 0.56.2, kernel 7.2.5-3-omarchy, x86_64, Node v26.8.2",
-  "scope": "Live desktop acceptance of the bar widget, the panel, the three store fetches, the notification and link paths, and the install/update/removal lifecycle, re-run for the 0.2.0 candidate. Two runtime changes since 0.1.0: the mouse and keyboard now share one highlight instead of drawing at once, and new games are marked seen per row with a coin marker and an s toggle instead of the bar dot clearing when the panel opened. The preview and theme screenshots were retaken to show the markers. The record is against the merged 0.2.0 content commit; the acceptance commit that follows is documentation only, so the runtime it describes is unchanged. Portable checks are separate and are listed for completeness.",
-  "install": "Git-managed install from a fresh clone was exercised with omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable, then omarchy plugin enable salmun-nister.loot-drops right. The public https URL was not used because the candidate was not pushed at record time; the clone and validation path is the same. For development the checkout is also symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops. Changed QML needs omarchy restart shell: omarchy-shell shell rescanPlugins re-reads manifests but does not reload changed QML, which was confirmed when a first marker test ran against the stale build. Update from 0.1.0 was exercised by checking out the v0.1.0 tag in the checkout, restarting the shell, then returning to the candidate. The markers were exercised by clearing the seen.json acknowledged lists and restarting the shell to re-read them.",
+  "input_commit": "ec0a6535e725bb7d86cbc3a9a50bd3915884e1da",
+  "date": "2026-10-20",
+  "platform": "Omarchy 4.0.6-1, Hyprland 0.56.2, kernel 7.2.8-9-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.8.2",
+  "scope": "Live desktop acceptance of the 0.3.0 candidate: the four stores including the opt-in Amazon Luna render, the hide-seen filter with its footer eye and v key, the pinned footer with list-only scrolling and edge fade/chevron hints, the 16px store marks with the bundled Epic logo, the keyboard-scroll cursor fix, and the install/update/removal lifecycle from v0.2.0. The preview and four theme screenshots were retaken on this candidate and cropped from live captures. Portable checks are separate and are listed for completeness.",
+  "install": "Update: checked out v0.2.0 in the development checkout, restarted the shell (old UI confirmed live: no Amazon section, no eye), returned to main at the candidate and restarted; the per-store settings and the four Epic acknowledged ids in seen.json survived. Fresh install: unlinked the development symlink only (the repository was never touched), then `omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes` cloned the candidate at 0.3.0 into the plugin directory and loaded it after `omarchy restart shell`; settings and seen.json survived. Removal: `omarchy plugin remove salmun-nister.loot-drops --yes` deleted the installed clone, kept ~/.local/state/salmun-nister.loot-drops/seen.json at mode 0600, and removed the widget's own shell.json entry, which is Omarchy's removal behaviour. Restore: re-linked the development checkout, rescanned, enabled it, and restarted; the plugin loaded, seen.json survived, and settings returned to manifest defaults, which was also the live check that Amazon Luna ships off. QML changes need `omarchy restart shell`; `omarchy-shell shell rescanPlugins` only re-reads manifests. An enable issued immediately after a rescan can race the rescan and must be retried after it completes.",
   "commands": [
     "./tests/run",
     "./tests/qml/lint",
     "./tests/harness/run",
+    "python3 /home/kevin/.agents/skills/omarchy-plugin-test/scripts/validate_plugin.py --json --security .",
+    "python3 /home/kevin/.agents/skills/omarchy-plugin-release/scripts/release_preflight.py .",
     "omarchy plugin validate .",
-    "omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes",
-    "omarchy plugin enable salmun-nister.loot-drops right",
-    "omarchy plugin update salmun-nister.loot-drops --yes",
+    "git checkout v0.2.0; omarchy restart shell; git checkout main; omarchy restart shell",
+    "rm ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes; omarchy restart shell",
     "omarchy plugin remove salmun-nister.loot-drops --yes",
-    "git checkout v0.1.0; omarchy restart shell; git checkout main; omarchy restart shell",
-    "omarchy restart shell",
-    "omarchy-shell shell rescanPlugins",
+    "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins; omarchy plugin enable salmun-nister.loot-drops right; omarchy restart shell",
     "omarchy-shell shell listPlugins",
-    "omarchy-shell shell debugBarGeometry",
-    "omarchy-shell shell summon salmun-nister.loot-drops '\"\"'",
-    "omarchy-shell -q shell hide salmun-nister.loot-drops",
-    "omarchy-shell salmun-nister.loot-drops refresh",
-    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 12000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open",
-    "grim -s 1 <capture>; magick <capture> -crop <region> +repage <evidence>"
+    "omarchy-shell -q salmun-nister.loot-drops open",
+    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 30000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open",
+    "grim <capture>; magick <capture> -crop <region> +repage <evidence>"
   ],
   "results": [
     {
+      "check": "Portable, schema and security checks",
+      "result": "pass",
+      "detail": "./tests/run passed 52 tests, the Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings; release_preflight.py reports READY with advisory matches only (QML process/network access, installer wording, and agent-instruction files in the tree); omarchy plugin validate . exits 0. These are limited scans, not a security audit."
+    },
+    {
       "check": "Bar widget loads on the real bar",
       "result": "pass",
-      "detail": "omarchy-shell shell listPlugins reports enabled:true for kinds ['bar-widget'], and shell debugBarGeometry places salmun-nister.loot-drops in the right section, 27x26, visible:true and itemVisible:true. A shell restart reloaded it with no Loot Drops errors in the Quickshell log."
+      "detail": "After the restore, omarchy-shell shell listPlugins reports enabled:true for salmun-nister.loot-drops with kinds ['bar-widget'], and the IPC open call mapped the keyboard panel. No plugin errors appeared in the shell log during the runs."
     },
     {
-      "check": "Panel opens and renders the three stores",
+      "check": "Panel renders all four stores, with Epic's bundled mark",
       "result": "pass",
-      "detail": "summon returned ok and mapped the omarchy-keyboard-panel layer. At this run Steam and GOG had nothing free, so the harness parsed the live responses into 2 Epic games; the panel renders a header per store and the game rows under their store."
+      "detail": "The live panel showed Steam, Epic Games, GOG and Amazon Luna headers with their 16px marks. Epic's bundled wordmark renders as the real shield and colorizes with the theme, and the Steam, GOG and Amazon glyphs render alongside it. The footer carries Refresh, the eye and ?."
     },
     {
-      "check": "Store controls are bordered buttons with tooltips",
+      "check": "Amazon Luna resolves live and needs no login",
       "result": "pass",
-      "detail": "The bell renders as the same bordered Button as the footer's Refresh and ?, with the outline and hover fill; the store switch keeps its own hover ring. Hovering each of the four controls names what it does — mute or unmute notifications, watch or stop watching a store, refresh now, and shortcuts."
+      "detail": "With Amazon switched on, the widget's signed-out Chromium render listed the live Amazon games (15 in the observed runs) and each row linked to its luna.amazon.com claim page. No account, cookie or key from the browser was used or stored."
     },
     {
-      "check": "Section rules are clear of the store list",
+      "check": "Amazon Luna ships off by default",
       "result": "pass",
-      "detail": "Both the rule under the hero and the rule above the footer sit 8px clear of the store list, so the first store header and the last game row are no longer flush against a rule."
+      "detail": "After removal and restore reset the widget's settings, the live panel showed the Amazon Luna header faded with its switch off and no games under it, and no render ran until the switch was turned on. The manifest default, the schema defaultValue and the runtime fallback are all false, and a portable test now pins them."
     },
     {
-      "check": "The store switch hover ring is not clipped",
+      "check": "Hide seen games, by eye and by v",
       "result": "pass",
-      "detail": "The header row is sized to the switch rather than a flat 30px, so the switch's hover ring, which is drawn outside its track, is fully inside the row. Verified during development by forcing the ring on for every store: the first store's ring, previously cut off at the top of the list, draws complete; the forced state was reverted before that commit."
+      "detail": "Marking a game seen and pressing v (or the footer eye) replaced that store's seen rows with a dim `N seen games hidden` line as its last entry; pressing v again restored them. The subtitle count kept including the hidden games. The acknowledged ids persisted in seen.json."
     },
     {
-      "check": "Empty store shows only its name",
+      "check": "Footer is pinned and only the games scroll",
       "result": "pass",
-      "detail": "Steam and GOG with nothing free rendered a bare header row, keeping bells and switches, with no empty-store line."
+      "detail": "With a long live list, the hero and the footer (rule, shortcut line and controls) stayed put while the games scrolled between the two rules. A fade with a small chevron appeared at the side with more content and disappeared at the ends; the auto-hiding scrollbar was unchanged. Confirmed by the user on the live desktop."
     },
     {
-      "check": "Enter and Space do not open a game before the keyboard cursor is engaged",
+      "check": "Keyboard navigation continues past the fold",
       "result": "pass",
-      "detail": "With the panel open and no row shown as selected, Enter and Space do nothing. They only open the highlighted game once the keyboard cursor is engaged with j/k or an arrow. Before, they fired against a selection that was pinned on every fetch but never drawn, launching an arbitrary game whatever the pointer was over. Confirmed by the user on the live desktop."
+      "detail": "Pressing j down the list past the visible rows kept moving down instead of jumping back to a row under the still pointer, including at the scroll line. Moving the mouse still took the highlight over, and e/n acted on the store under the pointer. Confirmed by the user on the live desktop."
     },
     {
-      "check": "The first move key lands on the edge, or steps from the hovered game",
+      "check": "Notification toast opens the panel",
       "result": "pass",
-      "detail": "With no highlight, the first j highlights the first game and the first k the last. With the pointer on a game, the first j/k now steps from that game instead, so moving from the mouse to the keyboard continues where the pointer left off. Confirmed by the user on the live desktop."
+      "detail": "The real notification argv, with the Loot Drops app name and chest glyph, produced a toast; clicking it opened the panel. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the widget's open handler answers. Confirmed by the user on the live desktop."
     },
     {
-      "check": "One highlight is shared by the mouse and the keyboard",
+      "check": "Update from v0.2.0 preserves settings and state",
       "result": "pass",
-      "detail": "A hovered row and the keyboard cursor no longer draw two boxes. Both use the selection fill; a hover claims the highlight and dismisses the keyboard cursor, and a keyboard move claims it back. Confirmed by the user on the live desktop."
+      "detail": "Checking out v0.2.0 and restarting showed the old UI (no Amazon section, no eye, old footer). Returning to the candidate and restarting restored the 0.3.0 panel, with amazonEnabled/amazonNotify still set and the four Epic acknowledged ids still in seen.json."
     },
     {
-      "check": "A new game carries a coin marker, and the bar dot tracks it per game",
+      "check": "Fresh install from a clone",
       "result": "pass",
-      "detail": "Each unacknowledged game shows a coins glyph (U+EDE8, fa-coins in Nerd Fonts 3.5.1) in the panel's left gutter, aligned with the store mark. Opening the panel no longer clears the bar dot; it stays lit until every new game is marked seen, and is computed from enabled stores only. Confirmed by the user on the live desktop."
+      "detail": "The development symlink was unlinked (the repository stayed intact) and omarchy plugin add cloned the candidate into the plugin directory at version 0.3.0. After a restart the plugin was enabled, the panel rendered, and the existing settings and seen.json were still in place."
     },
     {
-      "check": "A game is marked seen by launching, clicking its coin, or s",
+      "check": "Removal keeps user data",
       "result": "pass",
-      "detail": "Launching a game (click or Enter) clears its marker, as does clicking the coin, which marks it without opening it. s toggles the highlighted game, so a marked game can be put back to unseen and its coin brought back. Confirmed by the user on the live desktop."
+      "detail": "omarchy plugin remove deleted the installed clone and unloaded the plugin. ~/.local/state/salmun-nister.loot-drops/seen.json remained at mode 0600. Omarchy removed the widget's own shell.json entry, as it does for any plugin, so widget settings return to defaults on a later install; the per-store acknowledged data survives."
     },
     {
-      "check": "The marker tooltip sits over the coin and hovering it keeps the row highlighted",
+      "check": "Restore and re-enable",
       "result": "pass",
-      "detail": "The 'Mark as seen' tooltip anchors over the coin rather than the whole row, and moving the pointer onto the coin no longer clears the row highlight, because the row uses a single MouseArea. Confirmed by the user on the live desktop."
+      "detail": "Re-linking the development checkout, rescanning, enabling and restarting brought the plugin back. seen.json still held the acknowledged ids; settings were at manifest defaults, and the live panel showed Amazon Luna off by default."
     },
     {
-      "check": "The bar dot ignores switched-off stores",
+      "check": "Screenshots match the candidate",
       "result": "pass",
-      "detail": "The dot is computed from enabled stores only, so a switched-off store's hidden rows cannot hold it on with no marker left to clear it. Toggling a store off removes its games from the count."
-    },
-    {
-      "check": "Hero is pinned and a fitting list does not scroll",
-      "result": "pass",
-      "detail": "The offscreen harness against the three live stores reported rowCount 5, gameRows 2, headers steam/epic/gog, pinnedHeight 55, pinnedBottom 55 and listY 55, with contentHeight 153 equal to height 153, so the fitting list has no scroll range."
-    },
-    {
-      "check": "Footer controls share one colour",
-      "result": "pass",
-      "detail": "The freshness text and both bordered footer buttons read as one ink."
-    },
-    {
-      "check": "Desktop notification opens the panel",
-      "result": "pass",
-      "detail": "A toast fired through the real notificationArgs argv appeared with the Loot Drops app name and chest glyph, and clicking it opened the panel on the live desktop. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the per-widget open handler answers. A test asserts the argv carries no URL at all. The notification path is unchanged by this candidate and retains this earlier result."
-    },
-    {
-      "check": "All three endpoints resolve live",
-      "result": "pass",
-      "detail": "Steam search/results returned HTTP 200 with no free specials at this fetch; Epic freeGamesPromotions returned HTTP 200 with 2 zero-discount offers; GOG giveaway/api/get returned HTTP 404, which the panel renders as an empty store rather than an error. The harness parsed the same live responses into 2 Epic rows."
-    },
-    {
-      "check": "Private state file is created and readable",
-      "result": "pass",
-      "detail": "~/.local/state/salmun-nister.loot-drops mode 0700 with seen.json mode 0600, holding per-store id baselines and per-store acknowledged lists. The acknowledged lists were cleared and the file re-read for the marker tests, and the widget persisted them back through lib/seen-state."
-    },
-    {
-      "check": "Install from a fresh git checkout",
-      "result": "pass",
-      "detail": "omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable cloned the repository into ~/.config/omarchy/plugins/salmun-nister.loot-drops, passed omarchy-plugin-validate, and loaded. The clone carried VERSION 0.2.0 at the candidate tree (its content is the 8f2dbaa squash commit); omarchy plugin enable salmun-nister.loot-drops right placed it in the right section (debugBarGeometry 27x26, visible:true, itemVisible:true). The seen.json SHA was unchanged by the install. The public https URL was not used because the candidate was not pushed; the file:// clone exercises the same clone-and-validate path with the same content."
-    },
-    {
-      "check": "Update from 0.1.0 preserves settings and state",
-      "result": "pass",
-      "detail": "The checkout was switched to the v0.1.0 tag (d3af01d) and the shell restarted: the plugin loaded enabled and read the existing state, whose seen.json SHA stayed 072fcc9f810d4c23cb9b6a865e26be115fd8e090d8b74b19c9955d7ef0f28a6b, so the 0.2.0 per-store {ids, acknowledged} format is read correctly by 0.1.0. Returning to the candidate (VERSION 0.2.0) and restarting loaded the plugin enabled with the same state SHA; shell.json settings were untouched throughout."
-    },
-    {
-      "check": "Update via omarchy plugin update",
-      "result": "pass",
-      "detail": "omarchy plugin update salmun-nister.loot-drops --yes fetched the git-managed clone and reported 'is up to date' (origin matched), exercising the update path's fetch/compare/validate gate without a spurious change."
-    },
-    {
-      "check": "Removal leaves no residue and preserves state",
-      "result": "pass",
-      "detail": "omarchy plugin remove salmun-nister.loot-drops --yes removed the git-managed clone (the script rm -rf's a .git checkout; the upstream repository was untouched and still at its candidate commit). The symlink install was also removed and the script only unlinked the link (rm -f of the path), never the target, leaving the repository intact. seen.json was preserved across both removals at the same SHA. The development symlink was restored afterwards and the plugin re-enabled right."
-    },
-    {
-      "check": "Preview and theme screenshots refreshed",
-      "result": "pass",
-      "detail": "Five captures were taken on the live desktop with the panel showing the coin markers and cropped to the panel window border: preview.png (Sunlit Sands, 430x287) and docs/themes/{aonagi 400x273, sumi-day 430x287, outpost 430x287, catppuccin-latte 430x287}.png. The height is shorter than the previous set because the panel lists two games rather than four."
-    },
-    {
-      "check": "Desktop notification fires for a newly free game",
-      "result": "pass",
-      "detail": "Verified on an earlier run: the Steam baseline was reduced to a single id and the plugin rescanned so the widget re-read the file, then refresh fetched live and a real desktop notification read 'Fireside Feelings is free on Steam'. The notification baseline and diffStore are unchanged by this candidate, so the result is retained."
-    },
-    {
-      "check": "Notification does not repeat for an unchanged list",
-      "result": "pass",
-      "detail": "Verified on an earlier run: a second refresh against the same list produced no further notification and re-recorded both Steam ids in the baseline. The diff is unchanged by this candidate."
-    },
-    {
-      "check": "Switching a store off stops it and hides it",
-      "result": "pass",
-      "detail": "Toggled on the live panel: the GOG section disappeared entirely, and toggling it back restored it. The change persisted to the shell config as gogEnabled, which confirms the switch writes a real setting rather than local UI state."
-    },
-    {
-      "check": "Muting a bell keeps the store listed but silent",
-      "result": "pass",
-      "detail": "Toggled on the live panel: the store stayed listed with its games and the bell showed crossed out, distinct from a disabled store. The toggles persisted to the shell config as gogNotify and epicNotify and were restored to true."
-    },
-    {
-      "check": "A GOG giveaway with no usable slug lists instead of failing",
-      "result": "pass",
-      "detail": "The marketplace review found that gogGame assigned url without declaring it, so a giveaway with a valid id and title but no accepted slug threw a ReferenceError; the exception escaped the fetch callback and, because curl exits zero for a 200, GOG's busy flag never cleared and it stopped refreshing. Two model tests cover it: a slug-less payload parses to a game with an empty url that resolves to the GOG store search, and a slugged response followed by a slug-less one does not leak the earlier url. The model is compiled under \"use strict\" in the test harness. Fixture/unit only: GOG returned 404 live, so the slug-less 200 body was not observed on the desktop."
-    },
-    {
-      "check": "Stale is derived from the refresh interval",
-      "result": "pass",
-      "detail": "Stale remains 1.5x refreshMinutes: 45 minutes at the 30-minute floor, 135 at the 90-minute default, 18 hours at the 720 maximum, recomputed from Model.staleAfterMs. Unit-tested across those bounds, including that a single missed poll never reads stale and that an out-of-range interval cannot produce a threshold the settings slider disagrees with."
-    },
-    {
-      "check": "Portable checks",
-      "result": "pass",
-      "detail": "44 model and helper tests, QML lint against the real Qt qmllint with no errors, and the offscreen harness all pass. The plugin validator reports VALID and the security pass returns advisory capability findings only: negated privilege prose in SECURITY.md and DESIGN.md, the AGENTS.md files, the network/process/collected-input use in BarWidget.qml, and the installer and package-manager surfaces in docs/SETUP.md. Those are review prompts, not errors, and not a marketplace result."
+      "detail": "preview.png and the four theme images were captured on Omarchy 4.0.6-1 from the live desktop with Amazon on, one Epic game hidden behind the eye, and the list long enough to show the bottom fade. They were cropped to the panel; README alt and provenance text describe that state."
     }
   ],
-  "limitations": [
-    "GOG's success path is fixture-only. GOG returned 404 during this run as before, so the 200 response shape has still never been observed live.",
-    "No vertical bar was observed. The tested bar was horizontal (position top).",
-    "The derived stale threshold was recomputed and unit-tested but not observed live. Confirming it needs data 135 minutes old under a 90-minute interval, which was not waited out.",
-    "The pointer-driven interactions — the shared highlight, the coin marker view, its tooltip, clicking the coin, launching a game, and the s toggle — were confirmed by the user on the live desktop rather than by the agent: the open panel pins the pointer, so the agent cannot move it onto a row, and the key state depends on the user's own keystrokes. They are visible in code and covered by the model tests; the live confirmation is the user's.",
-    "Live store contents vary. At this run Steam and GOG listed nothing free, so the per-game markers were exercised on Epic's two games rather than across all three stores.",
-    "Install-from-git was exercised with a local file:// clone of this checkout because the candidate was not pushed at record time. The public https clone path is mechanically identical and is exercised after the candidate is pushed.",
-    "Removal was exercised on a git-managed clone and on the symlink install. The README's separately documented case — a plain directory copied in rather than cloned, which Omarchy backs up instead of deleting — was not exercised.",
-    "The refreshed preview.png and theme grid show the panel with two free games and their coin markers, captured 2026-10-14; their height differs from the prior set because the list is shorter.",
-    "The notification click opens the panel rather than the store page, so the notification path does not cover URL opening; only a panel row does.",
-    "The bar widget is loaded once per monitor, and only one monitor was exercised.",
-    "omarchy-hyprland-focus-app still selects a window by position in hyprctl's client array rather than focus order. This plugin does not depend on it, but other Omarchy panels and any notification that opens a URL still do. Already reported upstream."
-  ]
+  "limitations": "Live store contents vary, so the screenshots and counts will not match later fetches. GOG's success path is still fixture-only because no giveaway was live. Amazon Luna depends on its public claims page continuing to render signed out and on its anti-bot behaviour; its rows carry no end date, and claiming needs an Amazon Prime membership. In-game content and Luna's streaming catalogue are out of scope. A vertical bar has not been observed. Omarchy's plugin removal discards the widget's shell.json settings (seen.json is kept). No security audit is claimed; the validators are limited scans."
 }

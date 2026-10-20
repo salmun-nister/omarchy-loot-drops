@@ -1,0 +1,130 @@
+{
+  "data": {
+    "Catalog": {
+      "searchStore": {
+        "elements": [
+          {
+            "title": "Closing Bell",
+            "id": "demo-closing-bell",
+            "urlSlug": "closing-bell",
+            "productSlug": "closing-bell",
+            "offerType": "BASE_GAME",
+            "url": "",
+            "promotions": {
+              "promotionalOffers": [
+                {
+                  "promotionalOffers": [
+                    {
+                      "startDate": "2025-12-25T03:00:00Z",
+                      "endDate": "2026-01-01T03:00:00Z",
+                      "discountSetting": {
+                        "discountType": "PERCENTAGE",
+                        "discountPercentage": 0
+                      }
+                    }
+                  ]
+                }
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "catalogNs": {
+              "mappings": [
+                {"pageSlug": "closing-bell", "pageType": "productHome"}
+              ]
+            }
+          },
+          {
+            "title": "Last Light",
+            "id": "demo-last-light",
+            "urlSlug": "last-light",
+            "productSlug": "last-light",
+            "offerType": "BASE_GAME",
+            "url": "",
+            "promotions": {
+              "promotionalOffers": [
+                {
+                  "promotionalOffers": [
+                    {
+                      "startDate": "2025-12-25T20:00:00Z",
+                      "endDate": "2026-01-01T20:00:00Z",
+                      "discountSetting": {
+                        "discountType": "PERCENTAGE",
+                        "discountPercentage": 0
+                      }
+                    }
+                  ]
+                }
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "catalogNs": {
+              "mappings": [
+                {"pageSlug": "last-light", "pageType": "productHome"}
+              ]
+            }
+          },
+          {
+            "title": "Six Days Left",
+            "id": "demo-six-days-left",
+            "urlSlug": "six-days-left",
+            "productSlug": "six-days-left",
+            "offerType": "BASE_GAME",
+            "url": "",
+            "promotions": {
+              "promotionalOffers": [
+                {
+                  "promotionalOffers": [
+                    {
+                      "startDate": "2025-12-31T00:00:00Z",
+                      "endDate": "2026-01-07T00:00:00Z",
+                      "discountSetting": {
+                        "discountType": "PERCENTAGE",
+                        "discountPercentage": 0
+                      }
+                    }
+                  ]
+                }
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "catalogNs": {
+              "mappings": [
+                {"pageSlug": "six-days-left", "pageType": "productHome"}
+              ]
+            }
+          },
+          {
+            "title": "Week Away",
+            "id": "demo-week-away",
+            "urlSlug": "week-away",
+            "productSlug": "week-away",
+            "offerType": "BASE_GAME",
+            "url": "",
+            "promotions": {
+              "promotionalOffers": [
+                {
+                  "promotionalOffers": [
+                    {
+                      "startDate": "2026-01-01T00:00:00Z",
+                      "endDate": "2026-01-08T00:00:00Z",
+                      "discountSetting": {
+                        "discountType": "PERCENTAGE",
+                        "discountPercentage": 0
+                      }
+                    }
+                  ]
+                }
+              ],
+              "upcomingPromotionalOffers": []
+            },
+            "catalogNs": {
+              "mappings": [
+                {"pageSlug": "week-away", "pageType": "productHome"}
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
