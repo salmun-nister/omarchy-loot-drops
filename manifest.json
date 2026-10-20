@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
@@ -71,7 +71,7 @@
         "type": "boolean",
         "label": "Amazon Luna",
         "defaultValue": false,
-        "description": "Off by default. Watch Amazon Luna's free games with Prime by rendering its public claims page in headless Chromium, a base Omarchy package. No account, login or key is needed; games are claimed on Luna. The render costs more than the other stores' single request, so it only runs while this is switched on."
+        "description": "Off by default. Watch Amazon Luna's free games with Prime by rendering its public claims page in headless Chromium, a base Omarchy package. No account, login or key is needed to watch it; claiming the games needs an Amazon Prime membership. The render costs more than the other stores' single request, so it only runs while this is switched on."
       },
       {
         "key": "steamNotify",

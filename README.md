@@ -1,6 +1,6 @@
 <h1 align="center">Loot Drops</h1>
 
-<p align="center">Never miss a free game drop. Loot Drops watches Steam, Epic Games, GOG, and Amazon Luna for games that are free for a limited time, and alerts you the moment a new one appears.</p>
+<p align="center">Never miss a free game drop. Loot Drops watches Steam, Epic Games, GOG, and optionally Amazon Luna for games that are free for a limited time, and alerts you the moment a new one appears.</p>
 
 <p align="center"><a href="https://github.com/tcballard/omarchy-badges"><img alt="Built for Omarchy: Plugin" height="20" src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg"></a></p>
 
@@ -10,6 +10,10 @@ new one appears, you get a desktop notification.
 
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
+
+**Amazon Luna is the optional store and is off by default.** Watching its
+claims page needs no account, but claiming its games needs an Amazon Prime
+membership and is done in your own browser. Loot Drops never signs in.
 
 <p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing two games free to keep grouped by store, each with a coin marker" src="preview.png" width="410"></p>
 
@@ -165,7 +169,7 @@ Omarchy settings UI. They hot-reload on save.
 | `steamEnabled` | `true` | Watch Steam. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
 | `gogEnabled` | `true` | Watch GOG. |
-| `amazonEnabled` | `false` | Watch Amazon Luna. Off by default because it renders a page in headless Chromium; no account or key is needed. |
+| `amazonEnabled` | `false` | Watch Amazon Luna. Off by default because it renders a page in headless Chromium; watching needs no account, but claiming its games needs an Amazon Prime subscription. |
 | `steamNotify` | `true` | Notify when a Steam game goes free. |
 | `epicNotify` | `true` | Notify when an Epic game goes free. |
 | `gogNotify` | `true` | Notify when a GOG giveaway runs. |
@@ -212,7 +216,8 @@ The states are kept apart rather than collapsed into one "no games" message:
 Steam, Epic and GOG are one public request each per refresh. Amazon Luna has no
 endpoint a script may read, so its signed-out claims page is rendered in
 headless Chromium — a base Omarchy package — and the rendered page is what gets
-read. That is the only store that launches a browser at refresh time.
+read. That is the only store that launches a browser at refresh time, and it is
+opt-in: claiming its games needs an Amazon Prime membership.
 
 | Store | Host |
 | --- | --- |
@@ -274,16 +279,16 @@ commands and results.
 
 **Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)** by
 nille, which watches Steam alone for games that are free to keep. Loot Drops is
-an independent work: it adds Epic and GOG, per-store switches and bells, and
-keeps a separate baseline for each store.
+an independent work: it adds Epic, GOG and Amazon Luna, per-store switches and
+bells, a hide-seen filter, and keeps a separate baseline for each store.
 
 Steam, Epic Games, GOG, and Amazon Luna are trademarks of their respective
 owners. Loot Drops is an independent project, not affiliated with, endorsed by,
 or sponsored by them; it only reads their public pages.
 
 Built from [Build Omarchy Plugins](https://github.com/tcballard/build-omarchy-plugins)
-guidance and the Omarchy template set. No third-party code is vendored; full
-lineage is recorded in [CREDITS.md](CREDITS.md).
+guidance and the Omarchy template set. No third-party code is vendored; bundled
+media and the full lineage are recorded in [CREDITS.md](CREDITS.md).
 
 ## Licence
 

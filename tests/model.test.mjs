@@ -522,6 +522,17 @@ test('settings are normalised into safe ranges', () => {
   assert.equal(Model.notifyFor({}).amazon, true);
 });
 
+test('Amazon Luna ships off by default in the manifest', () => {
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', root), 'utf8'));
+  assert.equal(manifest.barWidget.defaults.amazonEnabled, false,
+    'Amazon must not be enabled by default');
+  const entry = manifest.barWidget.schema.find(item => item.key === 'amazonEnabled');
+  assert.ok(entry, 'amazonEnabled is missing from the settings schema');
+  assert.equal(entry.defaultValue, false, 'the settings UI must start it off');
+  assert.equal(Model.enabled({}).amazon, false,
+    'the runtime fallback must match the manifest');
+});
+
 test('the panel headline is the plugin name and the count is a subtitle', () => {
   assert.equal(Model.heroTitle(), 'Loot Drops');
   const all = { steam: true, epic: true, gog: true };
