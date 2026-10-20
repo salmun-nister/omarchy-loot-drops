@@ -15,11 +15,13 @@ pages, and it never writes anything outside its own state directory.
 claims page needs no account, but claiming its games needs an Amazon Prime
 membership and is done in your own browser. Loot Drops never signs in.
 
-<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing two games free to keep grouped by store, each with a coin marker" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing 17 free games across Steam, Epic Games, GOG and Amazon Luna, with one seen game hidden and a fade at the bottom edge" src="preview.png" width="410"></p>
 
-**Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.4-1 on Hyprland,
-taken from the live desktop with the panel open. The stores and games in it were
-real at capture time, so it will not match what the panel shows later. Desktop
+**Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.6-1 on Hyprland,
+taken from the live desktop with the panel open. Amazon Luna is switched on, one
+Epic game is marked seen and hidden behind the eye, and the list is long enough
+to show the fade at its bottom edge. The stores and games in it were real at
+capture time, so it will not match what the panel shows later. Desktop
 acceptance evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
 
 ## Install
