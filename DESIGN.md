@@ -160,8 +160,9 @@ between the two, so a long list scrolls without carrying the controls away. The
 panel height is the sum of the three before the 620px clamp, which keeps a short
 list looking exactly as it did when the footer was list content. Two edge fades,
 drawn in the popup's own surface colour and fading to the same RGB at zero alpha,
-appear only on a side with more content; the scrollbar is deliberately
-auto-hidden, so the fade is the persistent hint.
+appear only on a side with more content, each carrying a small chevron so the
+hint survives a gap between rows; the scrollbar is deliberately auto-hidden, so
+this pair is the persistent cue.
 
 `hideSeen` is a view filter, not a second baseline: it reads the same
 acknowledged set the coin markers use. Unseen games keep their store order, and a

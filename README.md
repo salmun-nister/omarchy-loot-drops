@@ -130,9 +130,10 @@ still includes the hidden games.
 Right-click does nothing, deliberately.
 
 The panel lists every free game, however many there are. The games scroll between
-the two rules while the header and the buttons stay put, and a fade at the top or
-bottom edge means there is more in that direction; the scrollbar itself stays out
-of the way until you scroll. The keyboard cursor scrolls itself into view.
+the two rules while the header and the buttons stay put, and a fade with a small
+chevron at the top or bottom edge means there is more in that direction; the
+scrollbar itself stays out of the way until you scroll. The keyboard cursor
+scrolls itself into view.
 
 ## Theming
 

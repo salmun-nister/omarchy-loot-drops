@@ -1281,15 +1281,17 @@ Panel {
         }
       }
 
-      // The scrollbar auto-hides, so a fade at an edge says there is more
-      // content in that direction. It uses the surface colour and fades to the
-      // same RGB at zero alpha, so it works over rows and highlights alike.
+      // The scrollbar auto-hides, so a fade and a chevron at an edge say there
+      // is more content in that direction. The fade uses the surface colour and
+      // fades to the same RGB at zero alpha, so it works over rows and
+      // highlights alike; the chevron keeps the hint visible even when a gap
+      // between rows leaves nothing behind the fade to darken.
       Rectangle {
         id: topFade
         anchors.top: panelList.top
         anchors.left: panelList.left
         anchors.right: panelList.right
-        height: Style.space(18)
+        height: Style.space(30)
         visible: panelList.interactive && !panelList.atYBeginning
         gradient: Gradient {
           GradientStop { position: 0.0; color: Commons.Color.popups.background }
@@ -1300,6 +1302,17 @@ Panel {
                            Commons.Color.popups.background.b, 0)
           }
         }
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.top: parent.top
+          anchors.topMargin: Style.space(2)
+          text: "\u{F077}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
       }
 
       Rectangle {
@@ -1307,7 +1320,7 @@ Panel {
         anchors.bottom: panelList.bottom
         anchors.left: panelList.left
         anchors.right: panelList.right
-        height: Style.space(18)
+        height: Style.space(30)
         visible: panelList.interactive && !panelList.atYEnd
         gradient: Gradient {
           GradientStop {
@@ -1317,6 +1330,17 @@ Panel {
                            Commons.Color.popups.background.b, 0)
           }
           GradientStop { position: 1.0; color: Commons.Color.popups.background }
+        }
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.bottom: parent.bottom
+          anchors.bottomMargin: Style.space(2)
+          text: "\u{F078}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
         }
       }
 
