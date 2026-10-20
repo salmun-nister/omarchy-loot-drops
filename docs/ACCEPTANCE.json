@@ -1,97 +1,54 @@
 {
   "status": "passed",
-  "input_commit": "ec0a6535e725bb7d86cbc3a9a50bd3915884e1da",
+  "input_commit": "3a72261d010d06851ada9bc9e386b2399d40334f",
   "date": "2026-10-20",
   "platform": "Omarchy 4.0.6-1, Hyprland 0.56.2, kernel 7.2.8-9-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.8.2",
-  "scope": "Live desktop acceptance of the 0.3.0 candidate: the four stores including the opt-in Amazon Luna render, the hide-seen filter with its footer eye and v key, the pinned footer with list-only scrolling and edge fade/chevron hints, the 16px store marks with the bundled Epic logo, the keyboard-scroll cursor fix, and the install/update/removal lifecycle from v0.2.0. The preview and four theme screenshots were retaken on this candidate and cropped from live captures. Portable checks are separate and are listed for completeness.",
-  "install": "Update: checked out v0.2.0 in the development checkout, restarted the shell (old UI confirmed live: no Amazon section, no eye), returned to main at the candidate and restarted; the per-store settings and the four Epic acknowledged ids in seen.json survived. Fresh install: unlinked the development symlink only (the repository was never touched), then `omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes` cloned the candidate at 0.3.0 into the plugin directory and loaded it after `omarchy restart shell`; settings and seen.json survived. Removal: `omarchy plugin remove salmun-nister.loot-drops --yes` deleted the installed clone, kept ~/.local/state/salmun-nister.loot-drops/seen.json at mode 0600, and removed the widget's own shell.json entry, which is Omarchy's removal behaviour. Restore: re-linked the development checkout, rescanned, enabled it, and restarted; the plugin loaded, seen.json survived, and settings returned to manifest defaults, which was also the live check that Amazon Luna ships off. QML changes need `omarchy restart shell`; `omarchy-shell shell rescanPlugins` only re-reads manifests. An enable issued immediately after a rescan can race the rescan and must be retried after it completes.",
+  "scope": "Live desktop acceptance of the 0.3.1 candidate: Epic is read from the store catalog instead of the curated free-games feed, so a developer-run 100%-off promotion is listed; the Steam country setting becomes the shared Steam/Epic country setting and copies a legacy steamCountry value on first load. Portable checks, the live harness and the four-store panel were run; no preview or theme screenshots were retaken because no rendering changed.",
+  "install": "Update from 0.3.0: the development checkout is symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, so committing the candidate and running `omarchy restart shell` loaded the new build. The live shell.json entry (amazonEnabled true, hideSeen true) and seen.json survived, and the panel listed Epic with the new developer giveaway. The migration was then exercised on the live entry: staged `\"steamCountry\": \"DE\"` with no `country`, restarted, and the widget wrote `\"country\": \"DE\"` while keeping the legacy key; the panel still listed the three free Epic games with the German country. The original entry was restored and the shell restarted, leaving no country key. Fresh installation, removal and marketplace flows were not repeated; this candidate does not change them.",
   "commands": [
     "./tests/run",
-    "./tests/qml/lint",
     "./tests/harness/run",
+    "omarchy plugin validate .",
     "python3 /home/kevin/.agents/skills/omarchy-plugin-test/scripts/validate_plugin.py --json --security .",
     "python3 /home/kevin/.agents/skills/omarchy-plugin-release/scripts/release_preflight.py .",
-    "omarchy plugin validate .",
-    "git checkout v0.2.0; omarchy restart shell; git checkout main; omarchy restart shell",
-    "rm ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy plugin add file:///home/kevin/Projects/Omarchy-Loot-Drops --enable --yes; omarchy restart shell",
-    "omarchy plugin remove salmun-nister.loot-drops --yes",
-    "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins; omarchy plugin enable salmun-nister.loot-drops right; omarchy restart shell",
+    "omarchy restart shell",
     "omarchy-shell shell listPlugins",
     "omarchy-shell -q salmun-nister.loot-drops open",
-    "omarchy-notification-send --app-name 'Loot Drops' -g '󰜦' -u normal -t 30000 '<headline>' '<body>' --exec omarchy-shell -q salmun-nister.loot-drops open",
-    "grim <capture>; magick <capture> -crop <region> +repage <evidence>"
+    "grim <capture>",
+    "staged steamCountry=DE in shell.json; omarchy restart shell; read the entry back",
+    "restore the original shell.json entry; omarchy restart shell"
   ],
   "results": [
     {
       "check": "Portable, schema and security checks",
       "result": "pass",
-      "detail": "./tests/run passed 52 tests, the Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings; release_preflight.py reports READY with advisory matches only (QML process/network access, installer wording, and agent-instruction files in the tree); omarchy plugin validate . exits 0. These are limited scans, not a security audit."
+      "detail": "./tests/run passed 54 tests, the real Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings and an advisory review-required security section; release_preflight.py reports READY with advisory matches only (QML process/network access and collected input, installer wording, and agent-instruction files in the tree); omarchy plugin validate . exits 0. These are limited scans, not a security audit."
     },
     {
-      "check": "Bar widget loads on the real bar",
+      "check": "Epic lists a developer giveaway from the live store",
       "result": "pass",
-      "detail": "After the restore, omarchy-shell shell listPlugins reports enabled:true for salmun-nister.loot-drops with kinds ['bar-widget'], and the IPC open call mapped the keyboard panel. No plugin errors appeared in the shell log during the runs."
+      "detail": "The live panel's Epic Games section showed Agent A: A puzzle in disguise, GetHigh.EXE and Bad Cheese. GetHigh.EXE is the developer-run promotion from store.epicgames.com/p/gethighexe-c83d1f that the previous freeGamesPromotions source never returned; the row linked to that page and carried its 2 November 2026 end date. Hide-seen was toggled with v to reveal the acknowledged rows and then restored."
     },
     {
-      "check": "Panel renders all four stores, with Epic's bundled mark",
+      "check": "Shared country setting and legacy migration",
       "result": "pass",
-      "detail": "The live panel showed Steam, Epic Games, GOG and Amazon Luna headers with their 16px marks. Epic's bundled wordmark renders as the real shield and colorizes with the theme, and the Steam, GOG and Amazon glyphs render alongside it. The footer carries Refresh, the eye and ?."
+      "detail": "With no country key, Epic used its default and listed the same three games. Staging `\"steamCountry\": \"DE\"` and restarting made the widget copy the value into `\"country\": \"DE\"` while keeping `steamCountry` in the entry; the panel still listed the same three Epic games with the German country applied. Clearing the new key does not resurrect the old one (portable test). The entry was restored to its pre-test shape afterwards, so this machine stores no country."
     },
     {
-      "check": "Amazon Luna resolves live and needs no login",
+      "check": "Live harness builds and positions the panel",
       "result": "pass",
-      "detail": "With Amazon switched on, the widget's signed-out Chromium render listed the live Amazon games (15 in the observed runs) and each row linked to its luna.amazon.com claim page. No account, cookie or key from the browser was used or stored."
+      "detail": "./tests/harness/run against the live stores reported 22 rows and laid-out content; the Epic bucket held the three games including GetHigh.EXE. This is the transport and layout check, not a substitute for the desktop pass above."
     },
     {
-      "check": "Amazon Luna ships off by default",
+      "check": "Existing settings and state survive the update",
       "result": "pass",
-      "detail": "After removal and restore reset the widget's settings, the live panel showed the Amazon Luna header faded with its switch off and no games under it, and no render ran until the switch was turned on. The manifest default, the schema defaultValue and the runtime fallback are all false, and a portable test now pins them."
+      "detail": "The live entry kept amazonEnabled=true and hideSeen=true across each restart, and seen.json kept its Epic baseline and acknowledged ids, including the new GetHigh.EXE id. The temporary DE entry was removed afterwards and the shell restarted to the original state."
     },
     {
-      "check": "Hide seen games, by eye and by v",
+      "check": "No preview or theme images changed",
       "result": "pass",
-      "detail": "Marking a game seen and pressing v (or the footer eye) replaced that store's seen rows with a dim `N seen games hidden` line as its last entry; pressing v again restored them. The subtitle count kept including the hidden games. The acknowledged ids persisted in seen.json."
-    },
-    {
-      "check": "Footer is pinned and only the games scroll",
-      "result": "pass",
-      "detail": "With a long live list, the hero and the footer (rule, shortcut line and controls) stayed put while the games scrolled between the two rules. A fade with a small chevron appeared at the side with more content and disappeared at the ends; the auto-hiding scrollbar was unchanged. Confirmed by the user on the live desktop."
-    },
-    {
-      "check": "Keyboard navigation continues past the fold",
-      "result": "pass",
-      "detail": "Pressing j down the list past the visible rows kept moving down instead of jumping back to a row under the still pointer, including at the scroll line. Moving the mouse still took the highlight over, and e/n acted on the store under the pointer. Confirmed by the user on the live desktop."
-    },
-    {
-      "check": "Notification toast opens the panel",
-      "result": "pass",
-      "detail": "The real notification argv, with the Loot Drops app name and chest glyph, produced a toast; clicking it opened the panel. The click action is omarchy-shell -q salmun-nister.loot-drops open, which is also what the widget's open handler answers. Confirmed by the user on the live desktop."
-    },
-    {
-      "check": "Update from v0.2.0 preserves settings and state",
-      "result": "pass",
-      "detail": "Checking out v0.2.0 and restarting showed the old UI (no Amazon section, no eye, old footer). Returning to the candidate and restarting restored the 0.3.0 panel, with amazonEnabled/amazonNotify still set and the four Epic acknowledged ids still in seen.json."
-    },
-    {
-      "check": "Fresh install from a clone",
-      "result": "pass",
-      "detail": "The development symlink was unlinked (the repository stayed intact) and omarchy plugin add cloned the candidate into the plugin directory at version 0.3.0. After a restart the plugin was enabled, the panel rendered, and the existing settings and seen.json were still in place."
-    },
-    {
-      "check": "Removal keeps user data",
-      "result": "pass",
-      "detail": "omarchy plugin remove deleted the installed clone and unloaded the plugin. ~/.local/state/salmun-nister.loot-drops/seen.json remained at mode 0600. Omarchy removed the widget's own shell.json entry, as it does for any plugin, so widget settings return to defaults on a later install; the per-store acknowledged data survives."
-    },
-    {
-      "check": "Restore and re-enable",
-      "result": "pass",
-      "detail": "Re-linking the development checkout, rescanning, enabling and restarting brought the plugin back. seen.json still held the acknowledged ids; settings were at manifest defaults, and the live panel showed Amazon Luna off by default."
-    },
-    {
-      "check": "Screenshots match the candidate",
-      "result": "pass",
-      "detail": "preview.png and the four theme images were captured on Omarchy 4.0.6-1 from the live desktop with Amazon on, one Epic game hidden behind the eye, and the list long enough to show the bottom fade. They were cropped to the panel; README alt and provenance text describe that state."
+      "detail": "This candidate changes the Epic source and a settings key, not rendering, so preview.png and the four theme images were left as captured for 0.3.0. The live panel was captured only as acceptance evidence and is not committed."
     }
   ],
-  "limitations": "Live store contents vary, so the screenshots and counts will not match later fetches. GOG's success path is still fixture-only because no giveaway was live. Amazon Luna depends on its public claims page continuing to render signed out and on its anti-bot behaviour; its rows carry no end date, and claiming needs an Amazon Prime membership. In-game content and Luna's streaming catalogue are out of scope. A vertical bar has not been observed. Omarchy's plugin removal discards the widget's shell.json settings (seen.json is kept). No security audit is claimed; the validators are limited scans."
+  "limitations": "Live store contents vary, so a later fetch will not match the games named here. The Epic catalog filter (onSale plus the zero-price band) is undocumented and could change; the parser still requires a live zero-discount window, so a change would drop games rather than invent them. A non-ISO two-letter code such as UK or ZZ is passed through and surfaces as an Epic error rather than being guessed at. GOG's success path remains fixture-only because no giveaway was live. Installation, removal and marketplace flows were not repeated for this candidate. Amazon Luna's render is unchanged and was observed with its 15 live games. A vertical bar has not been observed. No security audit is claimed; the validators are limited scans."
 }
