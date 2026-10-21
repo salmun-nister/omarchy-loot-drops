@@ -3,8 +3,8 @@
   "input_commit": "3a72261d010d06851ada9bc9e386b2399d40334f",
   "date": "2026-10-20",
   "platform": "Omarchy 4.0.6-1, Hyprland 0.56.2, kernel 7.2.8-9-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.8.2",
-  "scope": "Live desktop acceptance of the 0.3.1 candidate: Epic is read from the store catalog instead of the curated free-games feed, so a developer-run 100%-off promotion is listed; the Steam country setting becomes the shared Steam/Epic country setting and copies a legacy steamCountry value on first load. Portable checks, the live harness and the four-store panel were run; no preview or theme screenshots were retaken because no rendering changed.",
-  "install": "Update from 0.3.0: the development checkout is symlinked at ~/.config/omarchy/plugins/salmun-nister.loot-drops, so committing the candidate and running `omarchy restart shell` loaded the new build. The live shell.json entry (amazonEnabled true, hideSeen true) and seen.json survived, and the panel listed Epic with the new developer giveaway. The migration was then exercised on the live entry: staged `\"steamCountry\": \"DE\"` with no `country`, restarted, and the widget wrote `\"country\": \"DE\"` while keeping the legacy key; the panel still listed the three free Epic games with the German country. The original entry was restored and the shell restarted, leaving no country key. Fresh installation, removal and marketplace flows were not repeated; this candidate does not change them.",
+  "scope": "Live desktop acceptance of the 0.3.1 candidate: Epic is read from the store catalog instead of the curated free-games feed, so a developer-run 100%-off promotion is listed; the Steam country setting becomes the shared Steam/Epic country setting and copies a legacy steamCountry value on first load. Portable checks, the live harness, the four-store panel and the install, update, removal and fresh-install lifecycle were run; no preview or theme screenshots were retaken because no rendering changed.",
+  "install": "The development symlink was unlinked (the repository was untouched) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, then the clone was checked out at v0.3.0 and the shell restarted. A `steamCountry: \"DE\"` value was added to the live entry to stand in for a 0.3.0 user, and `omarchy plugin update salmun-nister.loot-drops --yes` fast-forwarded the clone to 83bc423. After a restart the entry held `country: \"DE\"` alongside the kept `steamCountry`, and the panel listed the three Epic games with no error. Removal then deleted the clone, unloaded the plugin and removed its shell.json entry while seen.json stayed byte-identical. A fresh install from the same repository URL came up at 0.3.1 with an entry of only `{id}`, Amazon off, no country key and the panel showing the three Epic games including GetHigh.EXE, so the migration correctly did not fire on a new install. The development symlink was then re-linked, rescanned, enabled on the right, and the user's original entry (amazonEnabled true, hideSeen true) restored and verified after a final restart.",
   "commands": [
     "./tests/run",
     "./tests/harness/run",
@@ -15,7 +15,14 @@
     "omarchy-shell shell listPlugins",
     "omarchy-shell -q salmun-nister.loot-drops open",
     "grim <capture>",
-    "staged steamCountry=DE in shell.json; omarchy restart shell; read the entry back",
+    "rm ~/.config/omarchy/plugins/salmun-nister.loot-drops",
+    "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
+    "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.3.0",
+    "staged steamCountry=DE in shell.json",
+    "omarchy plugin update salmun-nister.loot-drops --yes",
+    "omarchy plugin remove salmun-nister.loot-drops --yes",
+    "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
+    "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins; omarchy plugin enable salmun-nister.loot-drops right",
     "restore the original shell.json entry; omarchy restart shell"
   ],
   "results": [
@@ -35,6 +42,11 @@
       "detail": "With no country key, Epic used its default and listed the same three games. Staging `\"steamCountry\": \"DE\"` and restarting made the widget copy the value into `\"country\": \"DE\"` while keeping `steamCountry` in the entry; the panel still listed the same three Epic games with the German country applied. Clearing the new key does not resurrect the old one (portable test). The entry was restored to its pre-test shape afterwards, so this machine stores no country."
     },
     {
+      "check": "Install, update, removal and fresh install",
+      "result": "pass",
+      "detail": "The real lifecycle was run through the installed plugin, not a symlink restart: add from the repository URL, check out v0.3.0, set steamCountry=DE, then `omarchy plugin update ... --yes`. The updater fast-forwarded to 83bc423, validation passed, and after a restart the widget wrote country=DE, kept steamCountry and left seen.json byte-identical (sha256 b11c90e0...). `omarchy plugin remove ... --yes` deleted the clone, unloaded the widget and removed its shell.json entry while seen.json stayed byte-identical. A fresh install from the same URL loaded 0.3.1 with a `{id}`-only entry, Amazon off, no country key and the three Epic games in the panel, so the migration correctly did not fire. The development symlink and the user's original settings were restored afterwards and verified."
+    },
+    {
       "check": "Live harness builds and positions the panel",
       "result": "pass",
       "detail": "./tests/harness/run against the live stores reported 22 rows and laid-out content; the Epic bucket held the three games including GetHigh.EXE. This is the transport and layout check, not a substitute for the desktop pass above."
@@ -50,5 +62,5 @@
       "detail": "This candidate changes the Epic source and a settings key, not rendering, so preview.png and the four theme images were left as captured for 0.3.0. The live panel was captured only as acceptance evidence and is not committed."
     }
   ],
-  "limitations": "Live store contents vary, so a later fetch will not match the games named here. The Epic catalog filter (onSale plus the zero-price band) is undocumented and could change; the parser still requires a live zero-discount window, so a change would drop games rather than invent them. A non-ISO two-letter code such as UK or ZZ is passed through and surfaces as an Epic error rather than being guessed at. GOG's success path remains fixture-only because no giveaway was live. Installation, removal and marketplace flows were not repeated for this candidate. Amazon Luna's render is unchanged and was observed with its 15 live games. A vertical bar has not been observed. No security audit is claimed; the validators are limited scans."
+  "limitations": "Live store contents vary, so a later fetch will not match the games named here. The Epic catalog filter (onSale plus the zero-price band) is undocumented and could change; the parser still requires a live zero-discount window, so a change would drop games rather than invent them. A non-ISO two-letter code such as UK or ZZ is passed through and surfaces as an Epic error rather than being guessed at. GOG's success path remains fixture-only because no giveaway was live. The marketplace listing issue was not exercised; installs used the repository URL. Reinstalling resets the widget's shell.json settings because Omarchy removes the entry with the plugin, so the development symlink and this machine's settings were restored by hand after the lifecycle. Amazon Luna's render is unchanged and was observed with its 15 live games. A vertical bar has not been observed. No security audit is claimed; the validators are limited scans."
 }
