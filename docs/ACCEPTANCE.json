@@ -1,10 +1,10 @@
 {
   "status": "passed",
-  "input_commit": "3a72261d010d06851ada9bc9e386b2399d40334f",
-  "date": "2026-10-20",
-  "platform": "Omarchy 4.0.6-1, Hyprland 0.56.2, kernel 7.2.8-9-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.8.2",
-  "scope": "Live desktop acceptance of the 0.3.1 candidate: Epic is read from the store catalog instead of the curated free-games feed, so a developer-run 100%-off promotion is listed; the Steam country setting becomes the shared Steam/Epic country setting and copies a legacy steamCountry value on first load. Portable checks, the live harness, the four-store panel and the install, update, removal and fresh-install lifecycle were run; no preview or theme screenshots were retaken because no rendering changed.",
-  "install": "The development symlink was unlinked (the repository was untouched) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, then the clone was checked out at v0.3.0 and the shell restarted. A `steamCountry: \"DE\"` value was added to the live entry to stand in for a 0.3.0 user, and `omarchy plugin update salmun-nister.loot-drops --yes` fast-forwarded the clone to 83bc423. After a restart the entry held `country: \"DE\"` alongside the kept `steamCountry`, and the panel listed the three Epic games with no error. Removal then deleted the clone, unloaded the plugin and removed its shell.json entry while seen.json stayed byte-identical. A fresh install from the same repository URL came up at 0.3.1 with an entry of only `{id}`, Amazon off, no country key and the panel showing the three Epic games including GetHigh.EXE, so the migration correctly did not fire on a new install. The development symlink was then re-linked, rescanned, enabled on the right, and the user's original entry (amazonEnabled true, hideSeen true) restored and verified after a final restart.",
+  "input_commit": "928d93f135384fca5229cf5680d9514f0eb0a426",
+  "date": "2026-11-05",
+  "platform": "Omarchy 4.5.0-3, Hyprland 0.56.2, kernel 7.2.15-1-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.13.0",
+  "scope": "Live desktop acceptance of the 0.4.0 candidate: notifications gain three IPC-backed actions (Launch Loot Drops, Open Game Store, Mark as seen) for a single game, a per-store maxStoreNotifications cap (default 3, range 0-20) that bundles a store's batch into one summary whose only action opens the panel, and IPC methods openGame/markSeen. No rendering changed, so preview.png and the theme screenshots were not retaken. Portable checks, the 4.5 live shell, the IPC actions and the install/update/removal lifecycle were run.",
+  "install": "The development symlink was unlinked (the repository untouched) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, which cloned the 0.4.0 commit 928d93f. The clone was checked out at v0.3.1 to stand in for the previous release, the user's entry (amazonEnabled true, hideSeen true) was restored, and the shell restarted; `omarchy plugin update ... --yes` fast-forwarded to 928d93f. The shell.json entry kept both settings and seen.json stayed byte-identical (sha256 aac628ee...), so an update preserves settings and the stored-seen record, with the new maxStoreNotifications key falling back to its default. Removal then deleted the clone, unloaded the plugin and removed its entry while seen.json stayed byte-identical. The development symlink was re-linked, rescanned, enabled on the right, the original shell.json entry restored, and the plugin verified after a final restart. The IPC methods were exercised separately on the running 4.5 shell: marking a game seen through `markSeen epic <id>` changed the acknowledged set, and `openGame` rejected an unknown store and an invalid id without opening anything.",
   "commands": [
     "./tests/run",
     "./tests/harness/run",
@@ -13,15 +13,14 @@
     "python3 /home/kevin/.agents/skills/omarchy-plugin-release/scripts/release_preflight.py .",
     "omarchy restart shell",
     "omarchy-shell shell listPlugins",
-    "omarchy-shell -q salmun-nister.loot-drops open",
-    "grim <capture>",
-    "rm ~/.config/omarchy/plugins/salmun-nister.loot-drops",
+    "omarchy-shell shell debugBarGeometry",
+    "omarchy-shell -q salmun-nister.loot-drops markSeen epic <id>",
+    "omarchy-shell -q salmun-nister.loot-drops openGame <store> <id>",
+    "omarchy-notification-send ... --action Launch Loot Drops ... --action Open Game Store ... --action Mark as seen ...",
     "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
-    "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.3.0",
-    "staged steamCountry=DE in shell.json",
+    "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.3.1",
     "omarchy plugin update salmun-nister.loot-drops --yes",
     "omarchy plugin remove salmun-nister.loot-drops --yes",
-    "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
     "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins; omarchy plugin enable salmun-nister.loot-drops right",
     "restore the original shell.json entry; omarchy restart shell"
   ],
@@ -29,38 +28,33 @@
     {
       "check": "Portable, schema and security checks",
       "result": "pass",
-      "detail": "./tests/run passed 54 tests, the real Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings and an advisory review-required security section; release_preflight.py reports READY with advisory matches only (QML process/network access and collected input, installer wording, and agent-instruction files in the tree); omarchy plugin validate . exits 0. These are limited scans, not a security audit."
+      "detail": "./tests/run passed 55 tests, the real Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings and an advisory review-required security section; release_preflight.py reports READY with advisory matches only; omarchy plugin validate . exits 0. These are limited scans, not a security audit."
     },
     {
-      "check": "Epic lists a developer giveaway from the live store",
+      "check": "Notification actions and the per-store cap",
       "result": "pass",
-      "detail": "The live panel's Epic Games section showed Agent A: A puzzle in disguise, GetHigh.EXE and Bad Cheese. GetHigh.EXE is the developer-run promotion from store.epicgames.com/p/gethighexe-c83d1f that the previous freeGamesPromotions source never returned; the row linked to that page and carried its 2 November 2026 end date. Hide-seen was toggled with v to reveal the acknowledged rows and then restored."
+      "detail": "A single game's notification argv carries three --action entries in order — Launch Loot Drops (first, so the card click still opens the panel), Open Game Store, and Mark as seen — each calling omarchy-shell back into the widget with the store and a scrubbed id, so no URL or command rides in the notification. A bundled summary (more than one game) carries only Launch Loot Drops. The per-store cap normalises to 0-20 with a default of 3; 1 bundles any store batch and 0 removes the limit. All covered by the model tests."
     },
     {
-      "check": "Shared country setting and legacy migration",
+      "check": "Notification IPC actions on the live 4.5 shell",
       "result": "pass",
-      "detail": "With no country key, Epic used its default and listed the same three games. Staging `\"steamCountry\": \"DE\"` and restarting made the widget copy the value into `\"country\": \"DE\"` while keeping `steamCountry` in the entry; the panel still listed the same three Epic games with the German country applied. Clearing the new key does not resurrect the old one (portable test). The entry was restored to its pre-test shape afterwards, so this machine stores no country."
+      "detail": "With the candidate loaded after `omarchy restart shell`, `omarchy-shell -q salmun-nister.loot-drops markSeen epic 12de5cad...` changed seen.json: the id was absent from the Epic acknowledged set before the call and present after it, and the call exited 0, proving the shell forwards both arguments to the widget's IpcHandler and the widget persists the change. `openGame notastore x` and `openGame steam 'bad id'` both exited 0 without opening anything, confirming the validation path. A three-action test notification was sent on the live desktop; the agent cannot click or screenshot it, so the button rendering and clicks remain the user's to confirm."
     },
     {
-      "check": "Install, update, removal and fresh install",
+      "check": "Four-store panel and live harness",
       "result": "pass",
-      "detail": "The real lifecycle was run through the installed plugin, not a symlink restart: add from the repository URL, check out v0.3.0, set steamCountry=DE, then `omarchy plugin update ... --yes`. The updater fast-forwarded to 83bc423, validation passed, and after a restart the widget wrote country=DE, kept steamCountry and left seen.json byte-identical (sha256 b11c90e0...). `omarchy plugin remove ... --yes` deleted the clone, unloaded the widget and removed its shell.json entry while seen.json stayed byte-identical. A fresh install from the same URL loaded 0.3.1 with a `{id}`-only entry, Amazon off, no country key and the three Epic games in the panel, so the migration correctly did not fire. The development symlink and the user's original settings were restored afterwards and verified."
+      "detail": "./tests/harness/run against the live stores reported 28 rows across steam, epic, gog and amazon, with laid-out content and no QML errors. This is the transport and layout check, not a substitute for a desktop pass."
     },
     {
-      "check": "Live harness builds and positions the panel",
+      "check": "Install, update from 0.3.1, and removal",
       "result": "pass",
-      "detail": "./tests/harness/run against the live stores reported 22 rows and laid-out content; the Epic bucket held the three games including GetHigh.EXE. This is the transport and layout check, not a substitute for the desktop pass above."
-    },
-    {
-      "check": "Existing settings and state survive the update",
-      "result": "pass",
-      "detail": "The live entry kept amazonEnabled=true and hideSeen=true across each restart, and seen.json kept its Epic baseline and acknowledged ids, including the new GetHigh.EXE id. The temporary DE entry was removed afterwards and the shell restarted to the original state."
+      "detail": "Installed from the repository URL at 928d93f (0.4.0), enabled in the right section and visible. The clone was checked out at v0.3.1, the user's settings restored, and `omarchy plugin update ... --yes` fast-forwarded to 928d93f; the shell.json entry kept amazonEnabled=true and hideSeen=true and seen.json stayed byte-identical. `omarchy plugin remove ... --yes` deleted the clone and unloaded the widget while seen.json stayed byte-identical. The development symlink and the original settings were restored and verified afterwards."
     },
     {
       "check": "No preview or theme images changed",
       "result": "pass",
-      "detail": "This candidate changes the Epic source and a settings key, not rendering, so preview.png and the four theme images were left as captured for 0.3.0. The live panel was captured only as acceptance evidence and is not committed."
+      "detail": "This candidate changes notification construction and adds a setting, not panel rendering, so preview.png and the theme images were left as previously captured and are not part of this acceptance."
     }
   ],
-  "limitations": "Live store contents vary, so a later fetch will not match the games named here. The Epic catalog filter (onSale plus the zero-price band) is undocumented and could change; the parser still requires a live zero-discount window, so a change would drop games rather than invent them. A non-ISO two-letter code such as UK or ZZ is passed through and surfaces as an Epic error rather than being guessed at. GOG's success path remains fixture-only because no giveaway was live. The marketplace listing issue was not exercised; installs used the repository URL. Reinstalling resets the widget's shell.json settings because Omarchy removes the entry with the plugin, so the development symlink and this machine's settings were restored by hand after the lifecycle. Amazon Luna's render is unchanged and was observed with its 15 live games. A vertical bar has not been observed. No security audit is claimed; the validators are limited scans."
+  "limitations": "The notification buttons were not clicked by the agent: the open live panel pins the pointer and the agent cannot screenshot the desktop, so the three-button rendering and the Open Game Store browser launch are the user's to confirm. The IPC methods behind the buttons were exercised directly, and a test notification with all three actions was sent on 4.5. A multi-game bundled notification (a store over the cap) was not observed live because no refresh delivered more than the cap; the cap logic and both argv shapes are covered by portable tests. Live store contents vary, so a later fetch will not match the games named here. GOG's success path remains fixture-only because no giveaway was live. Amazon Luna's render was observed with its live games. A vertical bar has not been observed. Installing a clone removes the widget's shell.json settings, so the development symlink and this machine's settings were restored by hand after the lifecycle. No security audit is claimed; the validators are limited scans."
 }
