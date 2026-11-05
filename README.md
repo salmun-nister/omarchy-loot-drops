@@ -6,7 +6,8 @@
 
 A treasure chest in your bar. Click it and a panel lists everything currently
 free to keep, grouped by store, each row one click from the store page. When a
-new one appears, you get a desktop notification.
+new one appears you get a desktop notification — one per game, with buttons to
+open its store page, mark it seen, or open the panel.
 
 **No accounts. No API keys. No logins.** It reads only the stores' own public
 pages, and it never writes anything outside its own state directory.
@@ -142,6 +143,28 @@ chevron at the top or bottom edge means there is more in that direction; the
 scrollbar itself stays out of the way until you scroll. The keyboard cursor
 scrolls itself into view.
 
+## Notifications
+
+Each newly free game gets its own notification, so a few found in one check
+stack under a single Loot Drops card. The treasure-chest mark is the
+notification icon.
+
+A single game's notification carries three buttons:
+
+| Button | What it does |
+| --- | --- |
+| **Launch Loot Drops** | Open the panel — the same as clicking the notification itself |
+| **Open Game Store** | Mark the game seen and open its page in the store offering it |
+| **Mark as seen** | Mark the game seen without leaving the notification |
+
+A sudden batch is bundled. Once a store has more new games than the **Per-store
+notification limit** setting (3 by default; `1` always bundles a store's batch,
+`0` means no limit), that store sends one summary notification instead, and its
+only button is **Launch Loot Drops**. The buttons call the widget, which
+re-derives the same checked link a panel row opens. A muted store sends no
+notifications; its games still get their panel coin marker and light the bar
+dot.
+
 ## Theming
 
 The panel is built from the shell's own theme tokens, so it matches whatever
@@ -167,6 +190,7 @@ Omarchy settings UI. They hot-reload on save.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `refreshMinutes` | `90` | How often to check the enabled stores (30–720). |
+| `maxStoreNotifications` | `3` | Per-store cap on individual notifications (0–20). `1` always bundles a store's batch into one summary; `0` means no limit. |
 | `hideSeen` | `false` | Hide the games you have marked seen, replacing them with a per-store count. The footer's eye toggles it. |
 | `steamEnabled` | `true` | Watch Steam. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
@@ -229,8 +253,9 @@ opt-in: claiming its games needs an Amazon Prime membership.
 | Amazon Luna | `luna.amazon.com` |
 
 Every game link is checked against the store's own host before your browser is
-launched, and every game title is stripped of markup and control characters
-before it is displayed or sent to the notification server. The Luna render uses
+launched — the panel's rows and the notification's **Open Game Store** button use
+the same checked link — and every game title is stripped of markup and control
+characters before it is displayed or sent to the notification server. The Luna render uses
 no account, cookie or key from your browser: it opens a fresh signed-out page,
 which loads that page's own assets, and nothing else. See
 [security](SECURITY.md).
@@ -263,16 +288,16 @@ ending-soon hourglass.
 
 ## Compatibility
 
-Intended target: Omarchy 4 / Hyprland. Tested live on **Omarchy 4.0.6-1** with
-Hyprland 0.56.2 on X11-less Wayland, kernel 7.2.8-9-omarchy: the widget loads on
-the bar, the panel opens and closes, all four stores resolve, a desktop
-notification fires and opens the panel, the hide-seen eye and `v` key work, the
-footer stays pinned while the games scroll, and fresh install, update from
-0.2.0, removal and restore were re-run. GOG's success path is still fixture-only,
-because no giveaway was live when it was tested. Amazon Luna is opt-in and was
-verified signed out in the live panel (15 games, no login); its claims page
-depends on Amazon's regional availability and anti-bot behaviour. A vertical bar
-has not been observed.
+Intended target: Omarchy 4 / Hyprland. The 0.4.0 notification actions were
+verified live on **Omarchy 4.5.0-3** with Hyprland 0.56.2 on X11-less Wayland,
+kernel 7.2.15-1-omarchy: the widget loads on the bar, the panel opens and closes,
+all four stores resolve, and notifications fire with the **Launch Loot Drops**
+and **Open Game Store** buttons. The 0.3.1 install, update from 0.2.0, removal
+and restore were recorded on **Omarchy 4.0.6-1**. GOG's success path is still
+fixture-only, because no giveaway was live when it was tested. Amazon Luna is
+opt-in and was verified signed out in the live panel; its claims page depends on
+Amazon's regional availability and anti-bot behaviour. A vertical bar has not
+been observed.
 
 Portable validation additionally covers parsing, the URL allowlist and the
 notification diff. See [acceptance evidence](docs/ACCEPTANCE.json) for the exact

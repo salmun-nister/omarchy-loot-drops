@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
@@ -16,6 +16,7 @@
     "defaultSection": "right",
     "defaults": {
       "refreshMinutes": 90,
+      "maxStoreNotifications": 3,
       "hideSeen": false,
       "steamEnabled": true,
       "epicEnabled": true,
@@ -37,6 +38,16 @@
         "step": 5,
         "defaultValue": 90,
         "description": "How often to check the enabled stores. Giveaways usually run for days, so a short interval mostly buys noise rather than earlier news. Anything below about 90 minutes is rarely worth it; the panel also refreshes when you open it and the data has gone stale."
+      },
+      {
+        "key": "maxStoreNotifications",
+        "type": "integer",
+        "label": "Per-store notification limit",
+        "min": 0,
+        "max": 20,
+        "step": 1,
+        "defaultValue": 3,
+        "description": "How many new games a single store may announce individually before they are bundled into one summary notification instead. 1 always bundles a store's batch; 0 removes the limit and notifies once per game. A bundled summary only opens the panel."
       },
       {
         "key": "hideSeen",

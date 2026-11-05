@@ -94,6 +94,11 @@ var REFRESH_MIN = 30
 var REFRESH_DEFAULT = 90
 var REFRESH_MAX = 720
 
+// How many per-game notifications one store may send at once before its new
+// games are bundled into a single summary instead. 0 means no limit.
+var NOTIFY_BUNDLE_DEFAULT = 3
+var NOTIFY_BUNDLE_MAX = 20
+
 // Stale is derived from the interval rather than fixed. A constant drifts out of
 // proportion the moment the interval changes — at a 90-minute default a fixed
 // four hours is barely more than one missed poll, and at 720 it would be under
@@ -237,6 +242,18 @@ function normalizeRefreshMinutes(value) {
   var minutes = Math.round(Number(value))
   if (!isFinite(minutes)) minutes = REFRESH_DEFAULT
   return Math.max(REFRESH_MIN, Math.min(REFRESH_MAX, minutes))
+}
+
+// A store's per-game notification cap. An absent or unusable value falls back
+// to the default; anything below 1 becomes 0, meaning no limit. The upper bound
+// is the same one the settings schema shows the user, so the slider and this
+// normaliser cannot disagree.
+function normalizeMaxStoreNotifications(value) {
+  if (value === undefined || value === null || value === "") return NOTIFY_BUNDLE_DEFAULT
+  var n = Math.floor(Number(value))
+  if (!isFinite(n)) return NOTIFY_BUNDLE_DEFAULT
+  if (n < 1) return 0
+  return Math.min(n, NOTIFY_BUNDLE_MAX)
 }
 
 // When data counts as stale, given the refresh interval it is on.
@@ -901,7 +918,7 @@ function notificationArgs(store, alerts) {
   if (alerts.length === 1) headline = names[0] + " is free on " + label
   else headline = alerts.length + " free games on " + label
 
-  return [
+  var argv = [
     "omarchy-notification-send",
     "--app-name", "Loot Drops",
     "-g", BAR_ICON,
@@ -909,14 +926,31 @@ function notificationArgs(store, alerts) {
     "-t", "12000",
     String(headline).replace(/^-+/, "").trim() || ("Free on " + label),
     body,
-    // The click opens the panel rather than the store page. Opening a URL from
-    // here went through omarchy-launch-browser, whose trailing focus step picks
-    // a window by position in hyprctl's client list rather than by focus order,
-    // so the tab landed in whichever window that happened to be first. Opening
-    // the panel also acknowledges the games, which is what a click on the toast
-    // means anyway. -q keeps a restarting shell from writing to stderr.
-    "--exec", "omarchy-shell", "-q", IPC_TARGET, "open"
+    // The first action is also the card click, so "Launch Loot Drops" stays
+    // first and clicking a card still opens the panel. -q keeps a restarting
+    // shell from writing to stderr.
+    "--action", "Launch Loot Drops", "omarchy-shell", "-q", IPC_TARGET, "open"
   ]
+
+  // A single game also gets its own store page and a seen toggle. Both go
+  // through the widget over IPC carrying only the store and a scrubbed id: the
+  // widget re-derives the allowlisted URL and validates the id, so no untrusted
+  // URL or command rides in the notification. A bundled summary (more than one
+  // game) keeps only the open-panel action, since there is no single page to
+  // open.
+  if (alerts.length === 1) {
+    var id = scrubId(alerts[0].id)
+    if (id) {
+      argv = argv.concat([
+        "--action", "Open Game Store", "omarchy-shell", "-q", IPC_TARGET,
+        "openGame", store, id,
+        "--action", "Mark as seen", "omarchy-shell", "-q", IPC_TARGET,
+        "markSeen", store, id
+      ])
+    }
+  }
+
+  return argv
 }
 
 // ---------------------------------------------------------------------------

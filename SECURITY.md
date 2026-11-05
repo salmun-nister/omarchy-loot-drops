@@ -14,7 +14,7 @@ and explicit.
 | Kind | Detail |
 | --- | --- |
 | Network | Four store hosts. One GET each per refresh for Steam and GOG, one POST for Epic; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
-| Process | `omarchy-shell`, `omarchy-notification-send`, `omarchy-launch-browser`. All named with absolute or resolved paths and argv, never a shell string. |
+| Process | `omarchy-shell` (including the notification actions that call back into the widget), `omarchy-notification-send`, and `xdg-open` (via `Qt.openUrlExternally`, for panel rows and the widget's store-page action). All named with resolved paths and argv, never a shell string. |
 | Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. |
 | Privileged operations | None. |
 | Credentials read | None. |
@@ -39,7 +39,14 @@ are enforced in `Model.js` so no call site can skip them:
   `user@store.steampowered.com` both fail.
 - Anything rejected becomes that store's search page, never an empty launch.
 - `diffStore` re-applies the allowlist before an alert reaches the notification
-  server, so a URL cannot be laundered through the seen-state comparison.
+  server; the notification carries only the store and a scrubbed id, and the
+  widget re-applies the allowlist again before opening, so a URL cannot be
+  laundered through the seen-state comparison or opened unvetted.
+
+**Notification actions.** `openGame` and `markSeen` arrive over IPC with a store
+and a game id. The id is scrubbed and matched against the current list, and the
+URL is re-derived from the allowlisted record, so an IPC caller can neither open
+an arbitrary URL nor acknowledge anything outside the configured stores.
 
 **Titles.** A title is rendered as plain text, never markup. Tags are stripped,
 HTML entities are decoded, then angle brackets, C0/C1 control characters and
