@@ -81,6 +81,10 @@ Panel {
     // undefined, not 0: an absent setting must land on the default, and 0 would
     // clamp to the floor instead.
     Model.normalizeRefreshMinutes(setting("refreshMinutes", undefined))
+  // Per store, how many new games may notify individually before that store's
+  // new games are bundled into one summary. 0 means no cap.
+  readonly property int maxStoreNotifications:
+    Model.normalizeMaxStoreNotifications(setting("maxStoreNotifications", undefined))
   readonly property string country: Model.countrySetting(root.settings)
   // Whether the panel hides games already marked seen. This is a view filter,
   // not a second baseline: the seen state itself is untouched.
@@ -566,8 +570,20 @@ Panel {
     seenState = transition.state
     persistSeen()
 
-    var argv = Model.notificationArgs(store, transition.alerts)
-    if (argv) Quickshell.execDetached(argv)
+    // Bundle a store's new games into one summary once they pass the per-store
+    // cap, so a sudden batch does not become a wall of cards. A cap of 0 means
+    // no limit; below the cap each game gets its own notification with its own
+    // store-page and mark-seen buttons.
+    if (maxStoreNotifications >= 1
+        && transition.alerts.length > maxStoreNotifications) {
+      var summary = Model.notificationArgs(store, transition.alerts)
+      if (summary) Quickshell.execDetached(summary)
+    } else {
+      for (var a = 0; a < transition.alerts.length; a++) {
+        var argv = Model.notificationArgs(store, [transition.alerts[a]])
+        if (argv) Quickshell.execDetached(argv)
+      }
+    }
 
     nowMs = now
     lastSuccessAt = now
@@ -718,6 +734,27 @@ Panel {
     close()
   }
 
+  // Open a game from its store and id, for a notification action. The store and
+  // id arrive over IPC, so treat them as untrusted: an unknown store or a
+  // missing/invalid id does nothing, and the URL is re-derived from the
+  // allowlisted game record (or the store listing), never passed in.
+  function openGameById(store, id) {
+    if (Model.STORES.indexOf(store) < 0) return
+    var clean = Model.scrubId(id)
+    if (!clean) return
+    var games = bucket(store).games || []
+    var game = null
+    for (var i = 0; i < games.length; i++) {
+      if (games[i] && games[i].id === clean) { game = games[i]; break }
+    }
+    markSeen(store, clean)
+    var url = game
+      ? (Model.safeUrl(store, game.url) || Model.searchUrl(store))
+      : Model.searchUrl(store)
+    Qt.openUrlExternally(url)
+    close()
+  }
+
   function openSelected() {
     openGame(selectedGame())
   }
@@ -730,6 +767,10 @@ Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { root.refresh(); return "ok" }
+    // Notification actions. Both take the store and game id as separate string
+    // arguments; the widget validates them before touching state or a URL.
+    function markSeen(store: string, id: string): void { root.markSeen(store, id) }
+    function openGame(store: string, id: string): void { root.openGameById(store, id) }
   }
 
   // --- Processes ---------------------------------------------------------

@@ -13,10 +13,10 @@ const source = readFileSync(new URL('Model.js', root), 'utf8')
 // "use strict" so an undeclared assignment (which once threw a ReferenceError
 // from the GOG parser) fails here instead of at runtime in the shell.
 const Model = new Function(`"use strict";\n${source}\nreturn {
-  STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE,
-  staleAfterMs, STALE_MULTIPLIER,
+  STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, MAX_GAMES,
+  staleAfterMs, STALE_MULTIPLIER, NOTIFY_BUNDLE_DEFAULT, NOTIFY_BUNDLE_MAX,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
-  normalizeCountry, normalizeRefreshMinutes, countrySetting, countryPatch, epicQuery, parseStore, parseSteam,
+  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, parseStore, parseSteam,
   parseEpic, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
@@ -439,31 +439,78 @@ test('the widget publishes the same IPC target the notification calls', async ()
   assert.ok(Model.IPC_TARGET.length > 0, 'the IPC target is empty');
 });
 
-test('notification args are safe for the notification server', () => {
+const actionsOf = (argv) => {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== '--action') continue;
+    let j = i + 1;
+    while (j < argv.length && argv[j] !== '--action') j++;
+    out.push(argv.slice(i + 1, j));
+    i = j - 1;
+  }
+  return out;
+};
+
+test('notification args route every action through the widget over IPC', () => {
   const alerts = [{ id: 'a', title: '<b>Bold</b> Game', url: 'https://evil.test/x' }];
   const argv = Model.notificationArgs('steam', alerts);
   assert.equal(argv[0], 'omarchy-notification-send');
   assert.ok(!argv.includes('<'), 'markup survived into the notification');
-  // The click opens the panel, so no URL rides along at all: there is no longer
-  // a host to allow or reject, and nothing to leak into another application.
-  assert.ok(!argv.some(a => a.includes('https://') || a.includes('evil.test')),
-    'a URL reached the notification action');
-  const exec = argv.slice(argv.indexOf('--exec') + 1);
-  assert.deepEqual(exec, ['omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
-    'the notification no longer opens the panel');
+  assert.ok(!argv.includes('--exec'), '--action replaces --exec; the two cannot be combined');
+
+  // No URL rides in the notification at all now, not even an allowlisted one:
+  // the widget resolves the store page from the store + id.
+  assert.ok(!argv.some((a) => a.includes('https://') || a.includes('evil.test')),
+    'a URL reached the notification argv');
+  assert.ok(!argv.includes('xdg-open'), 'the notification must not launch a browser directly');
+
+  // Three actions: Launch (also the card click), Open Game Store, Mark as seen.
+  assert.deepEqual(actionsOf(argv), [
+    ['Launch Loot Drops', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
+    ['Open Game Store', 'omarchy-shell', '-q', Model.IPC_TARGET, 'openGame', 'steam', 'a'],
+    ['Mark as seen', 'omarchy-shell', '-q', Model.IPC_TARGET, 'markSeen', 'steam', 'a'],
+  ]);
+
+  // A bundled summary keeps only the panel action: there is no single game to
+  // open or mark.
+  const many = Model.notificationArgs('epic',
+    Array.from({ length: 7 }, (_, i) => ({ id: 'g' + i, title: 'G' + i, url: '' })));
+  assert.deepEqual(actionsOf(many), [
+    ['Launch Loot Drops', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
+  ]);
+  // The body is the positional just before the first --action.
+  const body = many[many.indexOf('--action') - 1];
+  assert.ok(body.includes('and 3 more'), `long list should summarise, got: ${body}`);
+
+  // An id that cannot survive the scrub never reaches the IPC argv.
+  const badId = Model.notificationArgs('steam', [{ id: 'a b', title: 'X', url: '' }]);
+  assert.equal(actionsOf(badId).length, 1, 'an unusable game id must not reach the IPC argv');
 
   // The headline occupies an option position, so leading dashes must go.
   const flagged = Model.notificationArgs('steam',
-    [{ id: 'a', title: '--exec', url: 'https://store.steampowered.com/app/1/' }]);
+    [{ id: 'a', title: '--exec', url: '' }]);
   const headline = flagged[flagged.indexOf('-t') + 2];
   assert.ok(!headline.startsWith('-'), `headline still looks like a flag: ${headline}`);
 
   assert.equal(Model.notificationArgs('steam', []), null);
-  const many = Model.notificationArgs('epic',
-    Array.from({ length: 7 }, (_, i) => ({ id: String(i), title: 'G' + i, url: '' })));
-  // The headline is followed by the body, which is followed by --exec.
-  const body = many[many.indexOf('--exec') - 1];
-  assert.ok(body.includes('and 3 more'), `long list should summarise, got: ${body}`);
+});
+
+test('the per-store notification cap normalises safely', () => {
+  // Absent or unusable values fall back to the default of 3.
+  assert.equal(Model.normalizeMaxStoreNotifications(undefined), 3);
+  assert.equal(Model.normalizeMaxStoreNotifications(null), 3);
+  assert.equal(Model.normalizeMaxStoreNotifications(''), 3);
+  assert.equal(Model.normalizeMaxStoreNotifications('nope'), 3);
+  // A usable cap is kept; 1 or more bundles above that count.
+  assert.equal(Model.normalizeMaxStoreNotifications(3), 3);
+  assert.equal(Model.normalizeMaxStoreNotifications(1), 1);
+  // Zero or negative means no cap; the top of the range is 20.
+  assert.equal(Model.normalizeMaxStoreNotifications(0), 0);
+  assert.equal(Model.normalizeMaxStoreNotifications(-2), 0);
+  assert.equal(Model.normalizeMaxStoreNotifications(20), 20);
+  assert.equal(Model.normalizeMaxStoreNotifications(21), Model.NOTIFY_BUNDLE_MAX);
+  assert.equal(Model.normalizeMaxStoreNotifications(999), Model.NOTIFY_BUNDLE_MAX);
+  assert.equal(Model.NOTIFY_BUNDLE_MAX, 20);
 });
 
 test('a store row says only why it failed, and nothing otherwise', () => {

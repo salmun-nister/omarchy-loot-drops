@@ -226,10 +226,13 @@ reconfigures the running shell.
 
 These are properties of the plugin, not policy. Callers cannot bypass them.
 
-1. Every URL the panel can open passes a per-store canonical-host allowlist
-   before it reaches `Qt.openUrlExternally`: `store.steampowered.com`,
-   `store.epicgames.com`, `www.gog.com`. The notification click carries no URL
-   at all — it opens the panel — so there is no second path to vet.
+1. Every URL the panel or a notification can open passes a per-store
+   canonical-host allowlist before it reaches `Qt.openUrlExternally`:
+   `store.steampowered.com`, `store.epicgames.com`, `www.gog.com`,
+   `luna.amazon.com`. A notification action carries only the store and a
+   scrubbed game id and calls back into the widget, which resolves the URL the
+   same way `openGame` does, so no URL reaches the notification argv and there
+   is no second, unvetted path.
 2. Every title is stripped of `<`, `>`, C0/C1 and bidirectional controls and
    capped at 120 characters before reaching any sink. The notification server
    advertises body markup and body hyperlinks, and HTML decoding can revive a
@@ -559,13 +562,29 @@ Completed evidence:
   reader boundary into a general local-file read. The demo substitutes the
   process instead, and the invariant above records why.
 
+- Notifications gained buttons and moved to one per game, with a per-store cap.
+  Omarchy 4.5's `omarchy-notification-send` accepts `--action <label> <program>
+  [words...]`, where the first action is also the card click, and the shell
+  groups cards by sender name (`app:loot-drops`). A single game's notification
+  carries three actions — **Launch Loot Drops** (first, so a card click still
+  opens the panel), **Open Game Store**, and **Mark as seen** — and all three
+  call the widget back over IPC (`omarchy-shell -q <id> open|openGame|markSeen`).
+  The notification therefore carries only the store and a scrubbed game id: the
+  widget validates the id, re-derives the allowlisted URL, and marks the game
+  seen, so no URL or command rides in the argv. `maxStoreNotifications`
+  (default 3) caps one store's individual notifications; `1` always bundles,
+  `0` means no limit, and a bundled summary keeps only **Launch Loot Drops**.
+  The treasure-chest glyph stays the notification icon.
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next
   giveaway.
 - Vertical-bar layout unobserved.
-- Notification delivery unobserved on a real desktop (the harness mutes bells to
-  avoid firing one).
+- A multi-game notification burst (several cards arriving together and stacking
+  in the sender group) was not observed live; each game's argv and the shell's
+  grouping rule are covered by tests and `Markup.regroup`, and single-card
+  delivery was observed on 4.5.
 - `omakit inspect` still reports the deadline and buffering classes, because a
   static scanner cannot see a deadline expressed in QML. Accepted for the
   listing; revisit if a reviewer flags it.
