@@ -138,7 +138,9 @@ scrolls itself into view.
 
 Each newly free game gets its own notification, so a few found in one check
 stack under a single Loot Drops card. The treasure-chest mark is the
-notification icon.
+notification icon, and every card is headed `Loot Drop from <store>`. Its
+subtitle is the game's name, with the Android or iOS glyph after it for a mobile
+giveaway.
 
 A single game's notification carries three buttons:
 

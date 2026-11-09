@@ -48,24 +48,15 @@ function platformGlyph(platform) {
   return PLATFORM_GLYPHS[platform] || ""
 }
 
-// The title as the user reads it: name plus a trailing platform parenthetical.
-// The title as labelled in notifications: name, then an interpunct and the
-// trailing glyph, so a mobile row reads e.g. "Chants of Sennaar · 󰀲 ".
-// The trailing space matters in a bundled list, where a comma follows the
-// glyph immediately and would otherwise clip into its right edge.
+// The notification label: name, then an interpunct and the platform glyph for
+// a mobile game, so it reads e.g. "Chants of Sennaar · 󰀲 ". The trailing space
+// keeps the glyph off a following comma in a bundled list, and is invisible
+// when the label is the whole subtitle of a single-game card.
 function gameDisplayTitle(game) {
   var title = modeTitle(game)
   var platform = game && (game.platform || "")
   if (PLATFORMS.indexOf(platform) < 0) return title
   return title + " \u00B7 " + platformGlyph(platform) + " "
-}
-
-// Panel variant: same title and glyph, no platform word.
-function gameListTitle(game) {
-  var title = modeTitle(game)
-  var platform = game && (game.platform || "")
-  if (PLATFORMS.indexOf(platform) < 0) return title
-  return title + " \u00B7 " + platformGlyph(platform)
 }
 
 function modeTitle(game) {
@@ -1136,15 +1127,16 @@ function notificationArgs(store, alerts) {
   if (!alerts || alerts.length === 0) return null
   var label = STORE_LABELS[store] || "a store"
 
-  // A single game keeps the old headline — "<Game> is free on <store>" — and
-  // no subtitle, so the game's name reads in the card title at a glance. A
-  // bundled batch uses the uniform "Loot Drop from <store>" and lists the
-  // names in the subtitle instead.
+  // A single game and a bundled batch use the same card shape: the title names
+  // the store, and the subtitle carries the game name. For a mobile game that
+  // subtitle includes its platform glyph, so the glyph never collides with the
+  // headline's words. The title stays store-derived, so a hostile game title
+  // never occupies the option position.
   var headline
   var body
   if (alerts.length === 1) {
-    headline = gameListTitle(alerts[0]) + " is free on " + label
-    body = ""
+    headline = "Loot Drop from " + label
+    body = gameDisplayTitle(alerts[0])
   } else {
     var list = alerts.slice(0, 4)
     var names = []

@@ -604,7 +604,10 @@ Completed evidence:
   call the widget back over IPC (`omarchy-shell -q <id> open|openGame|markSeen`).
   The notification therefore carries only the store and a scrubbed game id: the
   widget validates the id, re-derives the allowlisted URL, and marks the game
-  seen, so no URL or command rides in the argv. `maxStoreNotifications`
+  seen, so no URL or command rides in the argv. Both a single game and a bundle
+  are titled `Loot Drop from <store>`; the subtitle carries the game name, with
+  its platform glyph for a mobile game, or the joined names for a bundle.
+  `maxStoreNotifications`
   (default 3) caps one store's individual notifications; `1` always bundles,
   `0` means no limit, and a bundled summary keeps only **View All**.
   The treasure-chest glyph stays the notification icon.

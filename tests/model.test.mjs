@@ -16,7 +16,7 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, MAX_GAMES,
   staleAfterMs, STALE_MULTIPLIER, NOTIFY_BUNDLE_DEFAULT, NOTIFY_BUNDLE_MAX,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
-  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, gameListTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
+  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
   parseEpic, parseEpicMobile, mergeEpicGames, epicAssemblyResult, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore, unprimeStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
@@ -268,11 +268,6 @@ test('epic mobile glyphs are private-use and pinned to Nerd Fonts 3.5.1', () => 
     'Chants of Sennaar \u00B7 \u{F0032} ');
   assert.equal(Model.gameDisplayTitle({ title: 'Chants of Sennaar', platform: 'ios' }),
     'Chants of Sennaar \u00B7 \u{F0037} ');
-  assert.equal(Model.gameListTitle({ title: 'Chants of Sennaar', platform: 'ios' }),
-    'Chants of Sennaar \u00B7 \u{F0037}');
-  assert.equal(Model.gameListTitle({ title: 'Chants of Sennaar', platform: 'android' }),
-    'Chants of Sennaar \u00B7 \u{F0032}');
-  assert.equal(Model.gameListTitle({ title: 'PC Game' }), 'PC Game');
   assert.equal(Model.gameDisplayTitle({ title: 'PC Game' }), 'PC Game');
 });
 
@@ -370,11 +365,11 @@ test('epic mobile alerts keep their platform and label every notification', () =
 
   const argv = Model.notificationArgs('epic', alerted.alerts);
   const headline = argv[argv.indexOf('-t') + 2];
-  // A single game keeps the old headline with its platform glyph, and no
-  // subtitle, so the name reads in the card title at a glance.
-  assert.equal(headline, 'New Game \u00B7 \u{F0037} is free on Epic Games');
+  // A single game uses the same card shape as a bundle: the store names the
+  // card, and the game name plus platform glyph are the subtitle.
+  assert.equal(headline, 'Loot Drop from Epic Games');
   const body = argv[argv.indexOf('--action') - 1];
-  assert.equal(body, '', 'a single-game notification carries no subtitle');
+  assert.equal(body, 'New Game \u00B7 \u{F0037} ');
 
   // The same title on both platforms is never two identical notifications.
   const both = Model.notificationArgs('epic', [
