@@ -98,9 +98,34 @@ ShellRoot {
         for (var i = 0; i < rows.length; i++) {
           if (rows[i].kind === "header") headers.push(rows[i].store)
         }
+        // The panel only gives a store a section when it is watched and has
+        // something to show, so the harness has to compare against what each
+        // watched store actually returned rather than expecting all four.
+        var state = widget.buckets || {}
+        var on = widget.storesOn || {}
+        var storeStatus = {}
+        for (var s in on) {
+          var b = state[s] || {}
+          storeStatus[s] = {
+            on: on[s] === true,
+            games: (widget.visibleGamesFor ? widget.visibleGamesFor(s).length : 0),
+            error: !!b.error
+          }
+        }
         console.log("HARNESS rows " + JSON.stringify({
           rowCount: rows.length,
           headers: headers,
+          headersExpected: (function () {
+            var out = []
+            for (var key in storeStatus) {
+              if (storeStatus[key].on
+                  && (storeStatus[key].games > 0 || storeStatus[key].error))
+                out.push(key)
+            }
+            return out
+          })(),
+          storeStatus: storeStatus,
+          settingsRows: (widget.settingsRows ? widget.settingsRows().length : -1),
           gameRows: rows.length - headers.length,
           renderedRows: widget.renderedRows,
           laidOut: widget.rowsLaidOut(),

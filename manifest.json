@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
@@ -20,6 +20,8 @@
       "hideSeen": false,
       "steamEnabled": true,
       "epicEnabled": true,
+      "epicMobileAndroid": false,
+      "epicMobileIos": false,
       "gogEnabled": true,
       "amazonEnabled": false,
       "steamNotify": true,
@@ -69,6 +71,20 @@
         "label": "Epic Games Store",
         "defaultValue": true,
         "description": "Watch the Epic Games Store. A disabled store is not fetched at all, is hidden from the panel and does not notify."
+      },
+      {
+        "key": "epicMobileAndroid",
+        "type": "boolean",
+        "label": "Epic mobile (Android)",
+        "defaultValue": false,
+        "description": "Also list Epic's Android weekly free games under the Epic Games heading, marked with an Android glyph. One extra public request per refresh, no account needed. Claiming is in the Epic Games app on a phone."
+      },
+      {
+        "key": "epicMobileIos",
+        "type": "boolean",
+        "label": "Epic mobile (iOS)",
+        "defaultValue": false,
+        "description": "Also list Epic's iOS weekly free games under the Epic Games heading, marked with an iOS glyph. One extra public request per refresh, no account needed. Claiming is in the Epic Games app on a phone."
       },
       {
         "key": "gogEnabled",

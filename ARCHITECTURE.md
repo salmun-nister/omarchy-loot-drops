@@ -35,15 +35,17 @@ the user has marked seen, which is what the bar dot and the row markers track.
 
 Everything else is per-instance and in memory: the game list, each store's error
 and timestamp, and the cursor. Settings live inline in `shell.json` as widget
-settings, not in this file.
+settings, edited from the in-panel Settings page or the Omarchy settings UI, not
+in this file.
 
 The Amazon Luna render keeps its anonymous Chromium profile at
 `~/.local/state/salmun-nister.loot-drops/browser-profile`. It is a cache, not
 state: removing it only makes the next render slower, and it holds no account.
 
 Baselines are per store so disabling one store cannot disturb another. A store
-with no baseline records silently; a store that was disabled re-records silently
-on return rather than announcing what it missed.
+with no baseline records silently; switching a store or an Epic mobile platform
+back on drops that store's priming flag (`unprimeStore`), so its next fetch
+re-records silently rather than announcing what it missed.
 
 ## Fetching
 
@@ -60,6 +62,12 @@ offers currently on sale in the zero-price band, then to zero-discount windows
 whose `endDate` is still in the future, because Epic keeps expired promotions in
 the array. GOG answers `404` when nothing is running, which is a healthy empty
 store rather than an error.
+
+Epic's mobile programme is separate from PC and has no web GraphQL presence:
+`platform=android` and `platform=ios` on the platform discover feed are each
+one GET. The two feeds are merged into the `epic` bucket with the `epic`
+baseline, each row tagged with its platform so `openGame` follows the same
+allowlist path as PC.
 
 Amazon Luna has no endpoint a script may read: its claims grid exists only after
 the page's scripts run, and its GraphQL rejects clients without a browser's TLS
@@ -93,9 +101,17 @@ occupies an option position that is parsed before the positional argument.
 ## Rendering
 
 The panel is a private `KeyboardPanel` sibling, not a top-level `panel` kind. It
-lists enabled stores in a fixed order, each with its games and a state line.
+lists enabled stores in a fixed order, each with its games and a state line. A
+store switched off is absent from the list entirely, because it is not watched.
 Games from all stores form one flat list for the cursor, so arrow keys move
-through the whole panel while the layout stays grouped.
+through the whole panel while the layout stays grouped. Epic mobile rows carry a
+platform glyph after the title and sit in the `epic` group.
+
+The footer's gear, or `,`, swaps the list for the Settings page inside the same
+panel: switches grouped per store, then the refresh interval, notification cap,
+hide-seen filter and country. `Esc` returns to the list before it closes the
+panel. The page is a second `ListView` with the same pinned-footer and edge-fade
+rules, so long settings lists scroll rather than growing the panel.
 
 The hero and its rule are pinned above the list, and the footer's rule and
 controls are pinned below it, so only the rows scroll between them. A fade and a
@@ -110,9 +126,10 @@ External text uses `Text.PlainText` throughout, including inside delegates.
 
 `tests/model.test.mjs` loads `Model.js` as plain JavaScript and drives it against
 saved fixtures: the real Steam payload, a hand-built Epic payload covering
-expired, paid and upcoming offers, GOG's giveaway and 404 shapes, and a real
-signed-out Amazon Luna claims page. It is where the URL allowlist, the title
-scrub and the three silencing rules are pinned.
+expired, paid and upcoming offers, Epic's real Android and iOS discover feeds
+with added expired and free-to-play entries, GOG's giveaway and 404 shapes, and a
+real signed-out Amazon Luna claims page. It is where the URL allowlist, the title
+scrub and the silencing rules are pinned.
 
 `tests/qml/lint` runs the real Qt `qmllint` against a shim for `qs.Commons` and
 `qs.Ui`. The `qmllint` on `PATH` is a stub that reports nothing; the script uses

@@ -45,6 +45,9 @@ promotion, upcoming offer, missing catalog mapping and a markup-shaped title.
 Its live and upcoming windows are absolute dates, so the tests rebase them on
 `now` as the fixture loads
 (`epicFixture` in `model.test.mjs`) rather than storing windows that rot.
+`epic-mobile-android.json` and `epic-mobile-ios.json` are real discover-feed
+captures with added expired and free-to-play entries, so the parser's rejections
+are asserted against a real shape.
 `gog-giveaway.json` is the documented success shape and is **fixture-only**: GOG
 had nothing running on 9 October 2026, so that path is not live-verified. See
 `DESIGN.md`.
@@ -61,13 +64,17 @@ real `seen.json` and will not fire notifications — its settings mute every
 store's bell. To exercise notifications for real, install it and wait for an
 actual giveaway, or temporarily point the widget at a fixture.
 
-Worth checking by hand: the panel with one store disabled, with a bell muted,
-with an empty store (GOG is empty right now, which is the easy case to observe),
-and while a store is unreachable. Use the eye to hide a seen game and confirm the
-per-store count replaces it, and that the footer stays put while a long list
-scrolls. Amazon Luna is off by default; switching it on adds a Chromium render to
-each refresh, so its first live check should confirm the grid arrives and the
-panel lists the games. Vertical bars are untested; the widget uses
+Worth checking by hand: the Settings page from the gear and `,` (including `Esc`
+returning to the list), a store switched off disappearing from the list and
+coming back silently, a bell muted, an empty store (GOG is empty right now,
+which is the easy case to observe), and a store that is unreachable. Use the eye
+to hide a seen game and confirm the per-store count replaces it, and that the
+footer stays put while a long list scrolls. Switch on Epic's Android and iOS
+feeds and confirm their rows carry the platform glyph and that turning one on
+does not fire a burst of notifications for games already free. Amazon Luna is off
+by default; switching it on adds a Chromium render to each refresh, so its first
+live check should confirm the grid arrives and the panel lists the games.
+Vertical bars are untested; the widget uses
 `bar.fontFamily` and inherits the host orientation, but nothing has been observed
 on one.
 

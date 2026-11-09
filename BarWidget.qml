@@ -65,17 +65,63 @@ Panel {
   readonly property int markSize: Style.font.heading
   readonly property int storeIndent: Style.spacing.sm + markSize + Style.space(8)
 
-  readonly property var storesOn: Model.enabled({
-    "steamEnabled": setting("steamEnabled", true),
-    "epicEnabled": setting("epicEnabled", true),
-    "gogEnabled": setting("gogEnabled", true),
-    "amazonEnabled": setting("amazonEnabled", false)
-  })
-  readonly property var notifyOn: Model.notifyFor({
-    "steamNotify": setting("steamNotify", true),
-    "epicNotify": setting("epicNotify", true),
-    "gogNotify": setting("gogNotify", true),
-    "amazonNotify": setting("amazonNotify", true)
+  // Settings geometry. Every row uses the same label→control gap, and the
+  // controls sit on shared columns so switches, dropdowns and inputs line
+  // up down the page.
+  readonly property int settingsGap: Style.space(6)
+  readonly property int settingsStoreLabel1: Style.space(56)
+  readonly property int settingsStoreLabel2: Style.space(92)
+  readonly property int settingsCol2X: Style.space(170)
+  readonly property int settingsLabelColumn: Style.space(170)
+  readonly property int settingsToggleWidth: Style.space(54)
+  // ToggleSwitch draws its track inset by cursorPad so the hover ring fits
+  // inside its own bounds; shifting the switch left by that inset lands the
+  // track's left edge on the shared control column.
+  readonly property int settingsTogglePad: Style.space(6)
+  readonly property int settingsControlWidth: Style.space(96)
+
+  // Local overrides so footer toggles answer on the click itself. Going
+  // through persist() alone leaves the UI waiting for the shell to echo the
+  // written shell.json back, which reads as a ~1s lag on the eye and mobile
+  // buttons. The override is what the panel reads; persist() still writes
+  // the value for the next start, and onSettingsChanged clears the override
+  // once the echo lands (it carries the same value, so nothing flickers).
+  // Store watches and bells get the same treatment so enabling a store
+  // flips its switch (and its section) on the click, not a second later.
+  property bool hideSeenOverride: false
+  property bool hideSeenOverrideValue: false
+  property var epicMobileOverride: ({})
+  property var storesOverride: ({})
+  property var notifyOverride: ({})
+
+  readonly property var storesOn: {
+    var base = Model.enabled({
+      "steamEnabled": setting("steamEnabled", true),
+      "epicEnabled": setting("epicEnabled", true),
+      "gogEnabled": setting("gogEnabled", true),
+      "amazonEnabled": setting("amazonEnabled", false)
+    })
+    for (var s in storesOverride) base[s] = storesOverride[s]
+    return base
+  }
+  readonly property var notifyOn: {
+    var base = Model.notifyFor({
+      "steamNotify": setting("steamNotify", true),
+      "epicNotify": setting("epicNotify", true),
+      "gogNotify": setting("gogNotify", true),
+      "amazonNotify": setting("amazonNotify", true)
+    })
+    for (var n in notifyOverride) base[n] = notifyOverride[n]
+    return base
+  }
+
+  readonly property var epicMobileOn: ({
+    "android": epicMobileOverride.android !== undefined
+      ? epicMobileOverride.android
+      : setting("epicMobileAndroid", false),
+    "ios": epicMobileOverride.ios !== undefined
+      ? epicMobileOverride.ios
+      : setting("epicMobileIos", false)
   })
   readonly property int refreshMinutes:
     // undefined, not 0: an absent setting must land on the default, and 0 would
@@ -88,7 +134,9 @@ Panel {
   readonly property string country: Model.countrySetting(root.settings)
   // Whether the panel hides games already marked seen. This is a view filter,
   // not a second baseline: the seen state itself is untouched.
-  readonly property bool hideSeen: setting("hideSeen", false)
+  readonly property bool hideSeen: hideSeenOverride
+    ? hideSeenOverrideValue
+    : setting("hideSeen", false)
 
   // Per-store results. Each bucket keeps its own games, error and timestamp so
   // one store failing never blanks the others.
@@ -102,6 +150,11 @@ Panel {
   property var seenState: Model.emptySeen()
   property bool seenLoaded: false
   property bool anyBusy: false
+  // Epic assembly buffer: the PC catalog and the Android/iOS discover feeds
+  // are fetched by separate processes so one slow or failing feed cannot
+  // delay or blank the others. Parts are stashed here and only merged by
+  // finalizeEpic() once every expected part has answered.
+  property var epicParts: null
   property double lastSuccessAt: 0
   property double nowMs: Date.now()
   property int retryDelayMs: 30000
@@ -116,13 +169,41 @@ Panel {
   // still pointer reports the same scene point; only a changed point means the
   // mouse itself moved.
   property point lastPointerScene: Qt.point(-1, -1)
-  // Whichever store the e and n keys act on. It follows the pointer when the
-  // pointer is over a row, and the keyboard cursor otherwise, so pressing e
-  // acts on the store you are looking at rather than on whichever one happens
-  // to be first.
+  // Which store the pointer or cursor last touched. Kept for future use;
+  // there is no longer a per-store keybind acting on it.
   property string targetStore: ""
+  // One-line summary of disabled stores, for the footer. Empty when all
+  // stores are on or every store is off (the all-off message stands alone).
+  readonly property string disabledSummary: {
+    if (Model.activeStores(storesOn).length === 0) return ""
+    var names = []
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var s = Model.STORES[i]
+      if (storesOn[s] !== true) names.push(Model.STORE_SHORT[s] || Model.STORE_LABELS[s] || s)
+    }
+    if (names.length === 0) return ""
+    var sentence = names.join(", ")
+    if (names.length === 2)
+      sentence = names[0] + " and " + names[1]
+    else if (names.length > 2)
+      sentence = names.slice(0, names.length - 1).join(", ") + ", and "
+        + names[names.length - 1]
+    // A long roster would wrap past the centred footer stack; the short
+    // fallback carries the same meaning in one line.
+    if (sentence.length > 38) return "Multiple stores are disabled"
+    return sentence + (names.length === 1 ? " is disabled" : " are disabled")
+  }
   // Whether the panel is currently showing the keyboard shortcuts.
   property bool showShortcuts: false
+  // Whether the panel is showing the in-panel settings page instead of the
+  // store list. The gear in the footer toggles it; it hosts every setting
+  // that used to be config-only (refresh interval, notification limit,
+  // store country) plus the Epic mobile platform switches.
+  property bool showSettings: false
+  // Hover claims are suppressed briefly after a toggle reshapes the list,
+  // so a row sliding under a still pointer cannot steal the highlight for
+  // a frame before the layout settles.
+  property double hoverSuppressUntil: 0
 
   // Stale tracks the refresh interval, so it stays meaningful however often the
   // stores are being polled.
@@ -210,7 +291,16 @@ Panel {
     var out = {}
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
-      if (storesOn[store] === true) out[store] = bucket(store)
+      if (storesOn[store] === true) {
+        var b = bucket(store)
+        out[store] = {
+          games: visibleGamesFor(store),
+          error: b.error,
+          busy: b.busy,
+          neverChecked: b.neverChecked,
+          lastSuccessAt: b.lastSuccessAt
+        }
+      }
     }
     return out
   }
@@ -254,48 +344,77 @@ Panel {
   // so the highlighted row stays on the same game when a refresh lands.
   // Flat list of row entries: a header ahead of every store, then that store's
   // games when it is being watched. Headers share the index space with games so
-  // the cursor is a plain index and a row can be fetched by position to scroll
+  // The cursor is a plain index and a row can be fetched by position to scroll
   // it into view.
   //
-  // A store that is switched off still gets a header, so it can be switched
-  // back on from the panel, but its games are dropped: an unwatched store
-  // contributes nothing to the list and its header renders faded.
+  // A switched-off store is never listed; see the disabled line at the end.
   function visibleGameList() {
     var list = []
+    var anyEnabled = false
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
       var on = storesOn[store] === true
+      if (on) anyEnabled = true
       var current = bucket(store)
-      list.push({
-        kind: "header",
-        store: store,
-        enabled: on,
-        empty: on && (!current.games || current.games.length === 0),
-        failed: on && !!current.error,
-        errorLabel: on ? Model.storeErrorLabel(store, errorsByStore()) : ""
-      })
-      if (!on) continue
-      var shown = current.games
+      // Unseen first, then seen: the rows that still need action always
+      // read above the muted ones, whichever arrival order they came in.
+      var acknowledged = Model.acknowledgedOf(seenState, store)
+      var acked = {}
+      for (var a = 0; a < acknowledged.length; a++) acked[acknowledged[a]] = true
+      var ordered = []
+      var seenGames = []
+      var all = visibleGamesFor(store)
+      for (var g = 0; g < all.length; g++) {
+        if (acked[all[g] && all[g].id]) seenGames.push(all[g])
+        else ordered.push(all[g])
+      }
+      ordered = ordered.concat(seenGames)
+      var shown = ordered
       var hidden = 0
       if (hideSeen) {
-        var split = Model.splitSeenGames(current.games,
+        var split = Model.splitSeenGames(ordered,
           Model.acknowledgedOf(seenState, store))
         shown = split.shown
         hidden = split.hidden
+      }
+      // A store only gets a section when it is watched and has something
+      // to show: game rows, or a hidden-seen count in hide-seen mode. A
+      // switched-off store never appears, however many games it last had.
+      var hasEntries = on && (shown.length > 0 || hidden > 0 || current.busy)
+      var failed = on && !!current.error
+      if (!hasEntries && !failed) continue
+      list.push({
+        kind: "header",
+        store: store,
+        errorLabel: Model.storeErrorLabel(store, errorsByStore())
+      })
+      // A store with nothing yet but a fetch in flight says so, instead
+      // of sitting empty while the network catches up.
+      if (shown.length === 0 && hidden === 0 && current.busy) {
+        list.push({ kind: "checking", store: store })
       }
       for (var j = 0; j < shown.length; j++) {
         list.push({ kind: "game", store: store, game: shown[j] })
       }
       // The summary is the store's last entry, so every unseen game reads first.
-      if (hidden > 0) list.push({ kind: "hidden", store: store, count: hidden })
+      if (hidden > 0) {
+        var soon = 0
+        for (var s = 0; s < seenGames.length; s++) {
+          if (Model.endingSoon(seenGames[s] && seenGames[s].endsAt, nowMs)) soon++
+        }
+        list.push({ kind: "hidden", store: store, count: hidden, endingSoon: soon })
+      }
     }
+    if (anyEnabled && list.length === 0 && !anyBusy) list.push({ kind: "empty" })
     return list
   }
 
   // Write a setting change back to this widget's entry in shell.json. Applied
   // locally first so the switch moves on the click itself, then persisted; the
   // bar feeds the same value back through settings a moment later. This is the
-  // same pattern Omarchy's own Tray and Clock widgets use.
+  // same pattern Omarchy's own Tray and Clock widgets use. The shell write is
+  // deferred to the next event loop turn so the click paints before the
+  // file I/O (and any bar reload it triggers) can stall it.
   function persist(patch) {
     var entry = { id: root.moduleName }
     var current = root.settings
@@ -306,6 +425,20 @@ Panel {
     }
     for (var p in patch) entry[p] = patch[p]
     root.settings = entry
+    // Shell writes are flushed when the panel closes, not per toggle:
+    // updateEntryInline makes the shell reload its config and rebuild
+    // the bar, which stalls the panel ~1s on the first toggle of a
+    // session. Local state answers instantly either way.
+    pendingEntry = entry
+    persistDebounce.restart()
+  }
+
+  property var pendingEntry: null
+
+  function flushPersist() {
+    if (!pendingEntry) return
+    var entry = pendingEntry
+    pendingEntry = null
     if (root.bar && root.bar.shell
         && typeof root.bar.shell.updateEntryInline === "function") {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
@@ -316,7 +449,16 @@ Panel {
   // `bar` supplies the write path, `settings` the values, and the patch check
   // makes a second call harmless.
   onBarChanged: migrateCountry()
-  onSettingsChanged: migrateCountry()
+  onSettingsChanged: {
+    // The shell echo after a footer toggle carries the same value the local
+    // override already shows, so dropping the override changes nothing
+    // visually while letting future external edits through.
+    hideSeenOverride = false
+    epicMobileOverride = ({})
+    storesOverride = ({})
+    notifyOverride = ({})
+    migrateCountry()
+  }
 
   function migrateCountry() {
     var patch = Model.countryPatch(root.settings)
@@ -329,34 +471,158 @@ Panel {
   function enabledKey(store) { return store + "Enabled" }
   function notifyKey(store) { return store + "Notify" }
 
+  // A mobile game is hidden the moment its platform toggle is off, without
+  // waiting for a re-fetch: the feeds already landed in the bucket, and only
+  // the view needs to drop them. Only Epic rows carry a platform.
+  function platformHidden(platform) {
+    if (platform === "android") return epicMobileOn.android !== true
+    if (platform === "ios") return epicMobileOn.ios !== true
+    return false
+  }
+
+  function visibleGamesFor(store) {
+    var games = bucket(store).games || []
+    var out = []
+    for (var i = 0; i < games.length; i++) {
+      if (!platformHidden(games[i] && games[i].platform)) out.push(games[i])
+    }
+    return out
+  }
+
+  // The settings page as a flat row model: a heading then switch rows per
+  // store, then a general section. Grouped by store because that is how
+  // the watch/notify preferences are thought about.
+  function settingsRows() {
+    var rows = []
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var store = Model.STORES[i]
+      rows.push({ kind: "heading", label: Model.STORE_LABELS[store] || store, store: store })
+      rows.push({ kind: "store", label: "", store: store })
+      if (store === "epic") {
+        rows.push({ kind: "platforms", label: "", store: store })
+      }
+    }
+    rows.push({ kind: "heading", label: "General" })
+    rows.push({ kind: "toggle", label: "Hide seen games",
+                setting: "hideSeen", store: "", what: "hideSeen" })
+    rows.push({ kind: "sliderRefresh", label: "Refresh interval" })
+    rows.push({ kind: "sliderNotify", label: "Store notification limit" })
+    rows.push({ kind: "country", label: "Store country" })
+    return rows
+  }
+
+  // Only the lone "Hide seen games" toggle routes through these; every store
+  // and platform switch binds its state directly.
+  function settingsToggleChecked(entry) {
+    return !!entry && entry.what === "hideSeen" && hideSeen
+  }
+
+  function settingsToggleFlip(entry) {
+    if (entry && entry.what === "hideSeen") toggleHideSeen()
+  }
+
+  // Buckets as the panel actually reads them: only watched stores, and
+  // only their visible games. The hero count, tooltip, bar dot and store
+  // error all read this, so a switched-off store cannot inflate any of
+  // them.
+  function displayBuckets() {
+    return enabledBuckets()
+  }
+
   // Switching a store off stops it being fetched at all; switching it back on
   // re-records silently rather than announcing everything it missed.
   function toggleStore(store) {
     targetStore = store
-    persist({ [enabledKey(store)]: !storesOn[store] })
+    suppressHover()
+    var turningOn = storesOn[store] !== true
+    var next = {}
+    for (var s in storesOn) next[s] = storesOn[s]
+    next[store] = turningOn
+    storesOverride = next
+    persist({ [enabledKey(store)]: turningOn })
+    // Re-enabling re-records silently: the baseline and the seen marks stay,
+    // but priming is dropped so nothing from the off period is announced.
+    if (turningOn && seenLoaded) {
+      seenState = Model.unprimeStore(seenState, store)
+      persistSeen()
+    }
     reanchorCursor()
+    // Fetch just this store now (stale rows if it has them are already
+    // visible), instead of the slowest store on a full refresh.
+    if (turningOn && !bucket(store).busy) startFetch(store)
   }
 
   function toggleBell(store) {
     targetStore = store
-    persist({ [notifyKey(store)]: !notifyOn[store] })
+    var next = {}
+    for (var n in notifyOn) next[n] = notifyOn[n]
+    next[store] = notifyOn[store] !== true
+    notifyOverride = next
+    persist({ [notifyKey(store)]: next[store] })
+  }
+
+  function suppressHover() {
+    hoverSuppressUntil = Date.now() + 1000
+    cursorActive = false
+    pointerIndex = -1
+    selectedIndex = -1
+    lastPointerScene = Qt.point(-1, -1)
+  }
+
+  // A toggle that reshapes the list clears any selection outright instead
+  // of re-anchoring it: clamp-and-rehighlight picks whichever row now
+  // happens to sit at the old index and flashes it for a frame.
+  function resetSelectionAfterToggle() {
+    suppressHover()
+  }
+
+  // Epic mobile sub-platform switches, toggled from the panel footer. The
+  // settings keys are epicMobileAndroid / epicMobileIos; map a platform to
+  // the one it owns so a click never writes the other platform's key.
+  function epicMobileKey(platform) {
+    return platform === "ios" ? "epicMobileIos" : "epicMobileAndroid"
+  }
+
+  function toggleEpicMobile(platform) {
+    if (Model.PLATFORMS.indexOf(platform) < 0) return
+    var turningOn = epicMobileOn[platform] !== true
+    snapPanelHeight()
+    suppressHover()
+    var next = { "android": epicMobileOn.android === true,
+                 "ios": epicMobileOn.ios === true }
+    next[platform] = turningOn
+    epicMobileOverride = next
+    persist({ [epicMobileKey(platform)]: turningOn })
+    // Epic's mobile feeds share the epic baseline, so enabling one has to
+    // re-prime that store as well; otherwise its currently free games would
+    // arrive as a burst of "new" notifications.
+    if (turningOn && seenLoaded) {
+      seenState = Model.unprimeStore(seenState, "epic")
+      persistSeen()
+    }
+    resetSelectionAfterToggle()
+    // Enabling a platform fetches it immediately rather than waiting for
+    // the next scheduled refresh, so the rows appear without a manual r.
+    if (turningOn && storesOn.epic === true && !bucket("epic").busy) startFetch("epic")
   }
 
   // The eye hides games the user has already marked seen. Persisted like the
   // switches and bells so it survives a restart.
   function toggleHideSeen() {
-    persist({ hideSeen: !hideSeen })
-    reanchorCursor()
+    snapPanelHeight()
+    var next = !hideSeen
+    hideSeenOverrideValue = next
+    hideSeenOverride = true
+    persist({ hideSeen: next })
+    resetSelectionAfterToggle()
   }
 
-  function toggleSelectedStore() {
-    var store = cursorStore()
-    if (store) toggleStore(store)
-  }
-
-  function toggleSelectedBell() {
-    var store = cursorStore()
-    if (store) toggleBell(store)
+  // KeyboardPanel animates drawnHeight whenever it changes while live
+  // (200ms), even for a deliberate show/hide toggle that should be instant.
+  // Snapping it off here makes the next size change land in one step; the
+  // panel re-arms the animation on its next open.
+  function snapPanelHeight() {
+    if (panel) panel.heightLive = false
   }
 
   function errorsByStore() {
@@ -373,7 +639,8 @@ Panel {
   // without naming each store in the binding.
   function hasStoreError() {
     for (var i = 0; i < Model.STORES.length; i++) {
-      if (bucket(Model.STORES[i]).error) return true
+      var store = Model.STORES[i]
+      if (storesOn[store] === true && bucket(store).error) return true
     }
     return false
   }
@@ -382,11 +649,13 @@ Panel {
   // once every new game has been marked.
   function markSeen(store, id) {
     if (!seenLoaded) return
+    var key = store + ":" + id
     seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
-    // With seen games hidden, marking one removes its row underneath the
-    // cursor, so re-anchor rather than leaving a stale index behind.
-    reanchorCursor()
+    // The reorder (unseen first) moves the marked row to the bottom of
+    // its store, so follow it by id rather than leaving the cursor on
+    // whichever game now sits at the old index.
+    setCursorById(key)
   }
 
   // The game the highlight is on, keyboard or pointer, so h marks whichever row
@@ -404,11 +673,14 @@ Panel {
   // forgotten and its marker comes back.
   function toggleSeen(store, id) {
     if (!seenLoaded) return
+    var key = store + ":" + id
     seenState = gameUnseen(store, id)
       ? Model.acknowledgeGame(seenState, store, id)
       : Model.forgetGame(seenState, store, id)
     persistSeen()
-    reanchorCursor()
+    // Follow the toggled game by id: the unseen-first reorder moves it
+    // across the store block, and pressing s again must hit the same game.
+    setCursorById(key)
   }
 
   function toggleHighlighted() {
@@ -446,12 +718,84 @@ Panel {
 
   function startFetch(store) {
     setBucket(store, { busy: true })
+    if (store === "epic") {
+      beginEpicAssembly()
+      return
+    }
     var proc = fetchProcs[store]
     proc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
       .concat(fetchArgs(store))
     proc.running = true
     updateBusy()
   }
+
+  // Start the PC catalog fetch plus whichever mobile platform feeds are
+  // switched on. finalizeEpic() runs only after every expected part answers,
+  // so a partial result is never shown as the whole Epic list.
+  function beginEpicAssembly() {
+    var parts = { pc: null, android: null, ios: null, failed: 0, expected: 0 }
+    epicParts = parts
+    var wanted = ["pc"]
+    if (epicMobileOn.android === true) wanted.push("android")
+    if (epicMobileOn.ios === true) wanted.push("ios")
+    parts.expected = wanted.length
+    for (var i = 0; i < wanted.length; i++) {
+      var which = wanted[i]
+      if (which === "pc") {
+        epicProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgs("epic"))
+        epicProc.running = true
+      } else if (which === "android") {
+        epicMobileAndroidProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgsMobile("android"))
+        epicMobileAndroidProc.running = true
+      } else {
+        epicMobileIosProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgsMobile("ios"))
+        epicMobileIosProc.running = true
+      }
+    }
+    updateBusy()
+  }
+
+  function finishEpicPart(which, games) {
+    // A part answers through both its stream and its exit, so only the first
+    // to arrive is recorded; the second is a no-op. Otherwise a failing feed
+    // counts its failure twice (once per handler) and flips a partial failure
+    // into a total one.
+    if (!epicParts || epicParts[which] !== null) return
+    epicParts[which] = games || []
+    checkEpicAssembly()
+  }
+
+  function failEpicPart(which) {
+    if (!epicParts || epicParts[which] !== null) return
+    epicParts[which] = []
+    epicParts.failed++
+    checkEpicAssembly()
+  }
+
+  function checkEpicAssembly() {
+    if (!epicParts) return
+    var result = Model.epicAssemblyResult(epicParts)
+    if (!result) return
+    epicParts = null
+    // A feed that failed does not fail the store while another part still
+    // answered: the user sees what we have and the error line names what is
+    // missing. Only a total failure is an unreachable store.
+    if (result.mode === "partial") {
+      succeed("epic", result.games)
+      setBucket("epic", { error: "Could not reach Epic Mobile" })
+    } else if (result.mode === "fail") {
+      fail("epic", "Could not reach Epic")
+    } else {
+      succeed("epic", result.games)
+    }
+  }
+
+  // Bridge between the generic publish() and the assembly buffer: the PC
+  // catalog answers through publish(), mobile through publishEpicMobile().
+  // publish() is called with "epic" for PC; see publishEpicMobile.
 
   function fetchArgs(store) {
     // Amazon is rendered rather than requested, so a browser is its transport.
@@ -516,6 +860,18 @@ Panel {
     return "https://www.gog.com/giveaway/api/get"
   }
 
+  function fetchArgsMobile(platform) {
+    var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
+    return [
+      "curl", "-fsS", "--max-time", String(deadlineSeconds),
+      "--max-filesize", String(Model.MAX_BYTES),
+      "-A", Model.USER_AGENT,
+      "-H", "Accept: application/json",
+      "--write-out", "\n%{http_code}",
+      Model.epicMobileUrl(platform, country)
+    ]
+  }
+
   // curl's -f makes a 404 an error exit, but GOG's 404 means "no giveaway
   // running" rather than a failure. The body is empty in that case, so the
   // store is reported healthy and empty.
@@ -549,10 +905,38 @@ Panel {
       return
     }
     if (!parsed.ok) {
+      if (store === "epic") {
+        failEpicPart("pc")
+        return
+      }
       fail(store, "Store returned an unexpected response")
       return
     }
+    if (store === "epic") {
+      finishEpicPart("pc", parsed.games)
+      return
+    }
     succeed(store, parsed.games)
+  }
+
+  // Mobile discover feeds answer into the Epic assembly, not straight to the
+  // bucket, so the PC snapshot and both platforms merge in one succeed().
+  function publishEpicMobile(platform, raw) {
+    var body = String(raw || "")
+    var split = body.lastIndexOf("\n")
+    if (split >= 0) body = body.slice(0, split)
+    var parsed
+    try {
+      parsed = Model.parseEpicMobile(body, platform)
+    } catch (e) {
+      failEpicPart(platform)
+      return
+    }
+    if (!parsed.ok) {
+      failEpicPart(platform)
+      return
+    }
+    finishEpicPart(platform, parsed.games)
   }
 
   function succeed(store, games) {
@@ -685,22 +1069,6 @@ Panel {
     return row && row.kind === "game" ? row : null
   }
 
-  // The store the keyboard acts on: whichever store the cursor last landed on.
-  //
-  // It is deliberately NOT re-derived from the current selection. Switching a
-  // store off removes its rows, which re-anchors the cursor onto a different
-  // store's game, so deriving from the selection would make a second press of e
-  // toggle some other store. The remembered value only changes when the user
-  // moves the cursor or clicks a row, which is what "twice on the same game"
-  // has to mean.
-  function cursorStore() {
-    if (targetStore) return targetStore
-    var row = selectedGame()
-    if (!row) return ""
-    targetStore = row.store
-    return row.store
-  }
-
   // Re-anchor the cursor after the row list changes underneath it.
   function reanchorCursor() {
     var allowed = gameRowIndexes()
@@ -820,7 +1188,31 @@ Panel {
     }
     onExited: function(exitCode) {
       if (exitCode !== 0 && root.bucket("epic").busy)
-        root.fail("epic", "Could not reach Epic")
+        root.failEpicPart("pc")
+    }
+  }
+
+  Process {
+    id: epicMobileAndroidProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.publishEpicMobile("android", text)
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && root.bucket("epic").busy)
+        root.failEpicPart("android")
+    }
+  }
+
+  Process {
+    id: epicMobileIosProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.publishEpicMobile("ios", text)
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && root.bucket("epic").busy)
+        root.failEpicPart("ios")
     }
   }
 
@@ -871,6 +1263,14 @@ Panel {
   }
 
   Timer {
+    id: persistDebounce
+    // Only a safety net now: the normal flush is on panel close.
+    interval: 5000
+    repeat: false
+    onTriggered: root.flushPersist()
+  }
+
+  Timer {
     id: retryTimer
     interval: 30000
     onTriggered: root.refresh()
@@ -894,7 +1294,8 @@ Panel {
     bar: root.bar
     text: Model.BAR_ICON
     dimmed: !root.hasGames || root.stale
-    tooltipText: Model.statusTitle(root.buckets, root.storesOn, root.anyBusy)
+    tooltipText: Model.statusTitle(root.displayBuckets(), root.storesOn, root.anyBusy)
+      + "\n" + Model.tooltipDetail(root.displayBuckets(), root.storesOn)
       + "\n" + root.freshness
 
     onPressed: function(buttonCode) {
@@ -933,16 +1334,24 @@ Panel {
     contentWidth: panel.fittedContentWidth(Style.space(430))
     // The hero and the pinned footer are no longer part of the list's content,
     // so both are added back in to keep the card tall enough to hold them.
+    // In the settings page the settings column stands in for the list.
     contentHeight: panel.fittedContentHeight(pinned.height
-                                             + panelList.contentHeight
-                                             + panelFooter.implicitHeight,
-                                             Style.space(620))
+                                             + (root.showSettings
+                                                 ? settingsPage.contentHeight
+                                                 : panelList.contentHeight)
+                                             + (root.showSettings
+                                                 ? settingsFooter.implicitHeight
+                                                 : panelFooter.implicitHeight),
+                                             root.showSettings ? Style.space(900) : Style.space(620))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
 
       onMoveRequested: function(dx, dy) {
+        // In Settings the list is not on screen, so its cursor must not
+        // move (or highlight an invisible row).
+        if (root.showSettings) return
         if (!root.cursorActive) {
           // The first move engages the cursor. When the pointer is highlighting
           // a game, that game is the base position and the step moves from it,
@@ -970,14 +1379,29 @@ Panel {
       // on every fetch, but no row is shown as selected until the user presses
       // j/k or an arrow, so activating before then opened an arbitrary game
       // that had never been presented as the selection.
-      onActivateRequested: if (root.cursorActive) root.openSelected()
-      onCloseRequested: root.close()
+      onActivateRequested: if (!root.showSettings && root.cursorActive) root.openSelected()
+      onCloseRequested: {
+        // Esc backs out one level at a time rather than dumping the user
+        // out of the panel from deep inside Settings.
+        if (root.showSettings) root.showSettings = false
+        else if (root.showShortcuts) root.showShortcuts = false
+        else root.close()
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
         var key = text.toLowerCase()
+        // Game keys are inert in Settings; only r/v and the settings key act.
+        if (key === ",") {
+          root.showSettings = !root.showSettings
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+          return
+        }
+        if (root.showSettings) {
+          if (key === "r") root.refresh()
+          else if (key === "v") root.toggleHideSeen()
+          return
+        }
         if (key === "r") root.refresh()
-        else if (key === "e") root.toggleSelectedStore()
-        else if (key === "n") root.toggleSelectedBell()
         else if (key === "s") root.toggleHighlighted()
         else if (key === "v") root.toggleHideSeen()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
@@ -1040,16 +1464,19 @@ Panel {
             }
 
             // Wraps rather than elides: the count sentence is a full clause.
+            // Standard case now — the caps voice moved to the title and
+            // store names. Contributing stores only, so the subtitle never
+            // names a section the list is not showing.
             Text {
               width: parent.width
               textFormat: Text.PlainText
               visible: text !== ""
-              text: Model.heroDetail(root.buckets, root.storesOn).toUpperCase()
+              text: Model.heroDetail(root.displayBuckets(), root.storesOn)
               color: Qt.darker(hero.tint, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               font.bold: true
-              font.letterSpacing: 1.2
+              font.letterSpacing: 0
               wrapMode: Text.WordWrap
             }
           }
@@ -1070,6 +1497,7 @@ Panel {
       // positionViewAtIndex, which is what keeps the cursor visible.
       ListView {
         id: panelList
+        visible: !root.showSettings
         anchors.top: pinned.bottom
         anchors.bottom: panelFooter.top
         anchors.left: parent.left
@@ -1098,6 +1526,8 @@ Panel {
 
           readonly property bool isHeader: modelData.kind === "header"
           readonly property bool isHidden: modelData.kind === "hidden"
+          readonly property bool isEmpty: modelData.kind === "empty"
+          readonly property bool isChecking: modelData.kind === "checking"
 
           // Whether this row's game has not been acknowledged, and whether its
           // giveaway is within a day of ending (or past its end but still
@@ -1115,8 +1545,7 @@ Panel {
           // list, had its top cut off by a flat 30px row. Deriving the height
           // from the switch keeps it whole without hard-coding a size that a
           // larger theme font would invalidate.
-          readonly property int headerRowHeight:
-            Math.max(headerSwitch.implicitHeight, Style.space(30))
+          readonly property int headerRowHeight: Style.space(30)
 
           // The empty-store note needs air below it. Without it the note
           // ended flush with its row and sat right on the list's trailing
@@ -1127,14 +1556,16 @@ Panel {
                 ? storeError.implicitHeight + Style.space(8) : 0)
             : isHidden
               ? hiddenNote.implicitHeight + Style.spacing.sm
-              : gameTitle.implicitHeight + Style.spacing.sm
+              : isEmpty
+                ? emptyNote.implicitHeight + Style.spacing.sm
+                : isChecking
+                  ? checkingNote.implicitHeight + Style.spacing.sm
+                  : titleRow.implicitHeight + Style.spacing.sm
 
-          // Store header: mark, name, bell, switch.
+          // Store header: mark, name and accent rule.
           Item {
             anchors.fill: parent
             visible: row.isHeader
-            // A store that is switched off reads as present but inactive.
-            opacity: row.isHeader && row.modelData.enabled === false ? 0.45 : 1
 
             // Behind the controls, and accepting no buttons, so hovering the
             // header retargets the keyboard without eating the bell's clicks.
@@ -1151,7 +1582,7 @@ Panel {
             Item {
               id: headerMark
               anchors.left: parent.left
-              anchors.leftMargin: Style.spacing.sm
+              anchors.leftMargin: Style.space(24)
               anchors.verticalCenter: parent.verticalCenter
               width: root.markSize
               height: root.markSize
@@ -1197,64 +1628,38 @@ Panel {
               anchors.left: headerMark.right
               anchors.leftMargin: Style.space(8)
               anchors.verticalCenter: parent.verticalCenter
-              // Room for the bell and the switch; the bell contributes nothing
-              // when it is hidden.
-              width: parent.width - (headerBell.visible ? headerBell.width : 0)
-                     - headerSwitch.width - Style.spacing.sm * 3
               textFormat: Text.PlainText
-              text: Model.STORE_LABELS[row.modelData.store] || ""
-              color: root.dim
+              text: (Model.STORE_LABELS[row.modelData.store] || "").toUpperCase()
+              // Regular text colour, bold, so the store pops above the
+              // muted seen rows without competing with the accent markers.
+              color: root.foreground
               font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
               font.bold: true
               font.letterSpacing: 1.0
               elide: Text.ElideRight
             }
 
-            // Bell button: mute or unmute this store's notifications.
-            // Hidden while the store is off, since there is nothing to mute.
-            //
-            // A bordered Button, the same kind the footer's Refresh and ? are,
-            // so the three read as one sort of control and share the outline,
-            // hover fill and tooltip rather than the bell being a bare glyph
-            // with its own hand-rolled hover box.
-            Button {
-              id: headerBell
-              visible: row.modelData.enabled !== false
-              anchors.right: headerSwitch.left
-              anchors.rightMargin: Style.spacing.xs
+            // Rules flanking the mark and name, centred on the row: one
+            // from the window's left padding to the mark, one from the
+            // name's right edge to the window's right padding.
+            PanelSeparator {
               anchors.verticalCenter: parent.verticalCenter
-              text: root.notifyOn[row.modelData.store]
-                ? "\u{F0F3}" : "\u{F1F6}"
-              bordered: true
-              foreground: root.notifyOn[row.modelData.store]
-                ? root.dim : Qt.darker(root.dim, 1.4)
-              accent: Commons.Color.accent
-              fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
-              tooltipText: root.notifyOn[row.modelData.store]
-                ? "Mute notifications" : "Unmute notifications"
-              onClicked: root.toggleBell(row.modelData.store)
+              anchors.left: parent.left
+              anchors.leftMargin: Style.spacing.sm
+              anchors.right: headerMark.left
+              anchors.rightMargin: Style.space(8)
+              foreground: root.foreground
+              height: Style.space(2)
             }
-
-            // Switch: stop or resume watching this store entirely.
-            ToggleSwitch {
-              id: headerSwitch
+            PanelSeparator {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.left: headerLabel.right
+              anchors.leftMargin: Style.space(8)
               anchors.right: parent.right
               anchors.rightMargin: Style.spacing.sm
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.storesOn[row.modelData.store] === true
               foreground: root.foreground
-              accent: Commons.Color.accent
-              onToggled: root.toggleStore(row.modelData.store)
-
-              PanelToolTip {
-                visible: headerSwitch.containsMouse
-                text: (root.storesOn[row.modelData.store]
-                  ? "Stop watching " : "Watch ")
-                  + (Model.STORE_LABELS[row.modelData.store] || "this store")
-                fontFamily: root.fontFamily
-              }
+              height: Style.space(2)
             }
           }
 
@@ -1282,7 +1687,7 @@ Panel {
             anchors.topMargin: row.isHeader ? Style.space(30) : 0
             anchors.left: parent.left
             anchors.right: parent.right
-            height: gameTitle.implicitHeight + Style.spacing.sm
+            height: titleRow.implicitHeight + Style.spacing.sm
             visible: row.modelData.kind === "game"
             radius: Style.cornerRadius
             // One highlight, owned by whichever input was used last: the
@@ -1295,12 +1700,12 @@ Panel {
               : "transparent"
 
             // The marker for a game the user has not acknowledged, or one whose
-            // giveaway is ending soon. It sits in the left gutter, aligned with
-            // the store's own mark, so the title keeps its indent and nothing
-            // shifts as markers clear. When both apply the hourglass wins and
-            // the coin is withheld; the game stays unacknowledged underneath.
+            // giveaway is ending soon. Centred in the same mark-sized box
+            // as the header mark, so the gutter reads as one column.
             Text {
               id: gameMark
+              width: root.markSize
+              horizontalAlignment: Text.AlignHCenter
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
@@ -1317,30 +1722,79 @@ Panel {
               PanelToolTip {
                 visible: gameMouse.containsMouse && gameMouse.overGlyph
                 text: row.endingSoon
-                  ? (row.unseen ? "Ending soon. Mark as seen" : "Ending soon")
+                  ? (Model.endsInLabel(row.modelData.game.endsAt, root.nowMs)
+                      + (row.unseen ? ". Mark as seen" : ""))
                   : "Mark as seen"
                 fontFamily: root.fontFamily
               }
             }
 
-            Text {
-              id: gameTitle
+            // Title plus, on Epic mobile rows, an interpunct and a larger
+            // platform glyph immediately to its right. The glyph is scaled
+            // up rather than set in a bigger font, so it reads bigger
+            // without growing the row, and it sits in its own Text so it
+            // cannot clip into the title.
+            Row {
+              id: titleRow
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              // Indented under the store name so the two levels read apart.
               anchors.leftMargin: root.storeIndent
               anchors.rightMargin: Style.spacing.sm
+              spacing: Style.space(4)
+
               // Titles from the network are plain text, never markup. A header
               // row has no `game`, and hiding a row does not stop this binding
               // being evaluated, so it is guarded rather than made invisible.
-              textFormat: Text.PlainText
-              text: row.modelData.kind === "game" && row.modelData.game
-                ? row.modelData.game.title : ""
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
+              // Width leaves room for the separator and glyph when shown, so
+              // a long title elides in front of them instead of pushing
+              // them off.
+              Text {
+                id: gameTitle
+                width: Math.min(implicitWidth, parent.width
+                  - (platformGroup.visible
+                      ? separatorDot.implicitWidth
+                        + platformGroup.implicitWidth * 1.4
+                        + titleRow.spacing * 2 : 0))
+                textFormat: Text.PlainText
+                text: row.modelData.kind === "game" && row.modelData.game
+                  ? row.modelData.game.title : ""
+                // Seen games read muted next to the unseen ones, so the
+                // eye can scan what is actually new.
+                color: row.unseen ? root.foreground : root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                elide: Text.ElideRight
+              }
+
+              Text {
+                id: separatorDot
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.modelData.kind === "game" && !!row.modelData.game
+                  && !!row.modelData.game.platform
+                textFormat: Text.PlainText
+                text: "\u00B7"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+              }
+
+              Text {
+                id: platformGroup
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.modelData.kind === "game" && !!row.modelData.game
+                  && !!row.modelData.game.platform
+                textFormat: Text.PlainText
+                text: row.modelData.kind === "game" && row.modelData.game
+                  && row.modelData.game.platform
+                  ? Model.platformGlyph(row.modelData.game.platform) : ""
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                scale: 1.4
+                transformOrigin: Item.Center
+              }
             }
 
             MouseArea {
@@ -1361,6 +1815,7 @@ Panel {
               // claiming the highlight there would yank the cursor back to
               // wherever the scroll left the pointer.
               onEntered: {
+                if (Date.now() < root.hoverSuppressUntil) return
                 root.pointerIndex = row.index
                 root.targetStore = row.modelData.store
               }
@@ -1370,6 +1825,7 @@ Panel {
               // pointer also reports a position change, so only a change in the
               // pointer's scene point counts as movement.
               onPositionChanged: function(mouse) {
+                if (Date.now() < root.hoverSuppressUntil) return
                 if (!root.pointerMoved(mapToItem(null, mouse.x, mouse.y))) return
                 root.pointerIndex = row.index
                 root.cursorActive = false
@@ -1403,11 +1859,477 @@ Panel {
             textFormat: Text.PlainText
             visible: row.isHidden
             text: row.isHidden && row.modelData
-              ? Model.hiddenSeenLabel(row.modelData.count) : ""
+              ? Model.hiddenSeenLabel(row.modelData.count, row.modelData.endingSoon) : ""
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleHideSeen()
+            }
+          }
+
+          // A freshly enabled store that is still fetching says so, so
+          // the wait reads as progress rather than lag.
+          Text {
+            id: checkingNote
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.storeIndent
+            anchors.rightMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            visible: row.isChecking
+            text: "Checking…"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          // No free giveaways anywhere: a sad glyph and the plain message,
+          // so an empty panel is a statement rather than a blank card.
+          Row {
+            id: emptyNote
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(8)
+            visible: row.isEmpty
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              // U+F119 (fa-face-frown in Nerd Fonts 3.5.1): a plain
+              // downturned mouth that reads as sad at row size. The
+              // crying-face marks look like the Android robot down here.
+              text: "\u{F119}"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "No free game giveaways found."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+          }
+        }
+      }
+
+      // Settings page: every preference in one place, grouped by store.
+      // Shares the list's slot; the hero and footer stay pinned.
+      ListView {
+        id: settingsPage
+        visible: root.showSettings
+        anchors.top: pinned.bottom
+        anchors.bottom: settingsFooter.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Style.spacing.sm
+        anchors.rightMargin: Style.spacing.sm
+        clip: true
+        model: root.settingsRows()
+        boundsBehavior: Flickable.StopAtBounds
+        spacing: Style.spacing.sm
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+
+        ScrollBar.vertical: ScrollBar {
+          policy: ScrollBar.AsNeeded
+        }
+
+        delegate: Item {
+          id: settingRow
+          required property var modelData
+          required property int index
+          width: settingsPage.width
+          readonly property bool isHeading: modelData.kind === "heading"
+          // Layout height per kind, so contentHeight is real before layout.
+          // Every non-heading row uses the control height, giving the
+          // General section the same tight rhythm as the store sections
+          // while still clearing a dropdown's hover border.
+          height: isHeading ? Style.font.caption + Style.space(24)
+            : Style.spacing.controlHeight
+
+          Text {
+            id: settingLabel
+            anchors.left: parent.left
+            // Setting rows sit indented under their store heading, the
+            // same way game rows sit under a store header. Headings sit
+            // clear of their mark.
+            anchors.leftMargin: settingRow.isHeading
+              ? Style.space(24) + root.markSize + Style.space(8) : root.storeIndent
+            anchors.verticalCenter: parent.verticalCenter
+            visible: settingRow.isHeading || modelData.kind === "country"
+            // A country label sizes to its text so the field sits
+            // directly beside it instead of at the row's far edge.
+            // Labels size to their text so the flanking rule on the right
+            // starts right after the name; the country label fills the
+            // shared column so its field starts on the same x as every
+            // other control.
+            width: modelData.kind === "country"
+              ? root.settingsLabelColumn : implicitWidth
+            textFormat: Text.PlainText
+            text: settingRow.isHeading
+              ? (modelData.label || "").toUpperCase()
+              : ((modelData.label || "") + ":")
+            // Headings carry the same treatment as the store names in the
+            // main list: regular text colour, bold, at body size.
+            color: settingRow.isHeading ? root.foreground : root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: settingRow.isHeading ? Style.font.body : Style.font.bodySmall
+            font.bold: settingRow.isHeading
+            font.letterSpacing: settingRow.isHeading ? 1.0 : 0
+            elide: Text.ElideRight
+          }
+
+          // The store's mark beside its Settings heading, matching the
+          // main list (Epic uses its bundled logo).
+          Item {
+            id: settingMark
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(24)
+            anchors.verticalCenter: parent.verticalCenter
+            width: root.markSize
+            height: root.markSize
+            visible: settingRow.isHeading
+
+            Text {
+              anchors.centerIn: parent
+              visible: !!modelData.store && modelData.store !== "epic"
+              textFormat: Text.PlainText
+              text: Model.STORE_GLYPHS[modelData.store] || ""
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: root.markSize
+            }
+
+            Text {
+              anchors.centerIn: parent
+              visible: !modelData.store
+              textFormat: Text.PlainText
+              text: "\u{F0AD}"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: root.markSize
+            }
+
+            Image {
+              id: settingEpicLogo
+              anchors.fill: parent
+              source: modelData.store === "epic"
+                ? root.pluginFile("assets/epic.svg") : ""
+              fillMode: Image.PreserveAspectFit
+              sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+              sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+              visible: false
+              layer.enabled: modelData.store === "epic"
+            }
+
+            MultiEffect {
+              anchors.fill: settingEpicLogo
+              source: settingEpicLogo
+              visible: modelData.store === "epic"
+              colorization: 1.0
+              colorizationColor: root.dim
+            }
+          }
+
+          // The same flanking rules as the main list: one from the window's
+          // left padding to the mark, one from the name's right edge to the
+          // right padding.
+          PanelSeparator {
+            visible: settingRow.isHeading
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: Style.spacing.sm
+            anchors.right: settingMark.left
+            anchors.rightMargin: Style.space(8)
+            foreground: root.foreground
+            height: Style.space(2)
+          }
+          PanelSeparator {
+            visible: settingRow.isHeading
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: settingLabel.right
+            anchors.leftMargin: Style.space(8)
+            anchors.right: parent.right
+            foreground: root.foreground
+            height: Style.space(2)
+          }
+
+          // A lone toggle (Hide seen games) sits with its switch at the
+          // same left edge as the store switches, so every toggle, dropdown
+          // and input in the page lines up in one column.
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: root.storeIndent
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root.settingsGap
+            visible: modelData.kind === "toggle"
+
+            Text {
+              width: root.settingsLabelColumn
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: (modelData.label || "") + ":"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            // Wrapped so the switch's cursor-ring inset does not push the
+            // visible track right of the dropdown/input column below it.
+            Item {
+              width: generalToggle.implicitWidth - root.settingsTogglePad
+              height: generalToggle.implicitHeight
+              anchors.verticalCenter: parent.verticalCenter
+
+              ToggleSwitch {
+                id: generalToggle
+                x: -root.settingsTogglePad
+                anchors.verticalCenter: parent.verticalCenter
+                checked: root.settingsToggleChecked(modelData)
+                foreground: root.foreground
+                accent: Commons.Color.accent
+                onToggled: root.settingsToggleFlip(modelData)
+              }
+            }
+          }
+
+          // Condensed store row: Enabled and Notifications on one line,
+          // each control at a fixed column so the two switch stacks line
+          // up down the whole page.
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: root.storeIndent
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root.settingsGap
+            visible: modelData.kind === "store"
+
+            Text {
+              width: root.settingsStoreLabel1
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "Enabled:"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            ToggleSwitch {
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.storesOn[modelData.store] === true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              onToggled: root.toggleStore(modelData.store)
+            }
+            Item {
+              width: root.settingsCol2X
+                - root.settingsStoreLabel1 - root.settingsGap
+                - root.settingsToggleWidth - root.settingsGap
+            }
+            Text {
+              width: root.settingsStoreLabel2
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "Notifications:"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            ToggleSwitch {
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.notifyOn[modelData.store] === true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              onToggled: root.toggleBell(modelData.store)
+            }
+          }
+
+          // Epic platforms row: Android and iOS on one line, in the same
+          // two columns as Enabled and Notifications above it.
+          Row {
+            anchors.left: parent.left
+            anchors.leftMargin: root.storeIndent
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root.settingsGap
+            visible: modelData.kind === "platforms"
+
+            Text {
+              width: root.settingsStoreLabel1
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "Android:"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            ToggleSwitch {
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.epicMobileOn.android === true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              onToggled: root.toggleEpicMobile("android")
+            }
+            Item {
+              width: root.settingsCol2X
+                - root.settingsStoreLabel1 - root.settingsGap
+                - root.settingsToggleWidth - root.settingsGap
+            }
+            Text {
+              width: root.settingsStoreLabel2
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: "iOS:"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            ToggleSwitch {
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.epicMobileOn.ios === true
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              onToggled: root.toggleEpicMobile("ios")
+            }
+          }
+          // Sensible dropdown for both ranged settings, with a Custom
+          // entry that reveals a numeric-only input for schema-valid
+          // values between the presets. The current value always shows:
+          // if it is not a preset, Custom is selected and the input
+          // carries it.
+          Row {
+            id: rangeRow
+            anchors.left: parent.left
+            anchors.leftMargin: root.storeIndent
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root.settingsGap
+            visible: modelData.kind === "sliderRefresh" || modelData.kind === "sliderNotify"
+
+            Text {
+              width: root.settingsLabelColumn
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: modelData.kind === "sliderRefresh"
+                ? "Refresh interval (min):" : "Store notification limit:"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            Dropdown {
+              id: rangeDropdown
+              width: root.settingsControlWidth
+              label: ""
+              showLabel: false
+              value: {
+                var cur = modelData.kind === "sliderRefresh"
+                  ? root.refreshMinutes : root.maxStoreNotifications
+                var presets = modelData.kind === "sliderRefresh"
+                  ? [30, 45, 60, 90, 120, 240, 360]
+                  : [0, 1, 2, 3, 4, 5]
+                return presets.indexOf(cur) >= 0 ? String(cur) : "custom"
+              }
+              options: modelData.kind === "sliderRefresh"
+                ? [{ value: "30", label: "30m" }, { value: "45", label: "45m" },
+                   { value: "60", label: "1h" }, { value: "90", label: "1.5h" },
+                   { value: "120", label: "2h" }, { value: "240", label: "4h" },
+                   { value: "360", label: "6h" },
+                   { value: "custom", label: "Custom" }]
+                : [{ value: "0", label: "No limit" }, { value: "1", label: "1" },
+                   { value: "2", label: "2" }, { value: "3", label: "3" },
+                   { value: "4", label: "4" }, { value: "5", label: "5" },
+                   { value: "custom", label: "Custom" }]
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              // Shown as text, never the raw value, so a non-preset
+              // current value still reads as Custom in the trigger.
+              property bool customSelected: false
+              onChanged: {
+                rangeDropdown.customSelected = value === "custom"
+                if (value !== "custom") {
+                  if (modelData.kind === "sliderRefresh")
+                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(Number(value)) })
+                  else
+                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(Number(value)) })
+                }
+              }
+              Component.onCompleted: rangeDropdown.customSelected =
+                (modelData.kind === "sliderRefresh"
+                  ? [30, 45, 60, 90, 120, 240, 360]
+                  : [0, 1, 2, 3, 4, 5]).indexOf(
+                    modelData.kind === "sliderRefresh"
+                      ? root.refreshMinutes : root.maxStoreNotifications) < 0
+            }
+
+            TextField {
+              id: customField
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(52)
+              height: Style.spacing.controlHeight
+              verticalPadding: Style.spacing.controlPaddingY
+              visible: rangeDropdown.customSelected
+              text: String(modelData.kind === "sliderRefresh"
+                ? root.refreshMinutes : root.maxStoreNotifications)
+              font.family: root.fontFamily
+              placeholderText: modelData.kind === "sliderRefresh" ? "30–720" : "0–20"
+              onAccepted: {
+                var v = String(text).trim()
+                if (!/^\d+$/.test(v)) { text = String(
+                  modelData.kind === "sliderRefresh"
+                    ? root.refreshMinutes : root.maxStoreNotifications); return }
+                var n = Number(v)
+                if (modelData.kind === "sliderRefresh")
+                  root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n) })
+                else
+                  root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n) })
+                Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+              }
+              onEditingFinished: {
+                var v2 = String(text).trim()
+                if (/^\d+$/.test(v2)) {
+                  var n2 = Number(v2)
+                  if (modelData.kind === "sliderRefresh")
+                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n2) })
+                  else
+                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n2) })
+                }
+                text = String(modelData.kind === "sliderRefresh"
+                  ? root.refreshMinutes : root.maxStoreNotifications)
+                Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+              }
+            }
+          }
+
+          TextField {
+            anchors.left: parent.left
+            anchors.leftMargin: root.storeIndent + root.settingsLabelColumn
+              + root.settingsGap
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(70)
+            height: Style.spacing.controlHeight
+            verticalPadding: Style.spacing.controlPaddingY
+            visible: modelData.kind === "country"
+            text: root.country
+            placeholderText: "US, DE, GB…"
+            font.family: root.fontFamily
+            // Leaving the field returns keyboard focus to the panel, or
+            // keybinds like "s" keep typing into the box afterwards.
+            onAccepted: {
+              root.persist({ country: Model.normalizeCountry(text) })
+              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            }
+            onEditingFinished: {
+              var clean = Model.normalizeCountry(text)
+              if (clean !== root.country) root.persist({ country: clean })
+              text = root.country
+              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            }
           }
         }
       }
@@ -1423,7 +2345,40 @@ Panel {
         anchors.left: panelList.left
         anchors.right: panelList.right
         height: Style.space(30)
-        visible: panelList.interactive && !panelList.atYBeginning
+        visible: !root.showSettings && panelList.interactive && !panelList.atYBeginning
+        gradient: Gradient {
+          GradientStop { position: 0.0; color: Commons.Color.popups.background }
+          GradientStop {
+            position: 1.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
+        }
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.top: parent.top
+          anchors.topMargin: Style.space(2)
+          text: "\u{F077}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      // The settings list gets the same edge hints, but only once it is
+      // actually tall enough to scroll — the store list's fades belong to
+      // the store list.
+      Rectangle {
+        id: settingsTopFade
+        anchors.top: settingsPage.top
+        anchors.left: settingsPage.left
+        anchors.right: settingsPage.right
+        height: Style.space(30)
+        visible: root.showSettings && settingsPage.interactive && !settingsPage.atYBeginning
+        z: 2
         gradient: Gradient {
           GradientStop { position: 0.0; color: Commons.Color.popups.background }
           GradientStop {
@@ -1452,7 +2407,37 @@ Panel {
         anchors.left: panelList.left
         anchors.right: panelList.right
         height: Style.space(30)
-        visible: panelList.interactive && !panelList.atYEnd
+        visible: !root.showSettings && panelList.interactive && !panelList.atYEnd
+        gradient: Gradient {
+          GradientStop {
+            position: 0.0
+            color: Qt.rgba(Commons.Color.popups.background.r,
+                           Commons.Color.popups.background.g,
+                           Commons.Color.popups.background.b, 0)
+          }
+          GradientStop { position: 1.0; color: Commons.Color.popups.background }
+        }
+
+        Text {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.bottom: parent.bottom
+          anchors.bottomMargin: Style.space(2)
+          text: "\u{F078}"
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Rectangle {
+        id: settingsBottomFade
+        anchors.bottom: settingsPage.bottom
+        anchors.left: settingsPage.left
+        anchors.right: settingsPage.right
+        height: Style.space(30)
+        visible: root.showSettings && settingsPage.interactive && !settingsPage.atYEnd
+        z: 2
         gradient: Gradient {
           GradientStop {
             position: 0.0
@@ -1480,6 +2465,7 @@ Panel {
       // one instead of carrying the controls off-screen.
       Column {
         id: panelFooter
+        visible: !root.showSettings
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -1490,15 +2476,24 @@ Panel {
         // the last game row is not flush against the footer.
         topPadding: Style.space(8)
 
+        // When nothing is watched, this one centred line stands alone.
         Text {
           width: parent.width
           textFormat: Text.PlainText
           visible: root.activeStores.length === 0
           wrapMode: Text.WordWrap
-          text: "Every store is switched off. Turn one on with the switch above to start watching."
+          horizontalAlignment: Text.AlignHCenter
+          text: "Every store is disabled. Enable one or more stores in Settings to start watching for free game loot drops."
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
+
+          MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.showSettings = true
+          }
         }
 
         // A rule between the list and the controls, so the buttons are not
@@ -1517,14 +2512,15 @@ Panel {
           visible: root.showShortcuts
           wrapMode: Text.WordWrap
           horizontalAlignment: Text.AlignHCenter
-          text: "r refresh · e enable/disable store · n mute/unmute notifications · s toggle seen · v hide/show seen · j/k scroll · enter open"
+          text: "r refresh · s toggle seen · v hide/show seen · , settings · j/k scroll · enter open"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
 
-        // The very last row: refresh in the near corner, the seen toggle and
-        // help in the far one, and the freshness centred between them.
+        // The very last row: refresh and the seen-eye in the near corner,
+        // the settings gear and help in the far one, and the freshness
+        // centred between them.
         //
         // The text is centred with anchors rather than by filling the row and
         // centring within it, so no button can shift it off centre. Its width
@@ -1532,26 +2528,55 @@ Panel {
         // freshness string from running under a button.
         Item {
           width: parent.width
-          implicitHeight: Math.max(bottomText.implicitHeight,
+          implicitHeight: Math.max(centerColumn.implicitHeight,
                                    refreshButton.implicitHeight,
                                    seenButton.implicitHeight,
+                                   gearButton.implicitHeight,
                                    helpButton.implicitHeight)
 
-          Text {
-            id: bottomText
+          // Centre stack between the button clusters: disabled-store
+          // summary above the freshness, both centred.
+          Column {
+            id: centerColumn
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.min(implicitWidth, parent.width
-                            - refreshButton.implicitWidth
-                            - seenButton.implicitWidth
-                            - helpButton.implicitWidth - Style.space(20))
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-            text: root.freshness
-            color: root.stale ? root.dim : root.footerInk
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            width: parent.width
+              - refreshButton.implicitWidth
+              - seenButton.implicitWidth
+              - gearButton.implicitWidth
+              - helpButton.implicitWidth - Style.space(20)
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              visible: root.disabledSummary !== ""
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              text: root.disabledSummary
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.showSettings = true
+              }
+            }
+
+            Text {
+              id: bottomText
+              width: parent.width
+              textFormat: Text.PlainText
+              horizontalAlignment: Text.AlignHCenter
+              elide: Text.ElideRight
+              text: root.freshness
+              color: root.stale ? root.dim : root.footerInk
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
 
           Button {
@@ -1568,12 +2593,16 @@ Panel {
           }
 
           // Eye: hide or show the games already marked seen. Like the bell it
-          // swaps glyph and tooltip with the state it is in.
+          // swaps glyph and tooltip with the state it is in. Fixed to the
+          // same size as Refresh, so the whole footer reads as one row of
+          // equal boxes.
           Button {
             id: seenButton
-            anchors.right: helpButton.left
-            anchors.rightMargin: Style.spacing.xs
+            anchors.left: refreshButton.right
+            anchors.leftMargin: Style.spacing.xs
             anchors.verticalCenter: parent.verticalCenter
+            width: refreshButton.implicitWidth
+            height: refreshButton.implicitHeight
             text: root.hideSeen ? "\u{F070}" : "\u{F06E}"
             bordered: true
             foreground: root.hideSeen ? root.footerInk
@@ -1584,10 +2613,32 @@ Panel {
             onClicked: root.toggleHideSeen()
           }
 
+          // Gear: open the in-panel settings page.
+          Button {
+            id: gearButton
+            anchors.right: helpButton.left
+            anchors.rightMargin: Style.spacing.xs
+            anchors.verticalCenter: parent.verticalCenter
+            width: refreshButton.implicitWidth
+            height: refreshButton.implicitHeight
+            text: "\u{F013}"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Settings"
+            onClicked: {
+              root.showSettings = !root.showSettings
+              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            }
+          }
+
           Button {
             id: helpButton
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
+            width: refreshButton.implicitWidth
+            height: refreshButton.implicitHeight
             text: "?"
             bordered: true
             foreground: root.footerInk
@@ -1598,19 +2649,66 @@ Panel {
           }
         }
       }
+
+      // In Settings the store-list footer does not apply (Refresh acts on
+      // stores, the eye on the list), so it is swapped for a single
+      // centred way back.
+      Column {
+        id: settingsFooter
+        visible: root.showSettings
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Style.spacing.sm
+        anchors.rightMargin: Style.spacing.sm
+        spacing: Style.space(6)
+        topPadding: Style.space(8)
+
+        PanelSeparator {
+          id: settingsFooterRule
+          width: parent.width
+          foreground: root.foreground
+        }
+
+        Item {
+          width: parent.width
+          implicitHeight: refreshButton.implicitHeight
+
+          Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Exit Settings"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            tooltipText: "Back to the store list"
+            onClicked: {
+              root.showSettings = false
+              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+            }
+          }
+        }
+      }
     }
   }
 
-  onOpenedChanged: if (opened) {
-    cursorActive = false
-    pointerIndex = -1
-    targetStore = ""
-    showShortcuts = false
-    nowMs = Date.now()
-    // Opening the panel refreshes when the data is missing or stale, which is
-    // what makes a long refresh interval safe to live with.
-    if (lastSuccessAt === 0 || stale) refresh()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  onOpenedChanged: {
+    if (!opened) {
+      flushPersist()
+    } else {
+      cursorActive = false
+      pointerIndex = -1
+      targetStore = ""
+      showShortcuts = false
+      showSettings = false
+      nowMs = Date.now()
+      // Opening the panel refreshes when the data is missing or stale, which is
+      // what makes a long refresh interval safe to live with.
+      if (lastSuccessAt === 0 || stale) refresh()
+      Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    }
   }
 
   SequentialAnimation {

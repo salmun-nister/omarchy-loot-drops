@@ -13,9 +13,9 @@ and explicit.
 
 | Kind | Detail |
 | --- | --- |
-| Network | Four store hosts. One GET each per refresh for Steam and GOG, one POST for Epic; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
+| Network | Five store hosts. One GET each per refresh for Steam, GOG and each enabled Epic mobile platform, one POST for Epic's PC catalogue; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
 | Process | `omarchy-shell` (including the notification actions that call back into the widget), `omarchy-notification-send`, and `xdg-open` (via `Qt.openUrlExternally`, for panel rows and the widget's store-page action). All named with resolved paths and argv, never a shell string. |
-| Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. |
+| Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. Settings are written through the shell's own widget-entry API, not by this plugin. |
 | Privileged operations | None. |
 | Credentials read | None. |
 

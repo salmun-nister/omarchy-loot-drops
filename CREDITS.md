@@ -2,9 +2,10 @@
 
 **Inspired by [Steam Sniper](https://github.com/nille/omarchy-steam-sniper)** by
 nille, which watches Steam alone for games that are free to keep. Loot Drops
-is an independent work: it adds Epic, GOG and Amazon Luna, a per-store panel
-layout, per-store switches and bells, a hide-seen filter, a separate seen-id
-baseline per store, and its own parsing, allowlisting and diff logic.
+is an independent work: it adds Epic (including its Android and iOS weekly
+games), GOG and Amazon Luna, a per-store panel layout and one in-panel Settings
+page, a hide-seen filter, a separate seen-id baseline per store, and its own
+parsing, allowlisting and diff logic.
 
 **No third-party code is vendored or copied.** `lib/capped-run` and
 `lib/seen-state` were written for this plugin, as were `Model.js` and
@@ -35,7 +36,9 @@ implementation.
   is not affiliated with, endorsed by, or sponsored by them.
 - The bar icon, status glyphs, and the Steam, GOG and Amazon store marks are
   Nerd Font glyphs already present in the shell's font, not redistributed
-  artwork.
+  artwork. The Android and iOS platform marks (U+F0032 and U+F0037) are
+  Material Design glyphs bundled in the same Nerd Fonts release, likewise not
+  redistributed here.
 
 Crediting an inspiration does not grant permission to copy its code, and an
 absent licence is not permission to copy. If code from another project is ever
