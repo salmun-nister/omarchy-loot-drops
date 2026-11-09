@@ -1,10 +1,10 @@
 {
   "status": "passed",
-  "input_commit": "928d93f135384fca5229cf5680d9514f0eb0a426",
-  "date": "2026-11-05",
-  "platform": "Omarchy 4.5.0-3, Hyprland 0.56.2, kernel 7.2.15-1-omarchy, x86_64, Quickshell 0.3.2.r7, Node v26.13.0",
-  "scope": "Live desktop acceptance of the 0.4.0 candidate: notifications gain three IPC-backed actions (Launch Loot Drops, Open Game Store, Mark as seen) for a single game, a per-store maxStoreNotifications cap (default 3, range 0-20) that bundles a store's batch into one summary whose only action opens the panel, and IPC methods openGame/markSeen. No rendering changed, so preview.png and the theme screenshots were not retaken. Portable checks, the 4.5 live shell, the IPC actions and the install/update/removal lifecycle were run.",
-  "install": "The development symlink was unlinked (the repository untouched) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, which cloned the 0.4.0 commit 928d93f. The clone was checked out at v0.3.1 to stand in for the previous release, the user's entry (amazonEnabled true, hideSeen true) was restored, and the shell restarted; `omarchy plugin update ... --yes` fast-forwarded to 928d93f. The shell.json entry kept both settings and seen.json stayed byte-identical (sha256 aac628ee...), so an update preserves settings and the stored-seen record, with the new maxStoreNotifications key falling back to its default. Removal then deleted the clone, unloaded the plugin and removed its entry while seen.json stayed byte-identical. The development symlink was re-linked, rescanned, enabled on the right, the original shell.json entry restored, and the plugin verified after a final restart. The IPC methods were exercised separately on the running 4.5 shell: marking a game seen through `markSeen epic <id>` changed the acknowledged set, and `openGame` rejected an unknown store and an invalid id without opening anything.",
+  "input_commit": "028a58a74c5c74d4772e8d427a5bf05ded72bc18",
+  "date": "2026-11-08",
+  "platform": "Omarchy 4.5.0-3, Hyprland 0.56.2, kernel 7.2.15-1-omarchy, x86_64, Quickshell 0.3.2, Node v26.13.0",
+  "scope": "Live desktop acceptance of the 0.4.5 candidate: an in-panel Settings page (footer gear or comma) replaces the per-store header switch and bell and hides switched-off stores; Epic's Android and iOS weekly feeds sit behind their own switches with platform glyphs and re-prime silently when enabled; single-game notifications now share the bundle card shape (title \"Loot Drop from <store>\", game name and platform glyph as the subtitle, three actions unchanged); a partial Epic assembly no longer rewrites the shared baseline; preview.png and the theme screenshots were retaken, with Piedmont Gold featured and Sunlit Sands added in place of Catppuccin Latte.",
+  "install": "The development symlink was unlinked (the repository untouched) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, which cloned 028a58a. The clone was checked out at v0.3.1 to stand in for the previous release, the user's entry was restored with both Epic mobile toggles, Amazon Luna and hideSeen=false, and epicNotify temporarily set false so the 0.3.1 baseline rewrite could not fire a burst during the update. The shell was restarted and `omarchy plugin update ... --yes` fast-forwarded to 028a58a; the shell.json entry kept every value, including epicMobileAndroid, epicMobileIos, amazonEnabled, maxStoreNotifications and country. Each fetch rewrites seen.json ids, so the pre-lifecycle state file was restored from a backup after the lifecycle; install, update and removal themselves left it in place. Removal deleted the clone, unloaded the widget and removed its entries while seen.json stayed. The development symlink was re-linked, rescanned and enabled on the right, the original entry restored with epicNotify true, and the shell restarted; the plugin loaded and all three Epic ids were back in the baseline.",
   "commands": [
     "./tests/run",
     "./tests/harness/run",
@@ -13,48 +13,57 @@
     "python3 /home/kevin/.agents/skills/omarchy-plugin-release/scripts/release_preflight.py .",
     "omarchy restart shell",
     "omarchy-shell shell listPlugins",
-    "omarchy-shell shell debugBarGeometry",
-    "omarchy-shell -q salmun-nister.loot-drops markSeen epic <id>",
+    "omarchy-shell -q salmun-nister.loot-drops markSeen amazon <id>",
     "omarchy-shell -q salmun-nister.loot-drops openGame <store> <id>",
-    "omarchy-notification-send ... --action Launch Loot Drops ... --action Open Game Store ... --action Mark as seen ...",
+    "omarchy-notification-send ... (argv built by Model.notificationArgs for one Epic mobile alert)",
     "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
     "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.3.1",
     "omarchy plugin update salmun-nister.loot-drops --yes",
     "omarchy plugin remove salmun-nister.loot-drops --yes",
     "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins; omarchy plugin enable salmun-nister.loot-drops right",
-    "restore the original shell.json entry; omarchy restart shell"
+    "restore the original shell.json entry and seen.json backup; omarchy restart shell"
   ],
   "results": [
     {
       "check": "Portable, schema and security checks",
       "result": "pass",
-      "detail": "./tests/run passed 55 tests, the real Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings and an advisory review-required security section; release_preflight.py reports READY with advisory matches only; omarchy plugin validate . exits 0. These are limited scans, not a security audit."
+      "detail": "./tests/run passed 64 tests, the real Qt qmllint pass and the helper checks. validate_plugin.py reports valid with no errors or warnings and an advisory review-required security section with no findings; release_preflight.py reports READY with advisory matches only; omarchy plugin validate . exits 0. These are limited scans, not a security audit."
     },
     {
-      "check": "Notification actions and the per-store cap",
+      "check": "Settings page and Epic mobile rows",
       "result": "pass",
-      "detail": "A single game's notification argv carries three --action entries in order — Launch Loot Drops (first, so the card click still opens the panel), Open Game Store, and Mark as seen — each calling omarchy-shell back into the widget with the store and a scrubbed id, so no URL or command rides in the notification. A bundled summary (more than one game) carries only Launch Loot Drops. The per-store cap normalises to 0-20 with a default of 3; 1 bundles any store batch and 0 removes the limit. All covered by the model tests."
+      "detail": "The live settings page and a panel carrying Epic's Android and iOS rows were captured on this desktop and supplied as screenshots; they show the per-store switches and the mobile glyphs, and the settings page layout is unchanged since those captures. The harness reports the settings row model at 14 rows (store headings, switches, platforms and the general section), so the gear opens a populated page. The agent cannot click the live panel itself."
     },
     {
-      "check": "Notification IPC actions on the live 4.5 shell",
+      "check": "Single-game notification copy",
       "result": "pass",
-      "detail": "With the candidate loaded after `omarchy restart shell`, `omarchy-shell -q salmun-nister.loot-drops markSeen epic 12de5cad...` changed seen.json: the id was absent from the Epic acknowledged set before the call and present after it, and the call exited 0, proving the shell forwards both arguments to the widget's IpcHandler and the widget persists the change. `openGame notastore x` and `openGame steam 'bad id'` both exited 0 without opening anything, confirming the validation path. A three-action test notification was sent on the live desktop; the agent cannot click or screenshot it, so the button rendering and clicks remain the user's to confirm."
+      "detail": "A notification built by Model.notificationArgs for one Android alert was delivered through omarchy-notification-send. The notification service recorded summary \"Loot Drop from Epic Games\", body \"Chants of Sennaar\", followed by the Android platform glyph, and the three actions View All, Open Game Store and Mark as seen. The bundle branch was not changed: the per-store cap, joined names and single View All action remain covered by the model tests."
     },
     {
-      "check": "Four-store panel and live harness",
+      "check": "Partial Epic assembly keeps the baseline",
       "result": "pass",
-      "detail": "./tests/harness/run against the live stores reported 28 rows across steam, epic, gog and amazon, with laid-out content and no QML errors. This is the transport and layout check, not a substitute for a desktop pass."
+      "detail": "With the Android id deliberately absent from seen.json and the Android feed failing on the next fetch, the recorded PC and iOS ids survived and the missing Android id was not re-added, proving a partial result updates the panel without rewriting the baseline. On the earlier candidate the same condition collapsed the Epic ids to PC only, which is what produced the two false mobile notifications seen before this fix."
     },
     {
-      "check": "Install, update from 0.3.1, and removal",
+      "check": "IPC actions on the live shell",
       "result": "pass",
-      "detail": "Installed from the repository URL at 928d93f (0.4.0), enabled in the right section and visible. The clone was checked out at v0.3.1, the user's settings restored, and `omarchy plugin update ... --yes` fast-forwarded to 928d93f; the shell.json entry kept amazonEnabled=true and hideSeen=true and seen.json stayed byte-identical. `omarchy plugin remove ... --yes` deleted the clone and unloaded the widget while seen.json stayed byte-identical. The development symlink and the original settings were restored and verified afterwards."
+      "detail": "`markSeen amazon <id>` added the id to the Amazon acknowledged set and exited 0. `openGame notastore x` and `openGame steam 'bad id'` both exited 0 without opening anything, confirming the validation path. seen.json was restored byte-identically after the test."
     },
     {
-      "check": "No preview or theme images changed",
+      "check": "Panel and live harness",
       "result": "pass",
-      "detail": "This candidate changes notification construction and adds a setting, not panel rendering, so preview.png and the theme images were left as previously captured and are not part of this acceptance."
+      "detail": "./tests/harness/run against the live stores reported 13 rows with headers for Epic and Amazon only (Steam and GOG were empty, so they correctly had no section), laid-out content and no QML errors. This is the transport and layout check, not a substitute for a desktop pass."
+    },
+    {
+      "check": "Fresh install, update from 0.3.1 and removal",
+      "result": "pass",
+      "detail": "Installed from the repository URL at 028a58a and enabled. The clone was checked out at v0.3.1, the user's entry restored, and `omarchy plugin update ... --yes` fast-forwarded to 028a58a. The shell.json entry kept amazonEnabled=true, hideSeen=false, both Epic mobile toggles, maxStoreNotifications=3 and country=US. `omarchy plugin remove ... --yes` deleted the clone and unloaded the widget; seen.json was left in place. The development symlink, the original settings and the pre-lifecycle seen.json were restored and verified afterwards."
+    },
+    {
+      "check": "Preview and theme screenshots",
+      "result": "pass",
+      "detail": "preview.png and the four theme images were recaptured from Omarchy 4.5.0-3 with the 0.4.5 panel, Epic's Android and iOS rows visible, Piedmont Gold as the featured theme, and Sunlit Sands replacing Catppuccin Latte in the grid."
     }
   ],
-  "limitations": "The notification buttons were not clicked by the agent: the open live panel pins the pointer and the agent cannot screenshot the desktop, so the three-button rendering and the Open Game Store browser launch are the user's to confirm. The IPC methods behind the buttons were exercised directly, and a test notification with all three actions was sent on 4.5. A multi-game bundled notification (a store over the cap) was not observed live because no refresh delivered more than the cap; the cap logic and both argv shapes are covered by portable tests. Live store contents vary, so a later fetch will not match the games named here. GOG's success path remains fixture-only because no giveaway was live. Amazon Luna's render was observed with its live games. A vertical bar has not been observed. Installing a clone removes the widget's shell.json settings, so the development symlink and this machine's settings were restored by hand after the lifecycle. No security audit is claimed; the validators are limited scans."
+  "limitations": "The agent cannot click the live panel or see desktop notifications: the settings page and mobile rows are evidenced by the owner's live screenshots, and the notification copy by the notification service's stored record plus the portable tests. A bundled notification was not observed live; that branch is unchanged and covered by tests. The Android feed failed intermittently during acceptance, which is what exposed the partial-baseline bug; the failure was observed rather than deliberately injected. GOG's success path remains fixture-only because no giveaway was live, live store contents vary, and a vertical bar has not been observed. A shell.json pre-seeded with the Epic mobile keys before upgrading from 0.3.1 can announce the current mobile games once, because 0.3.1 never recorded those ids; no released version shipped those keys, so a normal upgrade has them off. No security audit is claimed; the validators are limited scans."
 }
