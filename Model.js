@@ -32,6 +32,75 @@ var STORE_GLYPHS = {
   "amazon": "\u{F270}"
 }
 
+// Epic's mobile giveaways are folded into the `epic` store rather than a new
+// one: they share its host, baseline and notification batching, and the same
+// weekday rotation. Each mobile row carries the platform it is claimed on,
+// shown as a glyph after the game name. Both marks are from the Material
+// Design set in Nerd Fonts — the Android robot (U+F0032) and Apple iOS
+// (U+F0037) — private-use, so they take the theme colour.
+var PLATFORM_GLYPHS = {
+  "android": "\u{F0032}",
+  "ios": "\u{F0037}"
+}
+var PLATFORMS = ["android", "ios"]
+
+function platformGlyph(platform) {
+  return PLATFORM_GLYPHS[platform] || ""
+}
+
+// The title as the user reads it: name plus a trailing platform parenthetical.
+// The title as labelled in notifications: name, then an interpunct and the
+// trailing glyph, so a mobile row reads e.g. "Chants of Sennaar · 󰀲 ".
+// The trailing space matters in a bundled list, where a comma follows the
+// glyph immediately and would otherwise clip into its right edge.
+function gameDisplayTitle(game) {
+  var title = modeTitle(game)
+  var platform = game && (game.platform || "")
+  if (PLATFORMS.indexOf(platform) < 0) return title
+  return title + " \u00B7 " + platformGlyph(platform) + " "
+}
+
+// Panel variant: same title and glyph, no platform word.
+function gameListTitle(game) {
+  var title = modeTitle(game)
+  var platform = game && (game.platform || "")
+  if (PLATFORMS.indexOf(platform) < 0) return title
+  return title + " \u00B7 " + platformGlyph(platform)
+}
+
+function modeTitle(game) {
+  if (!game) return ""
+  return scrubTitle(game.title)
+}
+
+// The mobile discover feed lives on a different host than the web store.
+// Links still point at store.epicgames.com and pass the same allowlist; this
+// host is only the fetch transport.
+var EPIC_MOBILE_HOST = "egs-platform-service.store.epicgames.com"
+
+// Epic mobile is the only store with sub-platform toggles: the same game can
+// be claimed on Android, on iOS, or both, and the user may show either.
+function epicMobile(settings) {
+  return {
+    "android": setting(settings, "epicMobileAndroid", false),
+    "ios": setting(settings, "epicMobileIos", false)
+  }
+}
+
+// The mobile catalogue has no web GraphQL presence: category=mobile returns
+// nothing there, so the app reads the platform discover feed instead. One
+// GET per platform, no auth. `count` is hard-capped at 10 and `country` is
+// required, so a blank setting falls back to US rather than sending "".
+function epicMobileUrl(platform, country) {
+  if (PLATFORMS.indexOf(platform) < 0) return ""
+  var cc = normalizeCountry(country) || "US"
+  return "https://" + EPIC_MOBILE_HOST
+    + "/api/v2/public/discover/home?count=10&country="
+    + encodeURIComponent(cc)
+    + "&locale=en-US&platform=" + encodeURIComponent(platform)
+    + "&start=0&store=EGS"
+}
+
 // Short forms, used only by the panel's subtitle. That line is uppercased and
 // letter-spaced, so "Epic Games" makes it long enough to wrap; the headers and
 // the notification headline keep the full names.
@@ -498,6 +567,138 @@ function parseTime(value) {
   return isFinite(ms) ? ms : 0
 }
 
+// Epic's mobile programme is a separate weekly giveaway from PC, served by
+// the platform discover feed rather than the web catalogue GraphQL. Both
+// platforms are fetched and merged into the `epic` store, tagged with the
+// platform they are claimed on so the panel can mark them with its glyph.
+function parseEpicMobile(text, platform) {
+  if (PLATFORMS.indexOf(platform) < 0) {
+    return { ok: false, games: [], error: "invalid-response" }
+  }
+  var payload
+  try {
+    payload = JSON.parse(text)
+  } catch (e) {
+    return { ok: false, games: [], error: "invalid-response" }
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)
+      || !Array.isArray(payload.data)) {
+    return { ok: false, games: [], error: "invalid-response" }
+  }
+
+  var now = Date.now()
+  var games = []
+  var seen = {}
+  for (var m = 0; m < payload.data.length && games.length < MAX_GAMES; m++) {
+    var module = payload.data[m]
+    var offers = module && Array.isArray(module.offers) ? module.offers : []
+    for (var i = 0; i < offers.length && games.length < MAX_GAMES; i++) {
+      var game = epicMobileGame(offers[i], platform, now)
+      if (!game || seen[game.id]) continue
+      seen[game.id] = true
+      games.push(game)
+    }
+  }
+  return { ok: true, games: games }
+}
+
+function epicMobileGame(offer, platform, now) {
+  if (!offer || typeof offer !== "object") return null
+  var content = offer.content
+  if (!content || typeof content !== "object") return null
+  if (!Array.isArray(content.categories) || content.categories.indexOf("games") < 0) return null
+
+  var free = liveFreeMobileOffer(content, now)
+  if (!free) return null
+
+  var slug = content.mapping && scrubId(content.mapping.slug)
+  if (!slug) return null
+  var id = scrubId(content.catalogItemId)
+    || scrubId(offer.sandboxId)
+    || scrubId(offer.offerId)
+    || slug
+  if (!id) return null
+
+  return {
+    store: "epic",
+    platform: platform,
+    id: id,
+    title: scrubTitle(content.title),
+    url: safeUrl("epic", "https://" + HOSTS.epic + "/p/" + slug),
+    endsAt: free
+  }
+}
+
+// A mobile offer counts only on a live 100%-off claim window. The free-to-play
+// Claim offers have no discount block at all, which is what keeps them out;
+// a stale discountEndDate past now keeps expired giveaways out the same way
+// the PC parser keeps them out.
+function liveFreeMobileOffer(content, now) {
+  if (!Array.isArray(content.purchase)) return ""
+  for (var i = 0; i < content.purchase.length; i++) {
+    var purchase = content.purchase[i]
+    if (!purchase || typeof purchase !== "object") continue
+    if (purchase.purchaseType !== "Claim") continue
+    var price = purchase.price
+    if (!price || price.decimalPrice !== 0) continue
+    var discount = purchase.discount
+    if (!discount || discount.discountAmountDisplay !== "-100%") continue
+    var end = parseTime(discount.discountEndDate)
+    if (!end) continue
+    if (end <= now) continue
+    return discount.discountEndDate
+  }
+  return ""
+}
+
+// Merge PC and mobile Epic results into one list for the shared `epic`
+// baseline. Ids differ per platform (separate catalog items), so the same
+// game on Android and iOS intentionally yields two rows; only an exact id
+// repeat is deduped, which is the same game offered twice.
+function mergeEpicGames(lists) {
+  var games = []
+  var seen = {}
+  var source = Array.isArray(lists) ? lists : [lists]
+  for (var i = 0; i < source.length; i++) {
+    var list = Array.isArray(source[i]) ? source[i] : []
+    for (var j = 0; j < list.length && games.length < MAX_GAMES; j++) {
+      var game = list[j]
+      var id = game && game.store === "epic" ? scrubId(game.id) : ""
+      if (!id || seen[id]) continue
+      seen[id] = true
+      games.push(game)
+    }
+  }
+  return games
+}
+
+// Decide the Epic bucket outcome once every expected part has answered. The
+// widget fetches the PC catalog and each mobile platform as a separate process,
+// so this runs only after all of them have reported. Returns null while a part
+// is still outstanding, otherwise { games, mode } where mode is:
+//   "ok"      — every wanted part answered.
+//   "partial" — some part failed but another answered; games carries what we
+//               have and the widget overlays the "Epic Mobile" error line.
+//   "fail"    — every wanted part failed; the store is unreachable.
+function epicAssemblyResult(parts) {
+  if (!parts || typeof parts !== "object") return null
+  var done = 0
+  for (var i = 0; i < PLATFORMS.length; i++) {
+    if (parts[PLATFORMS[i]] !== null) done++
+  }
+  if (parts.pc !== null) done++
+  if (done < parts.expected) return null
+
+  var games = mergeEpicGames([parts.pc || [], parts.android || [], parts.ios || []])
+  if (parts.failed > 0 && parts.failed < parts.expected) {
+    return { games: games, mode: "partial" }
+  }
+  if (games.length === 0 && parts.failed >= parts.expected && parts.expected > 0) {
+    return { games: games, mode: "fail" }
+  }
+  return { games: games, mode: "ok" }
+}
+
 // GOG answers 404 with no giveaway running. That is a healthy empty store, so
 // it is reported as ok with no games rather than as an error.
 function parseGog(text) {
@@ -733,10 +934,15 @@ function splitSeenGames(games, acknowledgedIds) {
   return { shown: shown, hidden: hidden }
 }
 
-// The summary row's copy when seen games are hidden from the panel.
-function hiddenSeenLabel(count) {
+// The summary row's copy when seen games are hidden from the panel. An
+// expiring giveaway the user has seen but not claimed is still called out
+// in the count, so hiding seen cannot quietly drop an urgent row.
+function hiddenSeenLabel(count, endingSoonCount) {
   var n = Math.max(0, Math.round(Number(count) || 0))
-  return n === 1 ? "1 seen game hidden" : n + " seen games hidden"
+  var base = n === 1 ? "1 seen game hidden" : n + " seen games hidden"
+  var soon = Math.max(0, Math.round(Number(endingSoonCount) || 0))
+  if (soon > 0) base += " \u00B7 " + soon + " ending soon"
+  return base
 }
 
 function parseSeen(raw) {
@@ -820,8 +1026,11 @@ function serializeSeen(state) {
 //
 // Three silencing rules, all per store so toggling one never disturbs another:
 //   * a store with no baseline records its first snapshot without alerting;
-//   * a store that is switched off keeps its baseline, so switching it back on
-//     re-records silently instead of announcing everything it missed;
+//   * a store that is switched off keeps its baseline and drops its priming, so
+//     switching it back on re-records silently instead of announcing everything
+//     it missed;
+//   * a store or Epic mobile platform that is switched back on has its priming
+//     dropped by unprimeStore() before the fetch, for the same reason;
 //   * a muted store updates its baseline, so unmuting later does not replay a
 //     backlog of games that were already there.
 function diffStore(state, store, games, storeEnabled, notifyEnabled) {
@@ -851,6 +1060,7 @@ function diffStore(state, store, games, storeEnabled, notifyEnabled) {
           store: store,
           id: game.id,
           title: scrubTitle(game.title),
+          platform: PLATFORMS.indexOf(game.platform) >= 0 ? game.platform : "",
           url: safeUrl(store, game.url)
         })
       }
@@ -877,6 +1087,24 @@ function diffStore(state, store, games, storeEnabled, notifyEnabled) {
   }
 
   return { state: next, alerts: alerts }
+}
+
+// Turning a store, or one of Epic's mobile platforms, back on must not replay
+// everything that appeared while it was off. Dropping only the priming flag
+// keeps the recorded ids and the games the user has marked seen, and makes the
+// next successful fetch record the current list silently. The widget calls this
+// when a watch goes on; diffStore's disabled branch does the same for a fetch
+// that lands while a store is already off.
+function unprimeStore(state, store) {
+  var current = state && typeof state === "object" && state.stores
+    ? state : emptySeen()
+  var next = {
+    primed: !!(state && state.primed),
+    stores: copyStores(current.stores)
+  }
+  var bucket = next.stores[store]
+  if (bucket) bucket.primed = false
+  return next
 }
 
 function copyStores(stores) {
@@ -907,16 +1135,27 @@ function copyStores(stores) {
 function notificationArgs(store, alerts) {
   if (!alerts || alerts.length === 0) return null
   var label = STORE_LABELS[store] || "a store"
-  var list = alerts.slice(0, 4)
-  var names = []
-  for (var i = 0; i < list.length; i++) names.push(scrubTitle(list[i].title))
-  var extra = alerts.length - names.length
-  var body = names.join(", ")
-  if (extra > 0) body += " and " + extra + " more"
 
+  // A single game keeps the old headline — "<Game> is free on <store>" — and
+  // no subtitle, so the game's name reads in the card title at a glance. A
+  // bundled batch uses the uniform "Loot Drop from <store>" and lists the
+  // names in the subtitle instead.
   var headline
-  if (alerts.length === 1) headline = names[0] + " is free on " + label
-  else headline = alerts.length + " free games on " + label
+  var body
+  if (alerts.length === 1) {
+    headline = gameListTitle(alerts[0]) + " is free on " + label
+    body = ""
+  } else {
+    var list = alerts.slice(0, 4)
+    var names = []
+    for (var i = 0; i < list.length; i++) {
+      names.push(gameDisplayTitle(list[i]))
+    }
+    var extra = alerts.length - names.length
+    body = names.join(", ")
+    if (extra > 0) body += " and " + extra + " more"
+    headline = "Loot Drop from " + label
+  }
 
   var argv = [
     "omarchy-notification-send",
@@ -924,12 +1163,13 @@ function notificationArgs(store, alerts) {
     "-g", BAR_ICON,
     "-u", "normal",
     "-t", "12000",
-    String(headline).replace(/^-+/, "").trim() || ("Free on " + label),
+    String(headline).replace(/^-+/, "").trim() || ("Loot Drop from " + label),
     body,
-    // The first action is also the card click, so "Launch Loot Drops" stays
-    // first and clicking a card still opens the panel. -q keeps a restarting
-    // shell from writing to stderr.
-    "--action", "Launch Loot Drops", "omarchy-shell", "-q", IPC_TARGET, "open"
+    // The first action is also the card click, so "View All" stays first and
+    // clicking a card still opens the panel. Short enough for the action
+    // row; "Launch Loot Drops" ellipsed there. -q keeps a restarting shell
+    // from writing to stderr.
+    "--action", "View All", "omarchy-shell", "-q", IPC_TARGET, "open"
   ]
 
   // A single game also gets its own store page and a seen toggle. Both go
@@ -982,30 +1222,71 @@ function statusTitle(perStore, on, busy) {
   return total + " games free to keep"
 }
 
-// "Steam, Epic, and GOG" — the stores being watched, named so the panel says
-// where the list came from. Short forms, because this is the subtitle.
+// "Steam, Epic, GOG" — the watched stores, named so the panel says where
+// the list came from. Short forms, because this is the subtitle.
 function storeList(on) {
   var names = []
   for (var i = 0; i < STORES.length; i++) {
     if (on && on[STORES[i]]) names.push(STORE_SHORT[STORES[i]] || STORES[i])
   }
   if (names.length === 0) return ""
-  if (names.length === 1) return names[0]
-  return names.slice(0, names.length - 1).join(", ") + ", and " + names[names.length - 1]
+  return names.join(", ")
+}
+
+// Stores that are actually contributing rows, so the subtitle never names
+// a store the list is not showing.
+function contributing(on, perStore) {
+  var out = {}
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    var bucket = perStore && perStore[store]
+    out[store] = !!(on && on[store] && bucket
+      && Array.isArray(bucket.games) && bucket.games.length > 0)
+  }
+  return out
 }
 
 // The panel's headline. The plugin's name is the title and the count moves to
-// the subtitle, which names the stores being watched.
+// the subtitle, which names the stores contributing rows.
 function heroTitle() {
-  return "Loot Drops"
+  return "LOOT DROPS"
 }
 
 function heroDetail(perStore, on) {
-  var watched = storeList(on)
-  if (watched === "") return "Turn a store on to start watching"
+  // Only stores actually contributing rows are named, so an enabled store
+  // with nothing free is not listed next to the count. When none contribute,
+  // distinguish "nothing watched" from "watched but empty".
+  var watched = storeList(contributing(on, perStore))
+  if (watched === "") {
+    return activeStores(on).length === 0
+      ? "Turn on a store in Settings to start watching"
+      : "Nothing free right now"
+  }
   var total = totalGames(perStore)
-  var noun = total === 1 ? "FREE GAME" : "FREE GAMES"
-  return total + " " + noun + " FROM " + watched
+  var noun = total === 1 ? "free game" : "free games"
+  return total + " " + noun + " \u00B7 " + watched
+}
+
+// Per-store tallies for the bar tooltip, e.g. "Steam 3 · Epic 5".
+function tooltipDetail(perStore, on) {
+  var parts = []
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    if (!on || !on[store]) continue
+    var bucket = perStore && perStore[store]
+    var n = bucket && Array.isArray(bucket.games) ? bucket.games.length : 0
+    parts.push((STORE_SHORT[store] || store) + " " + n)
+  }
+  return parts.join(" \u00B7 ")
+}
+
+// "Ends in 6h" / "Ended", for the ending-soon marker's tooltip.
+function endsInLabel(endsAt, nowMs) {
+  var end = parseTime(endsAt)
+  if (!end) return "Ending soon"
+  var left = end - Number(nowMs)
+  if (left <= 0) return "Ended"
+  return "Ends in " + ageLabel(left)
 }
 
 

@@ -1,0 +1,111 @@
+{
+ "__typename": "PaginatedDiscoverModules",
+ "data": [
+  {
+   "type": "freeGame",
+   "title": "Free Games",
+   "topicId": "mobile-ios-free-game",
+   "offers": [
+    {
+     "offerId": "17c98e8e31324538ada224b5b87fee07",
+     "sandboxId": "3766493c9a6d4172b7f283eec441df0a",
+     "content": {
+      "title": "Chants of Sennaar",
+      "catalogItemId": "bc489e5aac5844eab5985671b44079b5",
+      "categories": [
+       "freegames",
+       "games",
+       "games/edition",
+       "games/edition/base"
+      ],
+      "mapping": {
+       "slug": "chants-of-sennaar-ios-6bd071"
+      },
+      "purchase": [
+       {
+        "purchaseType": "Claim",
+        "price": {
+         "currencyCode": "USD",
+         "decimalPrice": 0
+        },
+        "discount": {
+         "discountAmountDisplay": "-100%",
+         "originalPriceDisplay": "$7.99",
+         "discountEndDate": "2099-11-12T16:00:00.000Z"
+        }
+       },
+       {
+        "purchaseType": "Purchase",
+        "price": {
+         "currencyCode": "USD",
+         "decimalPrice": 7.99
+        },
+        "priceDisplay": "$7.99"
+       }
+      ]
+     }
+    },
+    {
+     "offerId": "c9f2ce27f1c44ba9ad0cf4260f9e709e",
+     "sandboxId": "7e508f543b05465abe3a935960eb70ac",
+     "content": {
+      "title": "Idle Champions of the Forgotten Realms",
+      "catalogItemId": "554e4c764f5f432cac68cee5f04c7750",
+      "categories": [
+       "freegames",
+       "games",
+       "games/edition",
+       "games/edition/base"
+      ],
+      "mapping": {
+       "slug": "idle-champions-of-the-forgotten-realms-ios-6df748"
+      },
+      "purchase": [
+       {
+        "purchaseType": "Claim",
+        "price": {
+         "currencyCode": "USD",
+         "decimalPrice": 0
+        }
+       }
+      ]
+     }
+    },
+    {
+     "offerId": "offer-expired",
+     "sandboxId": "sandbox-expired",
+     "content": {
+      "title": "Expired Mobile Game",
+      "catalogItemId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+      "categories": [
+       "freegames",
+       "games"
+      ],
+      "mapping": {
+       "slug": "expired-mobile-game"
+      },
+      "purchase": [
+       {
+        "purchaseType": "Claim",
+        "price": {
+         "currencyCode": "USD",
+         "decimalPrice": 0
+        },
+        "discount": {
+         "discountAmountDisplay": "-100%",
+         "originalPriceDisplay": "$4.99",
+         "discountEndDate": "2020-01-01T00:00:00.000Z"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ],
+ "paging": {
+  "count": 10,
+  "start": 0,
+  "total": 1
+ }
+}

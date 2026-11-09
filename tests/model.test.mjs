@@ -16,11 +16,11 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, MAX_GAMES,
   staleAfterMs, STALE_MULTIPLIER, NOTIFY_BUNDLE_DEFAULT, NOTIFY_BUNDLE_MAX,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
-  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, parseStore, parseSteam,
-  parseEpic, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore,
+  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, gameListTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
+  parseEpic, parseEpicMobile, mergeEpicGames, epicAssemblyResult, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore, unprimeStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
-  storeList, heroTitle, heroDetail, BAR_ICON, STORE_LABELS, STORE_SHORT,
+  storeList, heroTitle, heroDetail, contributing, tooltipDetail, endsInLabel, BAR_ICON, STORE_LABELS, STORE_SHORT,
   acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
   splitSeenGames, hiddenSeenLabel,
   IPC_TARGET, NEW_GAME_GLYPH, HOURGLASS_GLYPH, endingSoon,
@@ -212,6 +212,180 @@ test('epic rejects a payload without the expected shape', () => {
     assert.equal(result.ok, false, `accepted ${body}`);
     assert.equal(result.error, 'invalid-response');
   }
+});
+
+test('epic mobile lists only live 100%-off claim offers, tagged by platform', () => {
+  const android = Model.parseEpicMobile(fixture('epic-mobile-android.json'), 'android');
+  assert.equal(android.ok, true);
+  assert.equal(android.games.length, 1, `expected 1, got ${android.games.length}`);
+  const game = android.games[0];
+  assert.equal(game.title, 'Chants of Sennaar');
+  assert.equal(game.store, 'epic');
+  assert.equal(game.platform, 'android');
+  assert.equal(game.url, 'https://store.epicgames.com/p/chants-of-sennaar-android-681b80');
+  assert.ok(game.endsAt, 'a mobile row must carry its end date for the ending-soon mark');
+  // F2P and expired offers stay out.
+  assert.ok(!android.games.some(g => g.title.includes('Idle Champions')), 'F2P mobile game was listed');
+  assert.ok(!android.games.some(g => g.title.includes('Expired')), 'expired mobile game was listed');
+
+  const ios = Model.parseEpicMobile(fixture('epic-mobile-ios.json'), 'ios');
+  assert.equal(ios.ok, true);
+  assert.equal(ios.games[0].platform, 'ios');
+  assert.equal(ios.games[0].url, 'https://store.epicgames.com/p/chants-of-sennaar-ios-6bd071');
+  // A game free on both platforms keeps two distinct ids, so the seen
+  // baseline can tell them apart.
+  assert.notEqual(android.games[0].id, ios.games[0].id);
+});
+
+test('epic mobile rejects bad payloads and unknown platforms', () => {
+  for (const body of ['', 'nope', '{}', '[]', '{"data":{}}']) {
+    const result = Model.parseEpicMobile(body, 'android');
+    assert.equal(result.ok, false, `accepted ${body}`);
+    assert.equal(result.error, 'invalid-response');
+  }
+  assert.equal(Model.parseEpicMobile('{}', 'windows').ok, false);
+});
+
+test('epic mobile url builder requires a country and caps the page size', () => {
+  assert.equal(Model.epicMobileUrl('android', 'US'),
+    'https://egs-platform-service.store.epicgames.com/api/v2/public/discover/home?count=10&country=US&locale=en-US&platform=android&start=0&store=EGS');
+  // Blank country falls back to US because the feed rejects "".
+  assert.match(Model.epicMobileUrl('ios', ''), /country=US/, 'blank country must fall back to US');
+  assert.match(Model.epicMobileUrl('android', 'de'), /country=DE/);
+  assert.equal(Model.epicMobileUrl('windows', 'US'), '');
+});
+
+test('epic mobile glyphs are private-use and pinned to Nerd Fonts 3.5.1', () => {
+  const privateUse = c => (c >= 0xe000 && c <= 0xf8ff) || (c >= 0xf0000 && c <= 0xffffd);
+  const android = Model.platformGlyph('android').codePointAt(0);
+  const ios = Model.platformGlyph('ios').codePointAt(0);
+  assert.ok(privateUse(android), `android U+${android.toString(16)} is not private-use`);
+  assert.ok(privateUse(ios), `ios U+${ios.toString(16)} is not private-use`);
+  assert.equal(android, 0xf0032, 'the android mark moved');
+  assert.equal(ios, 0xf0037, 'the iOS mark moved');
+  assert.equal(Model.platformGlyph('windows'), '');
+  assert.equal(Model.gameDisplayTitle({ title: 'Chants of Sennaar', platform: 'android' }),
+    'Chants of Sennaar \u00B7 \u{F0032} ');
+  assert.equal(Model.gameDisplayTitle({ title: 'Chants of Sennaar', platform: 'ios' }),
+    'Chants of Sennaar \u00B7 \u{F0037} ');
+  assert.equal(Model.gameListTitle({ title: 'Chants of Sennaar', platform: 'ios' }),
+    'Chants of Sennaar \u00B7 \u{F0037}');
+  assert.equal(Model.gameListTitle({ title: 'Chants of Sennaar', platform: 'android' }),
+    'Chants of Sennaar \u00B7 \u{F0032}');
+  assert.equal(Model.gameListTitle({ title: 'PC Game' }), 'PC Game');
+  assert.equal(Model.gameDisplayTitle({ title: 'PC Game' }), 'PC Game');
+});
+
+test('epic mobile toggles default off and merge into the epic baseline', () => {
+  assert.deepEqual(Model.epicMobile({}), { android: false, ios: false });
+  assert.deepEqual(Model.epicMobile({ epicMobileAndroid: true }), { android: true, ios: false });
+  assert.deepEqual(Model.epicMobile(undefined), { android: false, ios: false });
+
+  const pc = [{ store: 'epic', id: 'pc-1', title: 'PC Game' }];
+  const mobile = Model.parseEpicMobile(fixture('epic-mobile-android.json'), 'android').games;
+  const merged = Model.mergeEpicGames([pc, mobile, pc]);
+  assert.equal(merged.length, 2, `expected 2 deduped, got ${merged.length}`);
+  assert.equal(merged[0].id, 'pc-1');
+  assert.equal(merged[1].platform, 'android');
+  // A PC id is never swallowed by a mobile row with the same id.
+  const clash = Model.mergeEpicGames([mobile, [{ store: 'epic', id: mobile[0].id, title: 'Clash' }]]);
+  assert.equal(clash.length, 1);
+});
+
+test('turning a watch back on re-records silently, keeping seen marks', () => {
+  const pc = [{ store: 'epic', id: 'pc-1', title: 'PC Game' }];
+  const first = Model.diffStore(Model.emptySeen(), 'epic', pc, true, true);
+  assert.deepEqual(first.alerts, [], 'a first snapshot is silent');
+
+  const acked = Model.acknowledgeGame(first.state, 'epic', 'pc-1');
+  const unprimed = Model.unprimeStore(acked, 'epic');
+  assert.equal(unprimed.stores.epic.primed, false);
+  assert.deepEqual(unprimed.stores.epic.ids, ['pc-1']);
+  assert.deepEqual(unprimed.stores.epic.acknowledged, ['pc-1']);
+
+  // The mobile platform was off when the baseline was recorded; switching it
+  // on must record its free games instead of announcing them.
+  const mobile = Model.parseEpicMobile(fixture('epic-mobile-android.json'), 'android').games;
+  const next = Model.diffStore(unprimed, 'epic', Model.mergeEpicGames([pc, mobile]), true, true);
+  assert.deepEqual(next.alerts, [], 're-enabling announced games that were already free');
+  assert.equal(next.state.stores.epic.primed, true);
+  assert.ok(next.state.stores.epic.ids.includes(mobile[0].id));
+  assert.deepEqual(next.state.stores.epic.acknowledged, ['pc-1']);
+
+  // Unpriming one store leaves the others alone, and an unknown store is a
+  // no-op rather than a new bucket.
+  const primedGog = Model.diffStore(next.state, 'gog', [], true, true).state;
+  const onlyGog = Model.unprimeStore(primedGog, 'gog');
+  assert.equal(onlyGog.stores.epic.primed, true);
+  assert.equal(onlyGog.stores.gog.primed, false);
+  assert.equal(Model.unprimeStore(primedGog, 'not-a-store').stores.not_a_store, undefined);
+});
+
+test('epic assembly reports partial failure and total failure distinctly', () => {
+  const pc = [{ store: 'epic', id: 'pc-1', title: 'PC Game' }];
+  const mobile = Model.parseEpicMobile(fixture('epic-mobile-android.json'), 'android').games;
+
+  // While a wanted part is still outstanding the outcome is not ready.
+  assert.equal(Model.epicAssemblyResult(
+    { pc: null, android: null, ios: null, failed: 0, expected: 2 }), null);
+  assert.equal(Model.epicAssemblyResult(
+    { pc: pc, android: null, ios: null, failed: 0, expected: 2 }), null);
+
+  // Every wanted part answered: merged games, no error.
+  const ok = Model.epicAssemblyResult(
+    { pc: pc, android: mobile, ios: null, failed: 0, expected: 2 });
+  assert.equal(ok.mode, 'ok');
+  assert.equal(ok.games.length, 2);
+
+  // One platform fails while PC answers: partial, and the games that did
+  // answer still survive in the list.
+  const partial = Model.epicAssemblyResult(
+    { pc: pc, android: [], ios: null, failed: 1, expected: 2 });
+  assert.equal(partial.mode, 'partial');
+  assert.equal(partial.games.length, 1);
+
+  // Every wanted part fails: the store is unreachable.
+  const fail = Model.epicAssemblyResult(
+    { pc: [], android: [], ios: null, failed: 2, expected: 2 });
+  assert.equal(fail.mode, 'fail');
+
+  // With no mobile toggle, a lone PC failure is already a total failure.
+  const pcOnly = Model.epicAssemblyResult(
+    { pc: [], android: null, ios: null, failed: 1, expected: 1 });
+  assert.equal(pcOnly.mode, 'fail');
+});
+
+test('epic mobile alerts keep their platform and label every notification', () => {
+  const empty = Model.emptySeen();
+  const mobile = Model.parseEpicMobile(fixture('epic-mobile-android.json'), 'android').games;
+  const primed = Model.diffStore(empty, 'epic', mobile, true, true).state;
+  const next = Model.diffStore(primed, 'epic', [], true, true);
+  assert.deepEqual(next.alerts, []);
+
+  // A genuinely new mobile game alerts with its platform attached.
+  const alerted = Model.diffStore(primed, 'epic',
+    [...mobile, { store: 'epic', platform: 'ios', id: 'ios-1', title: 'New Game' }], true, true);
+  assert.equal(alerted.alerts.length, 1);
+  assert.equal(alerted.alerts[0].platform, 'ios');
+
+  const argv = Model.notificationArgs('epic', alerted.alerts);
+  const headline = argv[argv.indexOf('-t') + 2];
+  // A single game keeps the old headline with its platform glyph, and no
+  // subtitle, so the name reads in the card title at a glance.
+  assert.equal(headline, 'New Game \u00B7 \u{F0037} is free on Epic Games');
+  const body = argv[argv.indexOf('--action') - 1];
+  assert.equal(body, '', 'a single-game notification carries no subtitle');
+
+  // The same title on both platforms is never two identical notifications.
+  const both = Model.notificationArgs('epic', [
+    { id: 'a', title: 'Chants', platform: 'android' },
+    { id: 'i', title: 'Chants', platform: 'ios' },
+  ]);
+  assert.equal(both[both.indexOf('-t') + 2], 'Loot Drop from Epic Games');
+  const bothBody = both[both.indexOf('--action') - 1];
+  assert.match(bothBody, /Chants \u00B7 \u{F0032}/u, 'android variant was not labelled');
+  assert.match(bothBody, /Chants \u00B7 \u{F0037}/u, 'ios variant was not labelled');
+  assert.ok(bothBody.includes('\u{F0032}') && bothBody.includes('\u{F0037}'));
 });
 
 test('gog reports a running giveaway', () => {
@@ -466,7 +640,7 @@ test('notification args route every action through the widget over IPC', () => {
 
   // Three actions: Launch (also the card click), Open Game Store, Mark as seen.
   assert.deepEqual(actionsOf(argv), [
-    ['Launch Loot Drops', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
+    ['View All', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
     ['Open Game Store', 'omarchy-shell', '-q', Model.IPC_TARGET, 'openGame', 'steam', 'a'],
     ['Mark as seen', 'omarchy-shell', '-q', Model.IPC_TARGET, 'markSeen', 'steam', 'a'],
   ]);
@@ -476,7 +650,7 @@ test('notification args route every action through the widget over IPC', () => {
   const many = Model.notificationArgs('epic',
     Array.from({ length: 7 }, (_, i) => ({ id: 'g' + i, title: 'G' + i, url: '' })));
   assert.deepEqual(actionsOf(many), [
-    ['Launch Loot Drops', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
+    ['View All', 'omarchy-shell', '-q', Model.IPC_TARGET, 'open'],
   ]);
   // The body is the positional just before the first --action.
   const body = many[many.indexOf('--action') - 1];
@@ -606,28 +780,32 @@ test('Amazon Luna ships off by default in the manifest', () => {
 });
 
 test('the panel headline is the plugin name and the count is a subtitle', () => {
-  assert.equal(Model.heroTitle(), 'Loot Drops');
+  assert.equal(Model.heroTitle(), 'LOOT DROPS');
   const all = { steam: true, epic: true, gog: true };
   const four = { steam: { games: [{ id: 'a' }, { id: 'b' }] },
                  epic: { games: [{ id: 'c' }, { id: 'd' }] }, gog: { games: [] } };
-  assert.equal(Model.heroDetail(four, all),
-    '4 FREE GAMES FROM Steam, Epic, and GOG');
+  // The panel passes storesOn; heroDetail names only stores that are actually
+  // contributing rows, so an enabled-but-empty store (GOG) is left out.
+  assert.equal(Model.heroDetail(four, all), '4 free games · Steam, Epic');
 
-  // Singular, and a store with nothing free is still named as watched.
+  // Singular, and again the empty store is not named.
   const one = { steam: { games: [{ id: 'a' }] }, gog: { games: [] } };
-  assert.equal(Model.heroDetail(one, all), '1 FREE GAME FROM Steam, Epic, and GOG');
+  assert.equal(Model.heroDetail(one, all), '1 free game · Steam');
+
+  // Every watched store empty: the stores are on, so this is not the
+  // "turn a store on" message.
   assert.equal(Model.heroDetail({ steam: { games: [] }, gog: { games: [] } }, all),
-    '0 FREE GAMES FROM Steam, Epic, and GOG');
+    'Nothing free right now');
 });
 
 test('the store list names only the stores being watched', () => {
   // The subtitle uses short names because it is uppercased and letter-spaced;
   // the headers and notification headline keep the full ones.
   assert.equal(Model.storeList({ steam: true, epic: true, gog: true }),
-    'Steam, Epic, and GOG');
-  assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, and GOG');
+    'Steam, Epic, GOG');
+  assert.equal(Model.storeList({ steam: true, epic: false, gog: true }), 'Steam, GOG');
   assert.equal(Model.storeList({ steam: true, epic: true, gog: true, amazon: true }),
-    'Steam, Epic, GOG, and Amazon');
+    'Steam, Epic, GOG, Amazon');
   assert.equal(Model.STORE_LABELS.epic, 'Epic Games', 'headers keep the full name');
   assert.equal(Model.STORE_LABELS.amazon, 'Amazon Luna');
   assert.equal(Model.STORE_SHORT.epic, 'Epic');
@@ -637,7 +815,7 @@ test('the store list names only the stores being watched', () => {
   assert.equal(Model.storeList(null), '');
   // With nothing watched the headline must not read "...from " with no list.
   assert.equal(Model.heroDetail({ steam: { games: [{ id: 'a' }] } },
-    { steam: false, epic: false, gog: false }), 'Turn a store on to start watching');
+    { steam: false, epic: false, gog: false }), 'Turn on a store in Settings to start watching');
 });
 
 test('the bar icon is a private-use treasure chest that takes a theme colour', () => {
@@ -846,4 +1024,14 @@ test('ending soon is a one-day window that survives an elapsed end date', () => 
   for (const bad of ['', 'not a date', null, undefined]) {
     assert.equal(Model.endingSoon(bad, now), false, `marked on a bad date: ${bad}`);
   }
+});
+test('contributing stores and ending-soon copy', () => {
+  assert.deepEqual(Model.contributing({ steam: true, epic: false },
+    { steam: { games: [{ id: 'a' }] }, epic: { games: [{ id: 'b' }] } }),
+    { steam: true, epic: false, gog: false, amazon: false });
+  assert.equal(Model.tooltipDetail({ steam: { games: [1, 2] }, epic: { games: [1] } },
+    { steam: true, epic: true }), 'Steam 2 \u00B7 Epic 1');
+  assert.equal(Model.endsInLabel(new Date(Date.now() + 6 * 3600 * 1000).toISOString(), Date.now()), 'Ends in 6h');
+  assert.equal(Model.endsInLabel('2020-01-01T00:00:00Z', Date.now()), 'Ended');
+  assert.equal(Model.hiddenSeenLabel(4, 1), '4 seen games hidden \u00B7 1 ending soon');
 });
