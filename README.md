@@ -16,14 +16,14 @@ pages, and it never writes anything outside its own state directory.
 claims page needs no account, but claiming its games needs an Amazon Prime
 membership and is done in your own browser. Loot Drops never signs in.
 
-<p align="center"><img alt="Loot Drops panel in the Sunlit Sands theme, listing 17 free games across Steam, Epic Games, GOG and Amazon Luna, with one seen game hidden and a fade at the bottom edge" src="preview.png" width="410"></p>
+<p align="center"><img alt="Loot Drops panel in the Piedmont Gold theme, listing 13 free games from Epic Games and Amazon Luna, including an Android and an iOS Epic giveaway" src="preview.png" width="410"></p>
 
-**Preview:** Sunlit Sands. A real screenshot from Omarchy 4.0.6-1 on Hyprland,
-taken from the live desktop with the panel open. Amazon Luna is switched on, one
-Epic game is marked seen and hidden behind the eye, and the list is long enough
-to show the fade at its bottom edge. The stores and games in it were real at
-capture time, so it will not match what the panel shows later. Desktop
-acceptance evidence is in [docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
+**Preview:** Piedmont Gold. A real screenshot from Omarchy 4.5.0-3 on Hyprland,
+taken from the live desktop with the panel open. Amazon Luna and Epic's Android
+and iOS feeds are switched on, so the list carries both platform glyphs. The
+stores and games in it were real at capture time, so it will not match what the
+panel shows later. Desktop acceptance evidence is in
+[docs/ACCEPTANCE.json](docs/ACCEPTANCE.json).
 
 ## Install
 
@@ -169,7 +169,7 @@ them:
 </tr>
 <tr>
 <td align="center"><img alt="Loot Drops panel in the Outpost theme" src="docs/themes/outpost.png" width="320"><br><sub>Outpost</sub></td>
-<td align="center"><img alt="Loot Drops panel in the Catppuccin Latte theme" src="docs/themes/catppuccin-latte.png" width="320"><br><sub>Catppuccin Latte</sub></td>
+<td align="center"><img alt="Loot Drops panel in the Sunlit Sands theme" src="docs/themes/sunlit-sands.png" width="320"><br><sub>Sunlit Sands</sub></td>
 </tr>
 </table>
 
