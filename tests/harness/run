@@ -65,7 +65,6 @@ metrics = data.get("metrics", {})
 
 print("  panel rows: %d  view count: %s  contentHeight: %s  headers: %s"
       % (rows, rendered, metrics.get("contentHeight"), ", ".join(headers)))
-
 # The view must have built the rows, not merely had a valid model.
 if rendered != rows:
     print("FAIL: the view built %s rows from a model of %d; the panel would "
@@ -123,10 +122,31 @@ if content_height < rows * MIN_ROW_HEIGHT:
           % (content_height, rows * MIN_ROW_HEIGHT, rows), file=sys.stderr)
     raise SystemExit(1)
 
-for store in ("steam", "epic", "gog", "amazon"):
-    if store not in headers:
-        print("FAIL: no header for %s in %s" % (store, headers), file=sys.stderr)
+# The panel no longer gives a watched store a header when it has nothing to
+# show. Compare against the stores that actually returned games (or an error)
+# rather than expecting a fixed four.
+expected = data.get("headersExpected")
+if expected is None:
+    print("FAIL: harness did not report the expected headers", file=sys.stderr)
+    raise SystemExit(1)
+if headers != expected:
+    print("FAIL: panel headers %s do not match watched stores with content %s "
+          "(status %s)" % (headers, expected, data.get("storeStatus")),
+          file=sys.stderr)
+    raise SystemExit(1)
+for store, status in (data.get("storeStatus") or {}).items():
+    if status.get("on") and not status.get("games") and not status.get("error") \
+            and store in headers:
+        print("FAIL: empty store %s still has a header" % store, file=sys.stderr)
         raise SystemExit(1)
+
+# The Settings page is a second row model in the same panel. It must build
+# the switches for every store and the general section, or the gear would open
+# a blank page.
+if (data.get("settingsRows") or 0) < 14:
+    print("FAIL: Settings page built only %s rows" % data.get("settingsRows"),
+          file=sys.stderr)
+    raise SystemExit(1)
 '; then
   exit 1
 fi
