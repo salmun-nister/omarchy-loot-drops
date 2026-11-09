@@ -119,6 +119,14 @@ bundles a store's batch, `0` removes the limit, and a bundled summary keeps only
 the panel action. The two Epic mobile keys are sub-platform switches, not
 stores: their games merge into the `epic` bucket and share its baseline.
 
+The range is 30–720 with a 90-minute default, chosen so the slider has
+headroom above the default rather than starting at its ceiling. The **stale
+threshold is derived from the interval at 1.5x**, not a separate setting: it
+needs no user tuning, and tying it to the interval keeps "stale" meaning the same
+thing at any refresh rate. A fixed constant drifts out of proportion as soon as
+the interval is changed, which is how it ended up meaning different things at
+different settings.
+
 ## Settings page
 
 Every setting is edited on one page inside the panel, opened from the gear in
@@ -133,14 +141,6 @@ new setting be added without another header glyph.
 
 A store switched off is now hidden from the list entirely rather than collapsing
 to a faded header: the Settings page is where it is switched back on.
-
-The range is 30–720 with a 90-minute default, chosen so the slider has
-headroom above the default rather than starting at its ceiling. The **stale
-threshold is derived from the interval at 1.5x**, not a separate setting: it
-needs no user tuning, and tying it to the interval keeps "stale" meaning the same
-thing at any refresh rate. A fixed constant drifts out of proportion as soon as
-the interval is changed, which is how it ended up meaning different things at
-different settings.
 
 ## Refresh
 

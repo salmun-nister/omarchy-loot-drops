@@ -108,7 +108,7 @@ Each enabled store gets its own section in the panel, headed by the store's mark
 — the real Steam, GOG, Amazon and Epic logos; Epic's is bundled because Nerd
 Fonts has no mark for it. Games sit slightly indented under their store name,
 unseen first. Store watches, notification bells, Epic mobile platforms and
-every other setting live in the gear's settings page, grouped by store.
+every other setting live in the gear's Settings page, grouped by store.
 
 Hovering a game highlights it exactly as the keyboard cursor does, and the two
 never show at once: moving the mouse onto a row clears the keyboard highlight,
@@ -204,7 +204,7 @@ on save.
 { "id": "salmun-nister.loot-drops", "refreshMinutes": 90, "gogNotify": false }
 ```
 
-The Settings page writes to the same keys, so you can also set them by hand while
+The Settings page writes the same keys, so you can also set them by hand while
 the plugin is off. Switching a store **off** stops it being fetched at all — no
 request, no rows, no notifications, and it disappears from the list. Switching it
 back **on** re-records that store silently rather than announcing everything it
@@ -288,6 +288,10 @@ ending-soon hourglass.
 
 [Build, run and remove](docs/DEVELOPMENT.md) · [Design record](DESIGN.md) ·
 [Architecture](ARCHITECTURE.md) · [Release process](docs/RELEASE.md)
+
+Questions and bug reports are welcome in
+[issues](https://github.com/salmun-nister/omarchy-loot-drops/issues). Report
+anything security-sensitive privately, as described in [SECURITY.md](SECURITY.md).
 
 ## Compatibility
 
