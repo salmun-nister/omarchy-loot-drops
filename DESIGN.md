@@ -101,15 +101,38 @@ feature from "notify me when a game goes free to keep" and are deferred.
 
 ## Settings
 
-`refreshMinutes` (integer, 30–720, default 90), `hideSeen`, `steamEnabled`,
-`epicEnabled`, `gogEnabled`, `amazonEnabled`, `steamNotify`, `epicNotify`,
-`gogNotify`, `amazonNotify`, `country`. `amazonEnabled` defaults to false:
-it is the one store whose fetch renders a page in a browser, so it is opt-in.
-Its notify setting still defaults to true, like the others, and only matters once
-the store is on. `hideSeen` defaults to false and is a view filter, not a second
-baseline. `country` is shared by Steam and Epic; it replaced `steamCountry`,
-which is still read as a fallback and copied into `country` on first load, so an
-upgrade keeps the user's choice.
+`refreshMinutes` (integer, 30–720, default 90), `maxStoreNotifications`
+(integer, 0–20, default 3), `hideSeen`, `steamEnabled`, `epicEnabled`,
+`epicMobileAndroid`, `epicMobileIos`, `gogEnabled`, `amazonEnabled`,
+`steamNotify`, `epicNotify`, `gogNotify`, `amazonNotify`, `country`.
+`amazonEnabled` defaults to false: it is the one store whose fetch renders a
+page in a browser, so it is opt-in. Its notify setting still defaults to true,
+like the others, and only matters once the store is on. `hideSeen` defaults to
+false and is a view filter, not a second baseline. `country` is shared by Steam
+and Epic, including Epic's mobile feeds, which have no "let the store choose"
+option and fall back to `US`. It replaced `steamCountry`, which is still read as
+a fallback and copied into `country` on first load, so an upgrade keeps the
+user's choice.
+
+`maxStoreNotifications` caps one store's individual notifications: `1` always
+bundles a store's batch, `0` removes the limit, and a bundled summary keeps only
+the panel action. The two Epic mobile keys are sub-platform switches, not
+stores: their games merge into the `epic` bucket and share its baseline.
+
+## Settings page
+
+Every setting is edited on one page inside the panel, opened from the gear in
+the footer or with `,`; the list and the page share the panel, and `Esc` returns
+to the list. Before it, each store header carried a watch switch and a
+notification bell, and `e`/`n` targeted whichever store the pointer was over.
+That worked while there were two controls per store, but it did not scale to
+Epic's two mobile platforms and the notification cap, and the pointer-dependent
+keyboard targeting had already produced one real bug. Grouping the controls by
+store on their own page gives each one a label, keeps the list clean, and lets a
+new setting be added without another header glyph.
+
+A store switched off is now hidden from the list entirely rather than collapsing
+to a faded header: the Settings page is where it is switched back on.
 
 The range is 30–720 with a 90-minute default, chosen so the slider has
 headroom above the default rather than starting at its ceiling. The **stale
@@ -133,8 +156,11 @@ different settings.
 - `primed: false` — the first successful fetch records IDs and stays silent.
 - **Store off** — not fetched, not listed, no alerts.
 - **Store on, bell off** — fetched and listed, no notifications.
-- **Store turned off then on** — re-primes that store's baseline silently, so
-  re-enabling does not produce a flood of backfill notifications.
+- **Store or Epic mobile platform turned off then on** — priming is dropped while
+  the recorded ids and seen marks are kept, so the next fetch re-records that
+  source silently instead of replaying what appeared while it was off. For a
+  mobile platform this re-primes the shared `epic` baseline, because the feeds
+  share it.
 
 ## Ending soon
 
@@ -183,7 +209,13 @@ Store marks are drawn at the theme's 16px heading size. Steam, GOG and Amazon ar
 Nerd Font glyphs; Epic has no such glyph, so it uses a bundled monochrome
 wordmark (Simple Icons, CC0) colorized to the theme with `MultiEffect`. Labels
 and game titles share an indent derived from the mark size, so they stay aligned
-when a theme changes the font scale.
+when a theme changes the font scale. Epic's mobile rows append a platform glyph
+after the title instead of adding a section or a second header.
+
+The Settings page replaces the list inside the same panel and keeps the same
+pinned footer and scrolling rules. It is taller than the list's 620px clamp and
+scrolls on its own, so the page needs no separate window and no second surface
+for themes to style. A switched-off store has no rows in the list at all.
 
 ## Failure states
 
@@ -371,9 +403,10 @@ Amazon's in-game content or Luna streaming catalogue.
 
 ## Progress
 
-Accepted: ID, single `bar-widget` kind, three store sources, per-store toggles
-and bells, 3-hour refresh with stale-on-open and middle-click manual refresh,
-silent first run, and own-code helpers with a single linked credit line.
+Accepted: ID, single `bar-widget` kind, four store sources plus Epic's Android
+and iOS feeds, one in-panel Settings page instead of per-store header controls,
+a 90-minute refresh with stale-on-open and middle-click manual refresh, silent
+first run, and own-code helpers with a single linked credit line.
 
 Completed evidence:
 
@@ -566,14 +599,14 @@ Completed evidence:
   Omarchy 4.5's `omarchy-notification-send` accepts `--action <label> <program>
   [words...]`, where the first action is also the card click, and the shell
   groups cards by sender name (`app:loot-drops`). A single game's notification
-  carries three actions — **Launch Loot Drops** (first, so a card click still
+  carries three actions — **View All** (first, so a card click still
   opens the panel), **Open Game Store**, and **Mark as seen** — and all three
   call the widget back over IPC (`omarchy-shell -q <id> open|openGame|markSeen`).
   The notification therefore carries only the store and a scrubbed game id: the
   widget validates the id, re-derives the allowlisted URL, and marks the game
   seen, so no URL or command rides in the argv. `maxStoreNotifications`
   (default 3) caps one store's individual notifications; `1` always bundles,
-  `0` means no limit, and a bundled summary keeps only **Launch Loot Drops**.
+  `0` means no limit, and a bundled summary keeps only **View All**.
   The treasure-chest glyph stays the notification icon.
 
 Remaining:
