@@ -784,7 +784,10 @@ Panel {
     // answered: the user sees what we have and the error line names what is
     // missing. Only a total failure is an unreachable store.
     if (result.mode === "partial") {
-      succeed("epic", result.games)
+      // Show what answered, but do not move the baseline: the feed that failed
+      // still has its ids recorded, so its games are not re-announced when it
+      // comes back. The next complete assembly records everything normally.
+      succeed("epic", result.games, false)
       setBucket("epic", { error: "Could not reach Epic Mobile" })
     } else if (result.mode === "fail") {
       fail("epic", "Could not reach Epic")
@@ -939,7 +942,9 @@ Panel {
     finishEpicPart(platform, parsed.games)
   }
 
-  function succeed(store, games) {
+  // `recordBaseline` is false for a partial Epic result: the missing feed must
+  // keep its recorded ids, or every game it had would look new when it returns.
+  function succeed(store, games, recordBaseline) {
     var now = Date.now()
     setBucket(store, {
       games: games,
@@ -948,6 +953,7 @@ Panel {
       neverChecked: false,
       lastSuccessAt: now
     })
+    if (recordBaseline === false) return
 
     var transition = Model.diffStore(seenState, store, games,
       storesOn[store], notifyOn[store])

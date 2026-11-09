@@ -67,7 +67,8 @@ Epic's mobile programme is separate from PC and has no web GraphQL presence:
 `platform=android` and `platform=ios` on the platform discover feed are each
 one GET. The two feeds are merged into the `epic` bucket with the `epic`
 baseline, each row tagged with its platform so `openGame` follows the same
-allowlist path as PC.
+allowlist path as PC. A fetch whose mobile part fails is displayed but does not
+move the baseline, so a returning feed does not replay its list as new.
 
 Amazon Luna has no endpoint a script may read: its claims grid exists only after
 the page's scripts run, and its GraphQL rejects clients without a browser's TLS
