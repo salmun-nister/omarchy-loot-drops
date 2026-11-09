@@ -161,6 +161,9 @@ to a faded header: the Settings page is where it is switched back on.
   source silently instead of replaying what appeared while it was off. For a
   mobile platform this re-primes the shared `epic` baseline, because the feeds
   share it.
+- **One Epic feed failed** — the parts that answered are shown and an error
+  names the missing feed, but the baseline is not moved. The failed feed keeps
+  its recorded ids, so its games are not replayed as new when it returns.
 
 ## Ending soon
 
