@@ -31,19 +31,29 @@ mkdir -p "$shim/qs"
 ln -s "$shell_dir/Ui" "$shim/qs/Ui"
 ln -s "$shell_dir/Commons" "$shim/qs/Commons"
 
-report="$("$lint_bin" -I "$shim" "$root/BarWidget.qml" 2>&1 || true)"
-status=$("$lint_bin" -I "$shim" "$root/BarWidget.qml" >/dev/null 2>&1; echo $?)
+report_for() { "$lint_bin" -I "$shim" "$1" 2>&1 || true; }
+status_for() { "$lint_bin" -I "$shim" "$1" >/dev/null 2>&1; echo $?; }
 
-errors="$(printf '%s\n' "$report" | grep -c '^Error:' || true)"
-# qmllint reports a syntax error as a [syntax] warning and exits 255, so the
-# exit status is checked as well rather than trusting the warning categories.
-syntax="$(printf '%s\n' "$report" | grep -c '\[syntax\]$' || true)"
+failed=0
+for file in "$root/BarWidget.qml" "$root/EntryField.qml"; do
+  name="$(basename "$file")"
+  report="$(report_for "$file")"
+  status="$(status_for "$file")"
 
-if [ "$errors" -ne 0 ] || [ "$syntax" -ne 0 ] || [ "$status" -ne 0 ]; then
-  printf '%s\n' "$report" | grep -A3 -E '^Error:|\[syntax\]$' >&2 || true
-  echo "FAIL: QML errors=$errors syntax=$syntax exit=$status" >&2
-  exit 1
-fi
+  errors="$(printf '%s\n' "$report" | grep -c '^Error:' || true)"
+  # qmllint reports a syntax error as a [syntax] warning and exits 255, so the
+  # exit status is checked as well rather than trusting the warning categories.
+  syntax="$(printf '%s\n' "$report" | grep -c '\[syntax\]$' || true)"
 
-warnings="$(printf '%s\n' "$report" | grep -c '^Warning:' || true)"
-echo "PASS: BarWidget.qml has no QML errors ($warnings shim warnings for host-dependent tokens)"
+  if [ "$errors" -ne 0 ] || [ "$syntax" -ne 0 ] || [ "$status" -ne 0 ]; then
+    printf '%s\n' "$report" | grep -A3 -E '^Error:|\[syntax\]$' >&2 || true
+    echo "FAIL: $name QML errors=$errors syntax=$syntax exit=$status" >&2
+    failed=1
+    continue
+  fi
+
+  warnings="$(printf '%s\n' "$report" | grep -c '^Warning:' || true)"
+  echo "PASS: $name has no QML errors ($warnings shim warnings for host-dependent tokens)"
+done
+
+exit "$failed"

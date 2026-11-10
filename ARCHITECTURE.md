@@ -16,6 +16,8 @@ while notifications must continue, and document the shutdown path when you do.
 | File | Role |
 | --- | --- |
 | `BarWidget.qml` | Entry point. Transport, persistence, panel rendering, lifecycle. |
+| `EntryField.qml` | Single-line Settings input drawn from key events, so no Qt text input reads the clipboard. |
+| `EntryEdit.js` | Pure text-editing and clipboard-cleanup functions for `EntryField.qml`. No I/O. |
 | `Model.js` | Pure functions: parse, allowlist, diff, notify, copy. No I/O. |
 | `lib/capped-run` | Byte cap on a child's stdout, killing its process group when the cap is exceeded. |
 | `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json`. |

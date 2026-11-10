@@ -280,6 +280,15 @@ function normalizeCountry(value) {
   return /^[A-Z]{2}$/.test(cc) ? cc : ""
 }
 
+// What the country field accepts as it is typed or pasted. ISO 3166-1
+// alpha-2 is two letters, so anything else is dropped where it arrives
+// rather than at commit time, where a whole entry would be lost. The value
+// is upper-cased on the way in, so "us" shows as "US" while it is typed.
+function countryInput(value) {
+  var cc = String(value == null ? "" : value).toUpperCase().replace(/[^A-Z]/g, "")
+  return cc.slice(0, 2)
+}
+
 // The shared store country. "steamCountry" is the key from when the setting
 // only covered Steam; it stays as a read fallback so an upgrade does not reset
 // a country the user chose.
