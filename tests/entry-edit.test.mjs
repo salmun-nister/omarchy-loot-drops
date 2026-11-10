@@ -13,7 +13,7 @@ const source = readFileSync(new URL('EntryEdit.js', root), 'utf8')
 const Edit = new Function(`"use strict";\n${source}\nreturn {
   PASTE_LIMIT, state, selection, hasSelection, selectedText, insert, cut,
   backspace, forwardDelete, clear, selectAll, moveTo, left, right, clean, fit,
-  previous, next,
+  previous, next, pasteOutcome,
 };`)();
 
 test('state clamps the caret to the text', () => {
@@ -88,6 +88,46 @@ test('clean drops a fragment left by a capped read', () => {
 
 test('the paste limit matches the byte cap the helper enforces', () => {
   assert.equal(Edit.PASTE_LIMIT, 4096);
+});
+
+test('a failed paste may not change the field', () => {
+  // What the field does with a finished read: the outcome decides, and a
+  // failed read has no outcome to insert.
+  const applyPaste = (state, exitCode, output) => {
+    const value = Edit.pasteOutcome(exitCode, output);
+    if (value === null) return state;
+    return Edit.insert(state, value, 8);
+  };
+
+  // An overflow: lib/capped-run exits 1 and writes no stdout at all.
+  const overflow = Edit.pasteOutcome(1, '');
+  assert.equal(overflow, null, 'an overflow may not change the field');
+
+  // A timeout: the helper forwards whatever the producer managed to send
+  // and exits with the status of the producer, so a failed read can carry
+  // a partial string. It must be discarded, not inserted.
+  const timedOut = Edit.pasteOutcome(124, 'XY');
+  assert.equal(timedOut, null, 'partial output from a failed read is discarded');
+
+  // The value and the selection survive both, where a paste that finished
+  // normally would have replaced the selection.
+  const selected = Edit.selectAll(Edit.state('DE'));
+  assert.equal(applyPaste(selected, 1, '').text, 'DE',
+    'the existing value survives an overflowed paste');
+  assert.equal(applyPaste(selected, 124, 'XY').text, 'DE',
+    'the existing value survives a timed-out paste');
+  assert.equal(applyPaste(selected, 124, 'XY').cursor, selected.cursor,
+    'the caret does not move when the paste failed');
+});
+
+test('a paste that finished normally may change the field', () => {
+  assert.equal(Edit.pasteOutcome(0, 'DE'), 'DE');
+  assert.equal(Edit.pasteOutcome(0, ''), '', 'an empty clipboard is not a failure');
+
+  const selected = Edit.selectAll(Edit.state('US'));
+  const value = Edit.pasteOutcome(0, 'DE');
+  assert.equal(Edit.insert(selected, value, 8).text, 'DE',
+    'a successful paste replaces the selected value');
 });
 
 test('a normalised value replaces the selection and fits the field', () => {

@@ -111,3 +111,15 @@ test('the country field takes exactly two letters', () => {
     'the field normalises what is typed and pasted');
   assert.match(source, /acceptInput:\s*function\(value\)\s*\{\s*return \/\^\[A-Z\]\*\$\/\.test\(value\)\s*\}/);
 });
+
+test('a paste only lands when the read finished normally', () => {
+  const source = read('EntryField.qml');
+  assert.match(source, /onExited: function\(exitCode/,
+    'the exit handler must see the status of the read');
+  assert.match(source, /Edit\.pasteOutcome\(exitCode/,
+    'the decision belongs to the helper the unit tests drive');
+  assert.ok(!/if \(root\.activeFocus\) root\.pasteText\(pasteOutput\.text\)/.test(source),
+    "the output of a failed read must never be inserted; an overflow exits 1 "
+    + 'with no output and a timeout forwards partial output with a nonzero '
+    + 'status');
+});

@@ -74,7 +74,9 @@ fails if runtime QML reintroduces a `TextField`, `TextInput`, `TextEdit` or
 `TextArea`, or reaches the clipboard outside that one path. A field keeps the
 keyboard when it loses the focus, including when another window takes it, so
 the clipboard picker still pastes through that one bounded path instead of
-reaching a Qt text input somewhere else.
+reaching a Qt text input somewhere else. A read that did not finish normally
+changes nothing: the field keeps its value and its selection, so a rejected
+or truncated transfer cannot empty a setting.
 
 **State file.** `lib/seen-state` opens the directory and file with
 `O_NOFOLLOW`, refuses anything that is not a regular file owned by you, caps the

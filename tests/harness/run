@@ -19,15 +19,39 @@ fi
 
 shim="$(mktemp -d)"
 state="$(mktemp -d)"
-trap 'rm -rf "$shim" "$state"' EXIT
+producers="$(mktemp -d)"
+trap 'rm -rf "$shim" "$state" "$producers"' EXIT
 mkdir -p "$shim/qs"
 ln -s "$shell_dir/Ui" "$shim/qs/Ui"
 ln -s "$shell_dir/Commons" "$shim/qs/Commons"
+
+# Stand-in producers for the paste regression. The real one is wl-paste;
+# these produce the outcomes the harness has to survive, so the field is
+# driven through the real Process callback either way.
+cat >"$producers/overflow.sh" <<'PRODUCER'
+#!/bin/sh
+# More than the 4096-byte cap: lib/capped-run kills the child and exits 1
+# without forwarding a byte.
+head -c 5000 /dev/zero | tr '\000' 'A'
+PRODUCER
+cat >"$producers/timeout.sh" <<'PRODUCER'
+#!/bin/sh
+# Partial output, then a hang: the timeout kills it and the helper
+# forwards what was sent while exiting with the status of the producer.
+printf 'XY'
+exec sleep 10
+PRODUCER
+cat >"$producers/ok.sh" <<'PRODUCER'
+#!/bin/sh
+printf 'GB'
+PRODUCER
+chmod +x "$producers"/*.sh
 
 output="$(QML_IMPORT_PATH="$shim${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
 LOOT_DROPS_HARNESS=1 \
 LOOT_DROPS_DIR="$root" \
 LOOT_DROPS_STATE="$state" \
+LOOT_DROPS_PASTE_DIR="$producers" \
   quickshell -p "$here/shell.qml" "$@" 2>&1)" || true
 printf '%s\n' "$output"
 
@@ -147,8 +171,31 @@ if (data.get("settingsRows") or 0) < 14:
     print("FAIL: Settings page built only %s rows" % data.get("settingsRows"),
           file=sys.stderr)
     raise SystemExit(1)
+
+# The paste path, driven through the real Process callback. A transfer that
+# did not finish normally must leave the field and its selection alone: the
+# helper exits 1 with no output on an overflow, and forwards partial output
+# with the status of the producer on a timeout. The control case proves the
+# field was actually driven, so a field that never had focus cannot pass here.
+paste = data.get("paste") or {}
+print("  paste: overflow=%s timeout=%s success=%s"
+      % (paste.get("overflow"), paste.get("timeout"), paste.get("success")))
+if paste.get("success") != "GB":
+    print("FAIL: a paste that finished normally did not land (%r); the field "
+          "was never driven" % (paste.get("success"),), file=sys.stderr)
+    raise SystemExit(1)
+if paste.get("overflow") != "DE":
+    print("FAIL: an overflowed paste changed the field to %r; the value it "
+          "held must survive a rejected transfer" % (paste.get("overflow"),),
+          file=sys.stderr)
+    raise SystemExit(1)
+if paste.get("timeout") != "DE":
+    print("FAIL: a timed-out paste changed the field to %r; partial output "
+          "from a failed transfer must be discarded" % (paste.get("timeout"),),
+          file=sys.stderr)
+    raise SystemExit(1)
 '; then
   exit 1
 fi
 
-echo "PASS: harness (panel rows built, sized and positioned)"
+echo "PASS: harness (panel rows built, sized and positioned; paste failures leave the field alone)"

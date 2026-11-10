@@ -316,9 +316,14 @@ Item {
       root.pasteBin, "--no-newline", "--type", "text"
     ]
     stdout: StdioCollector { id: pasteOutput }
-    onExited: {
+    onExited: function(exitCode, exitStatus) {
       pasteDeadline.stop()
-      if (root.activeFocus) root.pasteText(pasteOutput.text)
+      // Only a read that finished normally may change the field. An
+      // overflow or a timeout must leave the value and the selection
+      // alone, so the failed transfer's output is discarded rather than
+      // inserted over what the user had.
+      var value = Edit.pasteOutcome(exitCode, pasteOutput.text)
+      if (value !== null && root.activeFocus) root.pasteText(value)
       root.pasting = false
     }
   }
