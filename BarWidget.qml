@@ -80,6 +80,26 @@ Panel {
   readonly property int settingsTogglePad: Style.space(6)
   readonly property int settingsControlWidth: Style.space(96)
 
+  // Which Settings field, if any, is taking keys. The panel's key catcher runs
+  // before its children, so it must stand aside while a field is being edited
+  // or typing would drive the panel instead of the field.
+  property Item activeEditor: null
+  function noteEditor(field, focused) {
+    if (focused) root.activeEditor = field
+    else if (root.activeEditor === field) root.activeEditor = null
+  }
+  // Return the keyboard to the panel unless another field has taken it. A
+  // click straight from one field into the other must not pull focus back.
+  // Only an explicit finish (Enter, Tab, Escape) comes through here: a field
+  // that merely lost the focus keeps it, so the clipboard picker can close
+  // and paste into it with Shift+Insert.
+  function leaveEditor(field) {
+    Qt.callLater(function() {
+      if (root.activeEditor && root.activeEditor !== field) return
+      keyCatcher.forceActiveFocus()
+    })
+  }
+
   // Local overrides so footer toggles answer on the click itself. Going
   // through persist() alone leaves the UI waiting for the shell to echo the
   // written shell.json back, which reads as a ~1s lag on the eye and mobile
@@ -1353,6 +1373,10 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      // A Settings field owns the keyboard while it is focused; see
+      // root.noteEditor. Without this the catcher consumes j/k/h/l, Space and
+      // Enter before the field sees them.
+      blocked: root.activeEditor !== null
 
       onMoveRequested: function(dx, dy) {
         // In Settings the list is not on screen, so its cursor must not
@@ -2273,7 +2297,7 @@ Panel {
                       ? root.refreshMinutes : root.maxStoreNotifications) < 0
             }
 
-            TextField {
+            EntryField {
               id: customField
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(52)
@@ -2282,59 +2306,71 @@ Panel {
               visible: rangeDropdown.customSelected
               text: String(modelData.kind === "sliderRefresh"
                 ? root.refreshMinutes : root.maxStoreNotifications)
-              font.family: root.fontFamily
+              fontFamily: root.fontFamily
+              foreground: root.foreground
+              accent: Commons.Color.accent
+              python: root.python
+              cappedRun: root.cappedRun
+              // Three digits cover the highest preset and the schema maximum.
+              maximumLength: 3
               placeholderText: modelData.kind === "sliderRefresh" ? "30–720" : "0–20"
-              onAccepted: {
-                var v = String(text).trim()
-                if (!/^\d+$/.test(v)) { text = String(
-                  modelData.kind === "sliderRefresh"
-                    ? root.refreshMinutes : root.maxStoreNotifications); return }
-                var n = Number(v)
-                if (modelData.kind === "sliderRefresh")
-                  root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n) })
-                else
-                  root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n) })
-                Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-              }
-              onEditingFinished: {
-                var v2 = String(text).trim()
-                if (/^\d+$/.test(v2)) {
-                  var n2 = Number(v2)
+              // A whole number of minutes or games: a letter never enters the
+              // field, so there is nothing to reject on commit.
+              acceptInput: function(value) { return /^[0-9]*$/.test(value) }
+              onActiveFocusChanged: root.noteEditor(customField, activeFocus)
+              onEditingFinished: function(explicit) {
+                var raw = String(text).trim()
+                if (/^\d+$/.test(raw)) {
+                  var n = Number(raw)
                   if (modelData.kind === "sliderRefresh")
-                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n2) })
+                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n) })
                   else
-                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n2) })
+                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n) })
                 }
-                text = String(modelData.kind === "sliderRefresh"
-                  ? root.refreshMinutes : root.maxStoreNotifications)
-                Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+                text = Qt.binding(function() {
+                  return String(modelData.kind === "sliderRefresh"
+                    ? root.refreshMinutes : root.maxStoreNotifications)
+                })
+                // Only an explicit finish hands the keyboard back to the
+                // panel. Losing the focus to something else, or another
+                // window taking the keyboard, leaves the field holding it.
+                if (explicit) root.leaveEditor(customField)
               }
             }
           }
 
-          TextField {
+          EntryField {
+            id: countryField
             anchors.left: parent.left
             anchors.leftMargin: root.storeIndent + root.settingsLabelColumn
               + root.settingsGap
             anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(70)
+            // The same width as the dropdowns above it, so the controls in the
+            // page share one column.
+            width: root.settingsControlWidth
             height: Style.spacing.controlHeight
-            verticalPadding: Style.spacing.controlPaddingY
             visible: modelData.kind === "country"
             text: root.country
-            placeholderText: "US, DE, GB…"
-            font.family: root.fontFamily
-            // Leaving the field returns keyboard focus to the panel, or
-            // keybinds like "s" keep typing into the box afterwards.
-            onAccepted: {
-              root.persist({ country: Model.normalizeCountry(text) })
-              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-            }
-            onEditingFinished: {
+            placeholderText: "e.g. US"
+            fontFamily: root.fontFamily
+            foreground: root.foreground
+            accent: Commons.Color.accent
+            python: root.python
+            cappedRun: root.cappedRun
+            // ISO 3166-1 alpha-2 is two letters. Anything else is dropped as
+            // it is typed or pasted, so a stray digit never reaches the
+            // setting and the value is upper-cased on the way in.
+            maximumLength: 2
+            sanitize: function(value) { return Model.countryInput(value) }
+            acceptInput: function(value) { return /^[A-Z]*$/.test(value) }
+            onActiveFocusChanged: root.noteEditor(countryField, activeFocus)
+            onEditingFinished: function(explicit) {
               var clean = Model.normalizeCountry(text)
               if (clean !== root.country) root.persist({ country: clean })
-              text = root.country
-              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+              text = Qt.binding(function() { return root.country })
+              // Only an explicit finish hands the keyboard back to the
+              // panel; see the note on the other field.
+              if (explicit) root.leaveEditor(countryField)
             }
           }
         }

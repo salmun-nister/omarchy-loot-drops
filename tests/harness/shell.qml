@@ -56,7 +56,9 @@ ShellRoot {
         anchors.right: parent.right
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        source: (Quickshell.env("LOOT_DROPS_DIR") || ".") + "/BarWidget.qml"
+        // A file:// URL, like the shell's own entryPointUrl, so the widget's
+        // sibling components resolve through its directory import.
+        source: "file://" + (Quickshell.env("LOOT_DROPS_DIR") || ".") + "/BarWidget.qml"
         onLoaded: {
           item.bar = stubBar
           item.moduleName = "salmun-nister.loot-drops"

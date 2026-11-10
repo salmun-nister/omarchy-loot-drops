@@ -16,7 +16,7 @@ const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, MAX_GAMES,
   staleAfterMs, STALE_MULTIPLIER, NOTIFY_BUNDLE_DEFAULT, NOTIFY_BUNDLE_MAX,
   scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
-  normalizeCountry, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
+  normalizeCountry, countryInput, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
   parseEpic, parseEpicMobile, mergeEpicGames, epicAssemblyResult, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore, unprimeStore,
   notificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
@@ -761,6 +761,22 @@ test('the shared country setting keeps reading the pre-Epic key', () => {
   assert.equal(Model.countryPatch({}), null, 'nothing to migrate');
   assert.equal(Model.countryPatch({ country: '', steamCountry: 'DE' }), null);
   assert.equal(Model.countryPatch({ steamCountry: 'USA' }), null);
+});
+
+test('the country field takes two letters and drops the rest', () => {
+  // ISO 3166-1 alpha-2 is two letters, so anything else is dropped where it
+  // arrives rather than at commit time, where the whole entry would be lost.
+  assert.equal(Model.countryInput('us'), 'US', 'the value is upper-cased');
+  assert.equal(Model.countryInput(' de '), 'DE', 'stray spaces are dropped');
+  assert.equal(Model.countryInput('d3'), 'D', 'a digit is not a letter');
+  assert.equal(Model.countryInput('USA'), 'US', 'only two letters are kept');
+  assert.equal(Model.countryInput('u'), 'U');
+  assert.equal(Model.countryInput(''), '');
+  assert.equal(Model.countryInput(null), '');
+  assert.equal(Model.countryInput(undefined), '');
+  assert.equal(Model.countryInput('12'), '', 'no letters means no value');
+  // What the field ends up with must survive the commit check.
+  assert.equal(Model.normalizeCountry(Model.countryInput(' de ')), 'DE');
 });
 
 test('Amazon Luna ships off by default in the manifest', () => {

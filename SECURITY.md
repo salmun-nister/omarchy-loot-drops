@@ -14,7 +14,8 @@ and explicit.
 | Kind | Detail |
 | --- | --- |
 | Network | Five store hosts. One GET each per refresh for Steam, GOG and each enabled Epic mobile platform, one POST for Epic's PC catalogue; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
-| Process | `omarchy-shell` (including the notification actions that call back into the widget), `omarchy-notification-send`, and `xdg-open` (via `Qt.openUrlExternally`, for panel rows and the widget's store-page action). All named with resolved paths and argv, never a shell string. |
+| Process | `omarchy-shell` (including the notification actions that call back into the widget), `omarchy-notification-send`, `xdg-open` (via `Qt.openUrlExternally`, for panel rows and the widget's store-page action), and — only on an explicit paste in a Settings field — `wl-paste` under `lib/capped-run` and `timeout`. All named with resolved paths and argv, never a shell string. |
+| Clipboard | Read only when you paste with Ctrl+V or Shift+Insert into a Settings field, out of process under a two-second deadline and a 4096-byte cap. It is never read when another application changes it. Copying from a field writes the clipboard and never reads it. |
 | Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. Settings are written through the shell's own widget-entry API, not by this plugin. |
 | Privileged operations | None. |
 | Credentials read | None. |
@@ -63,6 +64,18 @@ title of exactly `--exec` would otherwise be read as a flag.
 a child that exceeds its cap, so a hostile or broken endpoint cannot stream
 unbounded data into the shell process.
 
+**Clipboard.** Qt's editable text inputs read the clipboard whenever another
+application changes it, with no size limit and no deadline. The Settings fields
+are therefore drawn from key events (`EntryField.qml`, `EntryEdit.js`) and never
+instantiate a Qt text input. The only read is an explicit paste, out of process,
+through `lib/capped-run` with a two-second `timeout` and a 4096-byte cap; an
+oversized read is refused rather than truncated. `tests/qml-surface.test.mjs`
+fails if runtime QML reintroduces a `TextField`, `TextInput`, `TextEdit` or
+`TextArea`, or reaches the clipboard outside that one path. A field keeps the
+keyboard when it loses the focus, including when another window takes it, so
+the clipboard picker still pastes through that one bounded path instead of
+reaching a Qt text input somewhere else.
+
 **State file.** `lib/seen-state` opens the directory and file with
 `O_NOFOLLOW`, refuses anything that is not a regular file owned by you, caps the
 read, and replaces the file by rename so a reader never sees a partial write.
@@ -75,7 +88,7 @@ No agent, model or AI integration. No credential broker. No privileged setup. No
 install hook, and nothing is fetched at plugin-add time. No store account is ever
 read, and no account cookie or token is stored, forwarded or accepted. The
 Amazon Luna store is rendered signed out; its profile holds only the anonymous
-cookies that page sets for any visitor.
+cookies that page sets for any visitor. No background clipboard read.
 
 Because there is no automated claim or purchase path, the worst outcome of a
 compromised response is a wrong game title and a link to a store page you can

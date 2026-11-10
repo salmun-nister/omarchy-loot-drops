@@ -142,6 +142,35 @@ new setting be added without another header glyph.
 A store switched off is now hidden from the list entirely rather than collapsing
 to a faded header: the Settings page is where it is switched back on.
 
+The page's two free-text values — a custom refresh or notification number, and
+the store country code — are edited in `EntryField.qml`, which is drawn from key
+events rather than being a Qt text input. Qt's editable inputs ask the clipboard
+for its contents whenever another application changes it, focused or not, with
+no size or time limit; a clipboard owner that keeps supplying data can stall the
+shared shell that way. This field never reads it in the background. A paste is
+the only read, and it runs out of process through `lib/capped-run` under a
+two-second `timeout` with a 4096-byte cap; an oversized read is refused rather
+than truncated. Copying writes the clipboard and never reads it. Editing logic
+lives in `EntryEdit.js` so Node can test it, and
+`tests/qml-surface.test.mjs` fails if runtime QML reintroduces a Qt text input
+or reaches the clipboard outside that path.
+
+Two rules make the short values usable. Focusing a field selects what it holds,
+so typing replaces the value instead of appending to it — "90" becomes "45"
+without a manual select — and the country code is normalised as it arrives:
+`Model.countryInput` upper-cases it and keeps the two letters of ISO 3166-1
+alpha-2, so a paste of " de " lands as "DE" and a stray digit never reaches the
+setting. The country field is as wide as the dropdowns above it, so the
+controls in the page share one column.
+
+A field gives the keyboard back to the panel only when the user asked to leave
+it (Enter, Tab, Escape). Losing the focus another way, including another
+window taking the keyboard, ends the edit without moving the focus item. That
+is what lets the clipboard picker work: Omarchy's history pastes by sending
+Shift+Insert after it closes, so the field that was being edited has to still
+hold the keyboard by then. Handing it back on a window deactivation is what
+made that paste go nowhere.
+
 ## Refresh
 
 - Timer at `refreshMinutes`, default 90.
