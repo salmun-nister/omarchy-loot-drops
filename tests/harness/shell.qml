@@ -11,6 +11,65 @@ import qs.Ui
 // through the settings so a harness run cannot fire a desktop notification,
 // and the state directory is redirected so it cannot touch real user state.
 ShellRoot {
+  id: root
+
+  // The paste regression, driven one case at a time. Each case points the
+  // field at a stand-in producer and starts a real paste, so the real
+  // Process callback decides what lands.
+  readonly property var pasteCases: [
+    { name: "overflow", producer: "overflow.sh" },
+    { name: "timeout", producer: "timeout.sh" },
+    { name: "success", producer: "ok.sh" }
+  ]
+  property int pasteIndex: -1
+  property int pasteWait: 0
+  property var pasteReport: ({})
+  readonly property string producerDir:
+    Quickshell.env("LOOT_DROPS_PASTE_DIR") || "/tmp"
+
+  function beginPaste(producer) {
+    var item = fieldLoader.item
+    if (!item) return
+    item.pasteBin = root.producerDir + "/" + producer
+    // An existing value, selected. The field selects what it holds when it
+    // is focused, so a paste would replace it.
+    item.text = "DE"
+    item.anchorPosition = 0
+    item.cursorPosition = item.text.length
+    item.forceActiveFocus()
+    item.startPaste()
+    root.pasteWait = 0
+  }
+  function pasteTick() {
+    var item = fieldLoader.item
+    if (!item) return
+    if (root.pasteIndex < 0) {
+      root.pasteIndex = 0
+      root.beginPaste(root.pasteCases[0].producer)
+      return
+    }
+    if (root.pasteIndex >= root.pasteCases.length) return
+    root.pasteWait++
+    if (item.pasting) {
+      if (root.pasteWait > 150) {
+        root.pasteReport[root.pasteCases[root.pasteIndex].name] = "TIMEOUT"
+        root.pasteIndex++
+      }
+      return
+    }
+    root.pasteReport[root.pasteCases[root.pasteIndex].name] = item.text
+    root.pasteIndex++
+    if (root.pasteIndex < root.pasteCases.length) {
+      root.beginPaste(root.pasteCases[root.pasteIndex].producer)
+    }
+  }
+  Timer {
+    interval: 200
+    running: true
+    repeat: true
+    onTriggered: root.pasteTick()
+  }
+
   FloatingWindow {
     implicitWidth: 560
     implicitHeight: 720
@@ -78,6 +137,25 @@ ShellRoot {
       }
     }
 
+    // The paste regression. The real EntryField is driven through the real
+    // Process callback, with a stand-in producer in place of wl-paste so an
+    // overflow and a timeout can be produced on demand. A transfer that did
+    // not finish normally must leave the field and its selection alone: the
+    // helper exits 1 with no output on an overflow, and forwards whatever
+    // the producer managed to send before exiting with its status on a
+    // timeout.
+    Loader {
+      id: fieldLoader
+      anchors.fill: parent
+      visible: false
+      source: "file://" + (Quickshell.env("LOOT_DROPS_DIR") || ".") + "/EntryField.qml"
+      onLoaded: {
+        item.python = "/usr/bin/python3"
+        item.cappedRun = (Quickshell.env("LOOT_DROPS_DIR") || ".") + "/lib/capped-run"
+        item.maximumLength = 8
+      }
+    }
+
     // Report the resulting state so the harness run can be checked from
     // outside the window rather than by eye.
     Timer {
@@ -134,7 +212,8 @@ ShellRoot {
           metrics: widget.listMetrics(),
           panelOpened: widget.opened,
           probe: widget.rowProbe,
-          column: widget.columnProbe
+          column: widget.columnProbe,
+          paste: root.pasteReport
         }))
         console.log("HARNESS state " + JSON.stringify({
           buckets: widget.buckets,

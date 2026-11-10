@@ -171,6 +171,16 @@ Shift+Insert after it closes, so the field that was being edited has to still
 hold the keyboard by then. Handing it back on a window deactivation is what
 made that paste go nowhere.
 
+A paste only lands when the read finished normally. `lib/capped-run` exits 1
+without forwarding a byte when the paste is larger than the cap, and it
+forwards whatever a timed-out producer managed to send while exiting with the
+status of the producer, so a failed read can carry an empty or partial
+string. The field leaves the value and the selection alone in both cases:
+inserting that over a selected value would erase what the user had, and an
+empty country would then be persisted. The harness drives the real process
+callback with a stand-in producer for each failure, so this is checked
+against the shipped code rather than assumed.
+
 ## Refresh
 
 - Timer at `refreshMinutes`, default 90.

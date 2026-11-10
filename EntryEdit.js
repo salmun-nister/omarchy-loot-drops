@@ -14,6 +14,19 @@
 // than this, so a hostile owner cannot grow the shell's memory.
 var PASTE_LIMIT = 4096
 
+// What a finished paste may put in the field, or null when it may put
+// nothing there at all.
+//
+// Only a read that finished normally may change the field. An overflow
+// (the helper exits 1 with no output) or a timeout (the helper forwards
+// whatever the producer managed to send and exits with its status) leaves
+// the value and the selection alone: inserting an empty or partial string
+// over a selected value would erase what the user had.
+function pasteOutcome(exitCode, output) {
+    if (exitCode !== 0) return null
+    return String(output == null ? "" : output)
+}
+
 function clamp(value, low, high) {
     return Math.max(low, Math.min(high, Number(value) || 0));
 }
