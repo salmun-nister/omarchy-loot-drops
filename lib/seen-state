@@ -165,6 +165,8 @@ def main():
         payload = sys.stdin.buffer.readline(MAX_BYTES + 2)
         if len(payload) > MAX_BYTES:
             fail("payload is too large")
+        if not payload.strip():
+            fail("empty payload")
         write_seen(dirfd, payload)
     finally:
         os.close(dirfd)

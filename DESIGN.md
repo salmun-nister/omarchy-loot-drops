@@ -654,6 +654,31 @@ Completed evidence:
   `0` means no limit, and a bundled summary keeps only **View All**.
   The treasure-chest glyph stays the notification icon.
 
+- **0.5.0 features and extraction**:
+  - `CommandRunner.qml` synchronizes `Process.onExited` and
+    `StdioCollector.onStreamFinished` (`waitForEnd: true`) so store fetches and
+    `seen-state` loads never parse partial stdout. `EntryField.qml` applies the
+    same two-event completion gate to its bounded `wl-paste` runner, adds a
+    `cancelled()` signal for `Escape`, fixes `positionAt` scrolling, and consumes
+    rejected printable characters so they do not leak to panel shortcuts.
+  - `SettingsPage.qml` extracts the in-panel Settings `ListView` and adds an
+    **Exit Settings** footer button. Settings updates apply to local `settings`
+    immediately and flush on panel close (with a 5-second debounce safety net),
+    removing the old per-store override maps.
+  - `Model.httpResultAction` separates process exit status, HTTP status codes
+    (without curl `-f`, so GOG `404` stays an empty store while `5xx` becomes a
+    retryable error), and missing Chromium (`exit 127`). Failed stores retry with
+    per-store exponential backoff.
+  - Added `endingSoonNotify` (one-shot reminder notifications persisted in
+    `seen.json` under `reminded`), `steamUseClient` (`steam://store/<id>` for
+    digits-only Steam apps, plus bundle/package parsing), `epicHideAddOns`
+    (`· DLC` tagging and filtering), `epicShowUpcoming` (via a second alias in
+    Epic's existing GraphQL request), inline row countdowns, Amazon Luna
+    redemption storefront badges inferred from claim slugs, `Shift+S` / footer
+    mark-all-seen, `y` write-only URL copy, and IPC `list` / `markAllSeen`.
+  - `lib/seen-state` refuses empty payloads so a crashed writer cannot wipe
+    `seen.json`, and `BarWidget.qml` queues overlapping saves (`seenSavePending`).
+
 Remaining:
 
 - GOG's success path is fixture-only and needs live confirmation at the next

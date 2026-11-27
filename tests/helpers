@@ -105,6 +105,13 @@ head -c 70000 /dev/zero | tr '\0' 'x' | "$store" save "$work/basic" >/dev/null 2
 expect_eq "leaves the old file whole after an oversized write" \
   '{"primed":true}' "$("$store" load "$work/basic")"
 
+# An empty stdin (e.g. a crashed writer closing the pipe early) must not wipe
+# the existing state file.
+"$store" save "$work/basic" </dev/null >/dev/null 2>&1 \
+  && bad "refuses an empty payload" || ok "refuses an empty payload"
+expect_eq "leaves the old file whole after an empty write" \
+  '{"primed":true}' "$("$store" load "$work/basic")"
+
 # A failed write must leave the previous file intact and no temporary behind.
 printf '{"primed":false}' | "$store" save "$work/basic" >/dev/null
 expect_eq "replaces the payload on a good write" \

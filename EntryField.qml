@@ -71,9 +71,11 @@ Item {
 
   signal accepted()
   // The edit ended. "explicit" is true when the user asked for it (Enter,
-  // Tab, Shift+Tab or Escape) and false when the focus simply went
-  // somewhere else, including another window taking the keyboard.
+  // Tab, Shift+Tab) and false when the focus simply went somewhere else,
+  // including another window taking the keyboard.
   signal editingFinished(bool explicit)
+  // The user pressed Escape to cancel the edit without committing draft text.
+  signal cancelled()
 
   activeFocusOnTab: true
   implicitWidth: Style.space(60)
@@ -113,6 +115,9 @@ Item {
   function startPaste() {
     if (pasting || cappedRun === "") return
     pasting = true
+    paste.exited = false
+    paste.streamDone = false
+    paste.lastExitCode = -1
     paste.running = true
     pasteDeadline.restart()
   }
@@ -124,7 +129,7 @@ Item {
     return true
   }
   function positionAt(x) {
-    var target = x - inner.x
+    var target = x - inner.x + root.scrollX
     var best = 0, distance = Infinity
     for (var pos = 0; pos <= text.length; pos = Edit.next(text, pos)) {
       var d = Math.abs(measure(text.slice(0, pos)) - target)
@@ -134,14 +139,22 @@ Item {
     return best
   }
 
+  // Raw printable text from a key event before sanitization, or "" for
+  // shortcuts, control characters, or non-character keys.
+  function rawTyped(event) {
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return ""
+    var value = String(event.text || "")
+    if (Edit.clean(value) !== value) return ""
+    return value
+  }
+
   // Typed text from a key event, or "" for anything that is not plain input
   // (a shortcut, a control character, or an input-method composition). The
   // normaliser runs here too, so a character the field does not accept is
   // dropped where it arrives instead of at commit time.
   function typed(event) {
-    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return ""
-    var value = String(event.text || "")
-    if (Edit.clean(value) !== value) return ""
+    var value = rawTyped(event)
+    if (value === "") return ""
     return sanitize ? String(sanitize(value)) : value
   }
 
@@ -168,14 +181,21 @@ Item {
       finish(true)
       return true
     case Qt.Key_Escape:
+      _explicitFinish = true
+      cancelled()
+      return true
     case Qt.Key_Tab:
     case Qt.Key_Backtab:
       finish(true)
       return true
     }
-    var value = typed(event)
-    if (value === "") return false
-    edit(Edit.insert(s, value, maximumLength))
+    var raw = rawTyped(event)
+    if (raw === "") return false
+    var value = sanitize ? String(sanitize(raw)) : raw
+    // Consume printable characters even when sanitize strips them, so typing
+    // a rejected character (like ',' in the country field) never leaks to the
+    // panel's keyboard shortcut catcher.
+    if (value !== "") edit(Edit.insert(s, value, maximumLength))
     return true
   }
 
@@ -310,13 +330,11 @@ Item {
   // deadline and a byte cap. The command carries no user data.
   Process {
     id: paste
-    command: [
-      root.python, root.cappedRun, String(Edit.PASTE_LIMIT),
-      root.timeoutBin, "-k", "1", "2",
-      root.pasteBin, "--no-newline", "--type", "text"
-    ]
-    stdout: StdioCollector { id: pasteOutput }
-    onExited: function(exitCode, exitStatus) {
+    property bool exited: false
+    property bool streamDone: false
+    property int lastExitCode: -1
+    function finishPaste(exitCode) {
+      if (!root.pasting || !exited || !streamDone) return
       pasteDeadline.stop()
       // Only a read that finished normally may change the field. An
       // overflow or a timeout must leave the value and the selection
@@ -326,13 +344,33 @@ Item {
       if (value !== null && root.activeFocus) root.pasteText(value)
       root.pasting = false
     }
+    command: [
+      root.python, root.cappedRun, String(Edit.PASTE_LIMIT),
+      root.timeoutBin, "-k", "1", "2",
+      root.pasteBin, "--no-newline", "--type", "text"
+    ]
+    stdout: StdioCollector {
+      id: pasteOutput
+      waitForEnd: true
+      onStreamFinished: {
+        paste.streamDone = true
+        paste.finishPaste(paste.lastExitCode)
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      lastExitCode = exitCode
+      exited = true
+      finishPaste(lastExitCode)
+    }
   }
   Timer {
     id: pasteDeadline
     interval: 4000
     onTriggered: {
-      paste.running = false
       root.pasting = false
+      paste.exited = false
+      paste.streamDone = false
+      paste.running = false
     }
   }
 }

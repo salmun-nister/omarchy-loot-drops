@@ -35,7 +35,7 @@ report_for() { "$lint_bin" -I "$shim" "$1" 2>&1 || true; }
 status_for() { "$lint_bin" -I "$shim" "$1" >/dev/null 2>&1; echo $?; }
 
 failed=0
-for file in "$root/BarWidget.qml" "$root/EntryField.qml"; do
+for file in "$root"/*.qml; do
   name="$(basename "$file")"
   report="$(report_for "$file")"
   status="$(status_for "$file")"

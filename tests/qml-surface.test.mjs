@@ -26,9 +26,11 @@ function walk(dir) {
 const qml = walk(root).map(file => relative(root, file).split(sep).join('/')).sort();
 const read = file => readFileSync(join(root, file), 'utf8');
 
-test('the runtime payload is scanned, including the new field', () => {
+test('the runtime payload is scanned, including the extracted components', () => {
   assert.ok(qml.includes('BarWidget.qml'), `runtime QML not found: ${qml}`);
   assert.ok(qml.includes('EntryField.qml'), `runtime QML not found: ${qml}`);
+  assert.ok(qml.includes('CommandRunner.qml'), `runtime QML not found: ${qml}`);
+  assert.ok(qml.includes('SettingsPage.qml'), `runtime QML not found: ${qml}`);
 });
 
 test('no runtime QML instantiates a Qt editable text input', () => {
@@ -44,9 +46,12 @@ test('no runtime QML instantiates a Qt editable text input', () => {
 test('the clipboard is read only by the bounded paste path', () => {
   for (const file of qml) {
     const source = read(file);
+    // Writing Quickshell.clipboardText = ... never reads the clipboard; any
+    // non-assignment reference is a read and is forbidden everywhere.
+    const reads = source.match(/Quickshell\.clipboardText(?!\s*=)/g) || [];
+    assert.deepEqual(reads, [],
+      `${file} reads Quickshell.clipboardText; clipboard reads are forbidden outside the bounded paste process`);
     if (file === 'EntryField.qml') continue;
-    assert.ok(!source.includes('clipboardText'),
-      `${file} touches the clipboard; only EntryField.qml may`);
     assert.ok(!source.includes('wl-paste'),
       `${file} invokes wl-paste; only EntryField.qml may`);
     assert.ok(!/\bClipboard\b/.test(source),
@@ -84,7 +89,7 @@ test('the paste deadline is bounded and outlasts the read', () => {
 
 test('losing the focus does not take the keyboard back from the field', () => {
   const field = read('EntryField.qml');
-  const widget = read('BarWidget.qml');
+  const settings = read('SettingsPage.qml');
 
   // The clipboard picker takes the keyboard, then closes and pastes with
   // Shift+Insert. If the field gave the keyboard back to the panel when
@@ -95,14 +100,18 @@ test('losing the focus does not take the keyboard back from the field', () => {
     'losing the focus ends the edit without asking for the keyboard back');
   assert.match(field, /finish\(true\)/,
     'the explicit finishes go through the other path');
-  assert.match(widget, /onEditingFinished: function\(explicit\)/);
-  assert.match(widget, /if \(explicit\) root\.leaveEditor\(/,
+  assert.match(field, /signal cancelled\(\)/,
+    'Escape emits cancelled rather than committing draft text');
+  assert.match(settings, /onEditingFinished: function\(explicit\)/);
+  assert.match(settings, /if \(explicit\) page\.widget\.leaveEditor\(/,
     'the panel takes the keyboard back only when the user asked to leave');
+  assert.match(settings, /onCancelled:/,
+    'Settings fields revert draft text on Escape');
 });
 
 test('the country field takes exactly two letters', () => {
-  const widget = read('BarWidget.qml');
-  const block = /id:\s*countryField[\s\S]*?\n          \}/.exec(widget);
+  const settings = read('SettingsPage.qml');
+  const block = /id:\s*countryField[\s\S]*?\n      \}/.exec(settings);
   assert.ok(block, 'the country field was not found');
   const source = block[0];
   assert.match(source, /maximumLength:\s*2/,

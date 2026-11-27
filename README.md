@@ -78,11 +78,14 @@ Nothing else is changed: no Hyprland setting, and no other entry in
 | Left-click the chest | Open the panel |
 | Middle-click the chest | Refresh the stores now |
 | Click the eye in the footer | Hide or show the games you have marked seen |
+| Click the checkmark in the footer | Mark all visible games as seen (shown when unseen games exist) |
 | Click the gear in the footer | Open or close the Settings page |
 | Click a game | Open its store page and close the panel |
 | Click a game's coin | Mark that game as seen, without opening it |
 | `r` | Refresh the stores now |
 | `s` | Toggle the highlighted game's seen state (press again to bring its coin back) |
+| `S` (`Shift+S`) | Mark all visible games as seen |
+| `y` | Copy the highlighted game's store link to the clipboard |
 | `v` | Hide or show the games you have marked seen |
 | `,` | Open or close the Settings page |
 | `j` / `k` | Scroll down / up |
@@ -95,11 +98,12 @@ it appears above the buttons until you press it again.
 
 A coloured dot sits on the top right of the chest while there are free games you
 have not marked as seen. Each such game carries a coin marker to the left of its
-title in the panel, and the dot stays until every one of them has been marked:
+title in the panel (or a red hourglass when an Epic or GOG giveaway is in its
+final 24 hours), and the dot stays until every one of them has been marked:
 opening the panel no longer clears it by itself. A game is marked when you open
-it or click its coin, or `s` toggles the highlighted one, so a game can be put
-back to unseen and its coin brought back. A game that turns up later lights the
-dot again. The dot is independent of the
+it, click its coin, press `s` to toggle the highlighted one, or click the footer's
+checkmark / press `Shift+S` to mark all visible games at once. A game that turns
+up later lights the dot again. The dot is independent of the
 notification bells, so a muted store still shows a dot for something you have not
 looked at. Like the notification-center badge, it is drawn over the icon rather
 than beside it, so the bar does not change width as games arrive.
@@ -107,8 +111,14 @@ than beside it, so the bar does not change width as games arrive.
 Each enabled store gets its own section in the panel, headed by the store's mark
 — the real Steam, GOG, Amazon and Epic logos; Epic's is bundled because Nerd
 Fonts has no mark for it. Games sit slightly indented under their store name,
-unseen first. Store watches, notification bells, Epic mobile platforms and
-every other setting live in the gear's Settings page, grouped by store.
+unseen first, with compact right-aligned countdowns (`3d`, `6h`) where the store
+publishes an end date, `· DLC` on Epic add-ons, and redemption storefront badges
+(`· GOG`, `· Epic`, `· Amazon`, etc.) on Amazon Luna rows. When **Show upcoming
+Epic games** is enabled, next week's announced Epic giveaways appear muted at
+the bottom of the Epic section with a clock glyph and `in <time>`; they do not
+count toward the bar dot or trigger notifications. Store watches, notification
+bells, Epic options, Steam client launching, and every other setting live in the
+gear's Settings page, grouped by store.
 
 Hovering a game highlights it exactly as the keyboard cursor does, and the two
 never show at once: moving the mouse onto a row clears the keyboard highlight,
@@ -147,7 +157,7 @@ A single game's notification carries three buttons:
 | Button | What it does |
 | --- | --- |
 | **View All** | Open the panel — the same as clicking the notification itself |
-| **Open Game Store** | Mark the game seen and open its page in the store offering it |
+| **Open Game Store** | Mark the game seen and open its page in the store offering it (or `steam://store/<id>` for single-app Steam giveaways when `steamUseClient` is enabled) |
 | **Mark as seen** | Mark the game seen without leaving the notification |
 
 A sudden batch is bundled. Once a store has more new games than the **Per-store
@@ -157,6 +167,10 @@ only button is **View All**. The buttons call the widget, which
 re-derives the same checked link a panel row opens. A muted store sends no
 notifications; its games still get their panel coin marker and light the bar
 dot.
+
+If **Ending soon reminders** (`endingSoonNotify`) is enabled, Loot Drops also
+sends a one-time notification (`Ending Soon on <store>`) when an unseen
+giveaway enters its final 24 hours, respecting each store's notification bell.
 
 ## Theming
 
@@ -178,22 +192,26 @@ them:
 ## Settings
 
 Open the Settings page from the gear at the bottom of the panel or with `,`. It
-groups every switch by store — watch, notifications, Epic's Android and iOS
-feeds — and keeps the refresh interval, the per-store notification limit, the
-hide-seen filter and the country code together below them. Changes apply
-immediately and are saved to your `shell.json`. The same keys can also be set on
-the widget's entry there, or through the Omarchy settings UI, and they hot-reload
-on save.
+groups every switch by store — watch, notifications, Steam client launching,
+Epic's Android and iOS feeds, Epic add-on hiding, and upcoming Epic previews —
+and keeps the general toggles, refresh interval, per-store notification limit,
+and country code together below them. Changes apply immediately and are saved
+to your `shell.json`. The same keys can also be set on the widget's entry there,
+or through the Omarchy settings UI, and they hot-reload on save.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `refreshMinutes` | `90` | How often to check the enabled stores (30–720). |
 | `maxStoreNotifications` | `3` | Per-store cap on individual notifications (0–20). `1` always bundles a store's batch into one summary; `0` means no limit. |
 | `hideSeen` | `false` | Hide the games you have marked seen, replacing them with a per-store count. The footer's eye toggles it. |
+| `endingSoonNotify` | `false` | Send a one-time desktop notification when an unseen giveaway enters its final 24 hours. Respects each store's notification toggle. |
 | `steamEnabled` | `true` | Watch Steam. |
+| `steamUseClient` | `false` | Launch single-app Steam giveaways via `steam://store/<id>` instead of the web browser. Bundles and packages still open in the browser. |
 | `epicEnabled` | `true` | Watch the Epic Games Store. |
 | `epicMobileAndroid` | `false` | Also list Epic's Android weekly free games under the Epic heading, marked with an Android glyph. Claiming is in the Epic Games app. |
 | `epicMobileIos` | `false` | Also list Epic's iOS weekly free games under the Epic heading, marked with an iOS glyph. Claiming is in the Epic Games app. |
+| `epicHideAddOns` | `false` | Hide Epic DLC and add-on giveaways from the panel list, unseen dot, and notifications. |
+| `epicShowUpcoming` | `false` | Show next week's announced Epic free games muted under Epic Games. Excluded from the bar dot and notifications. |
 | `gogEnabled` | `true` | Watch GOG. |
 | `amazonEnabled` | `false` | Watch Amazon Luna. Off by default because it renders a page in headless Chromium; watching needs no account, but claiming its games needs an Amazon Prime subscription. |
 | `steamNotify` | `true` | Notify when a Steam game goes free. |
@@ -217,7 +235,8 @@ its currently free games are recorded without a burst of notifications.
 
 The default interval trades freshness against how often the stores are asked.
 The panel also refreshes itself when you open it and the data is older than a
-stale interval, which covers a laptop that was asleep.
+stale interval, which covers a laptop that was asleep. Failed stores retry with
+per-store exponential backoff while keeping their last good list visible.
 
 The first run is deliberately quiet. It records what is already free without
 announcing it, so installing the plugin does not produce a wall of notifications
@@ -273,13 +292,14 @@ touched.
 
 ## Not included
 
-Upcoming and announced games, cover art, countdown timers, permanently-free and
-free-to-play titles, and store selection for Epic or GOG. GOG's giveaway is a
-limited-time claim-and-keep promotion, which is what this tracks — not GOG's
-larger free catalogue. Amazon Luna is tracked the same way: its claim-and-keep
-games only, so in-game content and Luna's streaming catalogue are out of scope.
-The claims grid exposes no end dates, so Amazon rows never carry the
-ending-soon hourglass.
+Cover art, end-date countdowns for Steam or Amazon Luna (whose listings do not
+publish end dates), upcoming announcements for stores other than Epic,
+permanently-free and free-to-play titles, and store selection for Epic or GOG.
+GOG's giveaway is a limited-time claim-and-keep promotion, which is what this
+tracks — not GOG's larger free catalogue. Amazon Luna is tracked the same way:
+its claim-and-keep games only, so in-game content and Luna's streaming catalogue
+are out of scope. The claims grid exposes no end dates, so Amazon rows never
+carry the ending-soon hourglass or trigger ending-soon reminders.
 
 ## Development
 
@@ -297,17 +317,18 @@ anything security-sensitive privately, as described in [SECURITY.md](SECURITY.md
 
 ## Compatibility
 
-Intended target: Omarchy 4 / Hyprland. The 0.4.0 notification actions were
-verified live on **Omarchy 4.5.0-3** with Hyprland 0.56.2 on X11-less Wayland,
-kernel 7.2.15-1-omarchy: the widget loads on the bar, the panel opens and closes,
-all four stores resolve, and notifications fire with the **View All**
-and **Open Game Store** buttons. The 0.3.1 install, update from 0.2.0, removal
-and restore were recorded on **Omarchy 4.0.6-1**. GOG's success path is still
-fixture-only, because no giveaway was live when it was tested. Amazon Luna is
-opt-in and was verified signed out in the live panel; its claims page depends on
-Amazon's regional availability and anti-bot behaviour. A vertical bar is an
-untested known gap: the panel is laid out for a horizontal bar, so placement
-or sizing on a side bar may be wrong until it is verified.
+Intended target: Omarchy 4 / Hyprland. Verified live on **Omarchy 4.5.0-3** with
+Hyprland 0.56.2 on X11-less Wayland, kernel 7.2.15-4-omarchy (Quickshell 0.3.2):
+the widget loads on the bar, the panel and Settings page open and close, live
+stores resolve, and IPC actions (`list`, `markSeen`, `openGame`, `markAllSeen`)
+respond. Notification actions were verified live on Omarchy 4.5.0-3 for 0.4.0,
+and the 0.3.1 install, update from 0.2.0, removal and restore were recorded on
+**Omarchy 4.0.6-1**. GOG's success path is still fixture-only, because no
+giveaway was live when it was tested. Amazon Luna is opt-in and was verified
+signed out in the live panel; its claims page depends on Amazon's regional
+availability and anti-bot behaviour. A vertical bar is an untested known gap:
+the panel is laid out for a horizontal bar, so placement or sizing on a side bar
+may be wrong until it is verified.
 
 Requires the Nerd Fonts package included with Omarchy: the store marks and
 row glyphs are pinned to Nerd Fonts 3.5.1, and moving between releases can

@@ -16,29 +16,33 @@ while notifications must continue, and document the shutdown path when you do.
 | File | Role |
 | --- | --- |
 | `BarWidget.qml` | Entry point. Transport, persistence, panel rendering, lifecycle. |
+| `CommandRunner.qml` | Synchronized `Process` + `StdioCollector` wrapper emitting `finished(exitCode, output)` only after both process exit and stdout flush. |
+| `SettingsPage.qml` | Extracted in-panel Settings `ListView` with store/general controls and pinned Exit Settings footer. |
 | `EntryField.qml` | Single-line Settings input drawn from key events, so no Qt text input reads the clipboard. |
 | `EntryEdit.js` | Pure text-editing and clipboard-cleanup functions for `EntryField.qml`. No I/O. |
 | `Model.js` | Pure functions: parse, allowlist, diff, notify, copy. No I/O. |
 | `lib/capped-run` | Byte cap on a child's stdout, killing its process group when the cap is exceeded. |
-| `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json`. |
+| `lib/seen-state` | Private, atomic, no-follow read/write of `seen.json` (refusing empty or oversized payloads). |
 | `tests/` | Portable checks, plus a live harness. |
 | `demo/` | Renders the real widget against a committed fixture, via a `curl` shim on `PATH`. Not part of the widget. |
 
 ## State
 
 One durable file, `~/.local/state/salmun-nister.loot-drops/seen.json`,
-written through `lib/seen-state`. It holds two records per store: `ids`, the
-notification baseline of games already announced, and `acknowledged`, the games
-the user has marked seen, which is what the bar dot and the row markers track.
+written through `lib/seen-state`. It holds three records per store: `ids`, the
+notification baseline of games already announced; `acknowledged`, the games the
+user has marked seen (which the bar dot and row markers track); and `reminded`,
+the games that have already fired a one-shot ending-soon reminder.
 
 ```json
-{ "primed": true, "stores": { "steam": { "ids": ["405640"], "acknowledged": [], "primed": true } } }
+{ "primed": true, "stores": { "steam": { "ids": ["405640"], "acknowledged": [], "reminded": [], "primed": true } } }
 ```
 
-Everything else is per-instance and in memory: the game list, each store's error
-and timestamp, and the cursor. Settings live inline in `shell.json` as widget
-settings, edited from the in-panel Settings page or the Omarchy settings UI, not
-in this file.
+Everything else is per-instance and in memory: the game list, each store's error,
+retry schedule and timestamp, and the cursor. Settings live inline in `shell.json`
+as widget settings, edited from the in-panel Settings page or the Omarchy settings
+UI, not in this file; edits update local state immediately and flush on panel
+close (with a 5-second debounce safety net).
 
 The Amazon Luna render keeps its anonymous Chromium profile at
 `~/.local/state/salmun-nister.loot-drops/browser-profile`. It is a cache, not
@@ -52,18 +56,23 @@ re-records silently rather than announcing what it missed.
 ## Fetching
 
 `curl` per enabled store, plus one Chromium render for Amazon Luna, each in its
-own `Process`, so a slow or hanging store cannot delay the others and one
+own `CommandRunner`, so a slow or hanging store cannot delay the others and one
 failure cannot mask the rest. Output is capped by `lib/capped-run` before
-anything is parsed.
+anything is parsed, and `Model.httpResultAction` separates process exit codes,
+HTTP status codes (accepting GOG's `404` as empty), and missing Chromium (`exit 127`).
+Failed stores schedule per-store exponential backoff retries with jitter while
+preserving their last good game list.
 
 Steam has no clean giveaway API, so its infinite-scroll search endpoint is read
-and the HTML rows parsed. Epic's site feed only carries Epic's own weekly
-free-games programme, so a developer-run 100%-off promotion never appeared
-there; Epic is asked through the store's catalog GraphQL instead, filtered to
-offers currently on sale in the zero-price band, then to zero-discount windows
-whose `endDate` is still in the future, because Epic keeps expired promotions in
-the array. GOG answers `404` when nothing is running, which is a healthy empty
-store rather than an error.
+and the HTML rows parsed for single-app, bundle, and package entries. Epic's
+site feed only carries Epic's own weekly free-games programme, so a
+developer-run 100%-off promotion never appeared there; Epic is asked through the
+store's catalog GraphQL instead, filtered to offers currently on sale in the
+zero-price band, then to zero-discount windows whose `endDate` is still in the
+future, because Epic keeps expired promotions in the array. A second alias in
+the same GraphQL request queries Epic's `freegames` pool for upcoming offers
+(`epicShowUpcoming`) with no extra round trip. GOG answers `404` when nothing is
+running, which is a healthy empty store rather than an error.
 
 Epic's mobile programme is separate from PC and has no web GraphQL presence:
 `platform=android` and `platform=ios` on the platform discover feed are each
@@ -79,7 +88,9 @@ the signed-out claims page with `chromium --headless --dump-dom`, under
 `lib/capped-run`, with `timeout` supplying the deadline `curl` gives itself. The
 profile lives inside the state directory and holds only what any signed-out
 visitor's session holds; no account, cookie or token from the user's browser is
-read. A page without the grid is an error, not an empty store.
+read. A page without the grid is an error, not an empty store. Redemption
+storefront badges (`GOG`, `Epic`, `Amazon`, etc.) are inferred locally from the
+claim URL slug with no extra requests.
 
 ## Trust boundary
 
@@ -87,12 +98,13 @@ Every network value is treated as untrusted, because it is attacker-controlled
 if a store is compromised or the connection is intercepted. Two rules hold
 everywhere, and both are enforced in `Model.js` rather than at call sites:
 
-1. **Links are rebuilt or allowlisted.** Steam URLs are rebuilt from a
-   digits-only id and Amazon's from the claim path's slug and item id; Epic and
-   GOG links pass `safeUrl`, which requires https, the store's exact host, and a
-   bounded, credential-free authority. Anything else becomes the store's search
-   page. `diffStore` re-applies this before an alert reaches the notification
-   server.
+1. **Links are rebuilt or allowlisted.** Steam URLs are rebuilt from digits-only
+   app/bundle/package ids (and optional `steam://store/<id>` URIs for single
+   apps when `steamUseClient` is enabled) and Amazon's from the claim path's slug
+   and item id; Epic and GOG links pass `safeUrl`, which requires https, the
+   store's exact host, and a bounded, credential-free authority. Anything else
+   becomes the store's search page. `diffStore` re-applies this before an alert
+   reaches the notification server.
 2. **Titles are plain text.** Tags are stripped, entities are decoded, then
    angle brackets, control characters and bidirectional overrides are removed
    and the result is capped. Every `Text` element that shows a store-provided
@@ -107,21 +119,26 @@ The panel is a private `KeyboardPanel` sibling, not a top-level `panel` kind. It
 lists enabled stores in a fixed order, each with its games and a state line. A
 store switched off is absent from the list entirely, because it is not watched.
 Games from all stores form one flat list for the cursor, so arrow keys move
-through the whole panel while the layout stays grouped. Epic mobile rows carry a
-platform glyph after the title and sit in the `epic` group.
+through the whole panel while the layout stays grouped. `visibleGameList()` does
+not depend on `nowMs`, so the 30-second clock tick updates countdowns and
+ending-soon indicators inside delegates without rebuilding the `ListView` model
+or resetting scroll position. Epic mobile rows carry a platform glyph after the
+title and sit in the `epic` group.
 
-The footer's gear, or `,`, swaps the list for the Settings page inside the same
-panel: switches grouped per store, then the refresh interval, notification cap,
-hide-seen filter and country. `Esc` returns to the list before it closes the
-panel. The page is a second `ListView` with the same pinned-footer and edge-fade
-rules, so long settings lists scroll rather than growing the panel.
+The footer's gear, or `,`, swaps the list for `SettingsPage.qml` inside the same
+panel: switches grouped per store, then the general toggles, refresh interval,
+notification cap, hide-seen filter and country. `Esc` cancels an active field
+edit or returns from Settings to the list before it closes the panel. The page is
+a second `ListView` with the same pinned-footer and edge-fade rules, so long
+settings lists scroll rather than growing the panel.
 
 The hero and its rule are pinned above the list, and the footer's rule and
 controls are pinned below it, so only the rows scroll between them. A fade and a
 small chevron at either edge of the list mark content continuing that way,
 because the scrollbar is auto-hidden. With `hideSeen` on, each store's seen games
 are dropped and a non-game `hidden` summary row is appended last; the cursor
-skips it and the counts still include it.
+skips it and the counts still include it. Upcoming Epic rows (`epicShowUpcoming`)
+likewise sit after live/hidden rows and are skipped by the keyboard cursor.
 
 External text uses `Text.PlainText` throughout, including inside delegates.
 

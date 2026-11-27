@@ -14,14 +14,20 @@ const source = readFileSync(new URL('Model.js', root), 'utf8')
 // from the GOG parser) fails here instead of at runtime in the shell.
 const Model = new Function(`"use strict";\n${source}\nreturn {
   STORES, STORE_LABELS, HOSTS, SEARCH_URLS, MAX_TITLE, MAX_GAMES,
+  MAX_SEEN_BYTES, MAX_SEEN_IDS,
+  REDEEM_LABELS, redeemLabel, amazonRedeemFromSlug,
   staleAfterMs, STALE_MULTIPLIER, NOTIFY_BUNDLE_DEFAULT, NOTIFY_BUNDLE_MAX,
-  scrubTitle, scrubId, safeUrl, searchUrl, enabled, notifyFor, setting,
+  scrubTitle, scrubId, safeUrl, searchUrl, steamClientUrl, httpResultAction,
+  enabled, notifyFor, setting,
   normalizeCountry, countryInput, normalizeRefreshMinutes, normalizeMaxStoreNotifications, countrySetting, countryPatch, epicQuery, epicMobile, epicMobileUrl, platformGlyph, gameDisplayTitle, PLATFORM_GLYPHS, parseStore, parseSteam,
-  parseEpic, parseEpicMobile, mergeEpicGames, epicAssemblyResult, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore, unprimeStore,
-  notificationArgs, totalGames, activeStores, statusTitle,
+  parseEpic, filterEpicAddOns, parseEpicMobile, mergeEpicGames, epicAssemblyResult, parseGog, parseAmazon, emptySeen, parseSeen, serializeSeen, diffStore, unprimeStore,
+  notificationArgs, endingSoonNotificationArgs, totalGames, activeStores, statusTitle,
   storeErrorLabel, freshnessLabel, ageLabel, firstId, matchAttr,
-  storeList, heroTitle, heroDetail, contributing, tooltipDetail, endsInLabel, BAR_ICON, STORE_LABELS, STORE_SHORT,
-  acknowledgeGame, forgetGame, unseenIds, hasUnseen, acknowledgedOf, STORE_GLYPHS,
+  storeList, heroTitle, heroDetail, contributing, tooltipDetail, endsInLabel,
+  shortTimeLeft, startsInLabel, shortStartsIn,
+  BAR_ICON, STORE_LABELS, STORE_SHORT,
+  acknowledgeGame, acknowledgeAll, forgetGame, unseenIds, hasUnseen, acknowledgedOf, remindedOf,
+  endingSoonReminders, STORE_GLYPHS,
   splitSeenGames, hiddenSeenLabel,
   IPC_TARGET, NEW_GAME_GLYPH, HOURGLASS_GLYPH, endingSoon,
 };`)();
@@ -947,18 +953,17 @@ test('hiding seen games keeps order and counts only what is hidden', () => {
   assert.equal(Model.hiddenSeenLabel('nonsense'), '0 seen games hidden');
 });
 
-test('acknowledged ids survive a round trip and ignore junk', () => {
+test('acknowledged ids survive a round trip in FIFO order and ignore junk', () => {
   let state = Model.acknowledgeGame(Model.emptySeen(), 'steam', '405640');
   state = Model.acknowledgeGame(state, 'steam', '2990600');
   const round = Model.parseSeen(Model.serializeSeen(state));
-  assert.deepEqual(Model.acknowledgedOf(round, 'steam'), ['2990600', '405640']);
+  assert.deepEqual(Model.acknowledgedOf(round, 'steam'), ['405640', '2990600']);
 
-  // An unusable id and an unknown store change nothing. acknowledgedOf keeps
-  // insertion order, so compare sorted.
-  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'steam', 'a b'), 'steam').sort(),
-    ['2990600', '405640'], 'a non-id must not enter the acknowledged set');
-  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'nope', 'x'), 'steam').sort(),
-    ['2990600', '405640'], 'an unknown store must not be acknowledged');
+  // An unusable id and an unknown store change nothing, keeping FIFO order.
+  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'steam', 'a b'), 'steam'),
+    ['405640', '2990600'], 'a non-id must not enter the acknowledged set');
+  assert.deepEqual(Model.acknowledgedOf(Model.acknowledgeGame(state, 'nope', 'x'), 'steam'),
+    ['405640', '2990600'], 'an unknown store must not be acknowledged');
 
   // A corrupt or hostile file cannot inject ids that were never acknowledged.
   for (const bad of ['', 'garbage', '[]', 'null',
@@ -1046,3 +1051,387 @@ test('contributing stores and ending-soon copy', () => {
   assert.equal(Model.endsInLabel('2020-01-01T00:00:00Z', Date.now()), 'Ended');
   assert.equal(Model.hiddenSeenLabel(4, 1), '4 seen games hidden \u00B7 1 ending soon');
 });
+
+test('acknowledged list preserves FIFO eviction across serialize/parse and matches seen-state cap', () => {
+  assert.equal(Model.MAX_SEEN_BYTES, 65536);
+
+  // Fill to MAX_SEEN_IDS in reverse-lexicographical order so sorting would have
+  // evicted the newest entries instead of the oldest ones.
+  let state = Model.emptySeen();
+  for (let i = 0; i < Model.MAX_SEEN_IDS; i++) {
+    const id = `id-${String(1000 - i).padStart(4, '0')}`;
+    state = Model.acknowledgeGame(state, 'steam', id);
+  }
+  state = Model.parseSeen(Model.serializeSeen(state));
+  state = Model.acknowledgeGame(state, 'steam', 'id-newest');
+  const ids = Model.acknowledgedOf(state, 'steam');
+  assert.equal(ids.length, Model.MAX_SEEN_IDS);
+  assert.equal(ids[0], 'id-0999', 'oldest id (id-1000) should be evicted first');
+  assert.equal(ids[ids.length - 1], 'id-newest', 'newest id must survive at tail');
+});
+
+test('Steam parser supports bundles and packages alongside apps, and steamClientUrl is app-only', () => {
+  const html = [
+    '<a class="search_result_row" data-ds-appid="12345" href="https://evil.example/x"><span class="title">App Game</span></a>',
+    '<a class="search_result_row" data-ds-bundleid="6789" href="https://evil.example/y"><span class="title">Free Bundle</span></a>',
+    '<a class="search_result_row" data-ds-packageid="54321" href="https://evil.example/z"><span class="title">Free Sub</span></a>',
+    '<a class="search_result_row" data-ds-appid="111" data-ds-bundleid="222"><span class="title">App Wins</span></a>',
+  ].join('');
+  const parsed = Model.parseSteam(JSON.stringify({ results_html: html }));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.games.length, 4);
+  assert.deepEqual(parsed.games[0], {
+    store: 'steam', id: '12345', title: 'App Game', url: 'https://store.steampowered.com/app/12345/',
+  });
+  assert.deepEqual(parsed.games[1], {
+    store: 'steam', id: 'bundle-6789', title: 'Free Bundle', url: 'https://store.steampowered.com/bundle/6789/',
+  });
+  assert.deepEqual(parsed.games[2], {
+    store: 'steam', id: 'sub-54321', title: 'Free Sub', url: 'https://store.steampowered.com/sub/54321/',
+  });
+  assert.equal(parsed.games[3].url, 'https://store.steampowered.com/app/111/');
+
+  assert.equal(Model.steamClientUrl(parsed.games[0]), 'steam://store/12345');
+  assert.equal(Model.steamClientUrl(parsed.games[1]), '');
+  assert.equal(Model.steamClientUrl(parsed.games[2]), '');
+  assert.equal(Model.steamClientUrl({ store: 'epic', id: '12345' }), '');
+  assert.equal(Model.steamClientUrl({ store: 'steam', id: '123/evil' }), '');
+});
+
+test('httpResultAction classifies exit codes, HTTP status codes, GOG 404, and missing Chromium', () => {
+  const missingChromium = Model.httpResultAction('amazon', 127, '');
+  assert.equal(missingChromium.ok, false);
+  assert.equal(missingChromium.retryable, false);
+  assert.match(missingChromium.error, /Chromium/);
+
+  const netErr = Model.httpResultAction('steam', 7, '');
+  assert.equal(netErr.ok, false);
+  assert.equal(netErr.retryable, true);
+  assert.equal(netErr.error, 'Could not reach Steam');
+
+  const gogEmpty = Model.httpResultAction('gog', 0, '{"message":"Not Found"}\n404');
+  assert.equal(gogEmpty.ok, true);
+  assert.equal(gogEmpty.empty, true);
+  assert.equal(gogEmpty.body, '');
+
+  const steam404 = Model.httpResultAction('steam', 0, 'not found\n404');
+  assert.equal(steam404.ok, false);
+  assert.equal(steam404.retryable, true);
+  assert.equal(steam404.error, 'Could not reach Steam');
+
+  const epic503 = Model.httpResultAction('epic', 0, 'Service Unavailable\n503');
+  assert.equal(epic503.ok, false);
+  assert.equal(epic503.retryable, true);
+  assert.equal(epic503.error, 'Could not reach Epic Games');
+
+  const ok = Model.httpResultAction('steam', 0, '{"results_html":""}\n200');
+  assert.equal(ok.ok, true);
+  assert.equal(ok.empty, false);
+  assert.equal(ok.body, '{"results_html":""}');
+
+  const amazonOk = Model.httpResultAction('amazon', 0, '<html>ok</html>');
+  assert.equal(amazonOk.ok, true);
+  assert.equal(amazonOk.body, '<html>ok</html>');
+});
+
+test('Epic parser strips /home productSlug, guards empty slugs/titles, tags add-ons, and collects upcoming offers', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const at = days => new Date(Date.now() + days * day).toISOString();
+  const payload = {
+    data: {
+      Catalog: {
+        searchStore: {
+          elements: [
+            {
+              id: 'game-home',
+              title: 'Celeste',
+              offerType: 'BASE_GAME',
+              productSlug: 'celeste/home',
+              promotions: {
+                promotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(-1),
+                    endDate: at(5),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+            {
+              id: 'game-noslug',
+              title: 'Mystery Offer',
+              offerType: 'ADD_ON',
+              productSlug: '',
+              urlSlug: '',
+              promotions: {
+                promotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(-1),
+                    endDate: at(4),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+            {
+              id: 'game-notitle',
+              title: '   ',
+              offerType: 'BASE_GAME',
+              productSlug: 'blank',
+              promotions: {
+                promotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(-1),
+                    endDate: at(4),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+            {
+              id: 'game-upcoming',
+              title: 'Next Week Gem',
+              offerType: 'BASE_GAME',
+              productSlug: 'next-week-gem/home',
+              promotions: {
+                promotionalOffers: [],
+                upcomingPromotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(3),
+                    endDate: at(10),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+          ],
+        },
+        upcoming: {
+          elements: [
+            {
+              id: 'game-home',
+              title: 'Celeste',
+              offerType: 'BASE_GAME',
+              productSlug: 'celeste/home',
+              promotions: {
+                upcomingPromotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(5),
+                    endDate: at(12),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+            {
+              id: 'game-upcoming-pool',
+              title: 'Strange Antiquities',
+              offerType: 'BASE_GAME',
+              catalogNs: { mappings: [{ pageSlug: 'strange-antiquities-e37660', pageType: 'productHome' }] },
+              promotions: {
+                upcomingPromotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(6),
+                    endDate: at(13),
+                    discountSetting: { discountPercentage: 0 },
+                  }],
+                }],
+              },
+            },
+            {
+              id: 'game-upcoming-paid',
+              title: 'Paid Sale Only',
+              offerType: 'BASE_GAME',
+              productSlug: 'paid-sale',
+              promotions: {
+                upcomingPromotionalOffers: [{
+                  promotionalOffers: [{
+                    startDate: at(6),
+                    endDate: at(13),
+                    discountSetting: { discountPercentage: 40 },
+                  }],
+                }],
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  assert.match(JSON.parse(Model.epicQuery('US')).query, /upcoming:searchStore\([^)]*category:"freegames"/);
+  const parsed = Model.parseEpic(JSON.stringify(payload));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.games.length, 2);
+  assert.equal(parsed.games[0].url, 'https://store.epicgames.com/p/celeste');
+  assert.equal(parsed.games[0].isAddOn, false);
+  assert.equal(parsed.games[1].url, '', 'missing slug must yield empty url instead of /p/');
+  assert.equal(parsed.games[1].isAddOn, true);
+  assert.equal(parsed.games[1].offerType, 'ADD_ON');
+
+  assert.equal(Model.filterEpicAddOns(parsed.games, false).length, 2);
+  assert.deepEqual(Model.filterEpicAddOns(parsed.games, true).map(g => g.id), ['game-home']);
+
+  assert.equal(parsed.upcoming.length, 2, 'upcoming must include Catalog.upcoming zero-discount offers and dedupe live games');
+  assert.equal(parsed.upcoming[0].id, 'game-upcoming');
+  assert.equal(parsed.upcoming[0].url, 'https://store.epicgames.com/p/next-week-gem');
+  assert.equal(parsed.upcoming[0].upcoming, true);
+  assert.ok(parsed.upcoming[0].startsAt);
+  assert.equal(parsed.upcoming[1].id, 'game-upcoming-pool');
+  assert.equal(parsed.upcoming[1].url, 'https://store.epicgames.com/p/strange-antiquities-e37660');
+});
+
+test('epicAssemblyResult distinguishes PC vs Mobile vs mixed partial failures and carries upcoming', () => {
+  const pcGame = { store: 'epic', id: 'pc1', title: 'PC Game', url: '' };
+  const mobGame = { store: 'epic', platform: 'android', id: 'mob1', title: 'Mob Game', url: '' };
+  const up = [{ store: 'epic', id: 'up1', title: 'Upcoming', upcoming: true }];
+
+  const pcFailed = Model.epicAssemblyResult({
+    expected: 2, failed: 1, failedParts: { pc: true, android: false, ios: false },
+    pc: [], android: [mobGame], ios: null, upcoming: [],
+  });
+  assert.equal(pcFailed.mode, 'partial');
+  assert.equal(pcFailed.errorLabel, 'Could not reach Epic PC');
+  assert.equal(pcFailed.games.length, 1);
+
+  const mobFailed = Model.epicAssemblyResult({
+    expected: 2, failed: 1, failedParts: { pc: false, android: true, ios: false },
+    pc: [pcGame], android: [], ios: null, upcoming: up,
+  });
+  assert.equal(mobFailed.mode, 'partial');
+  assert.equal(mobFailed.errorLabel, 'Could not reach Epic Mobile');
+  assert.deepEqual(mobFailed.upcoming, up);
+
+  const mixedFailed = Model.epicAssemblyResult({
+    expected: 3, failed: 2, failedParts: { pc: true, android: true, ios: false },
+    pc: [], android: [], ios: [mobGame], upcoming: [],
+  });
+  assert.equal(mixedFailed.mode, 'partial');
+  assert.equal(mixedFailed.errorLabel, 'Could not reach some Epic feeds');
+
+  const allFailed = Model.epicAssemblyResult({
+    expected: 2, failed: 2, failedParts: { pc: true, android: true, ios: false },
+    pc: [], android: [], ios: null, upcoming: up,
+  });
+  assert.equal(allFailed.mode, 'fail');
+  assert.equal(allFailed.errorLabel, 'Could not reach Epic');
+  assert.deepEqual(allFailed.upcoming, []);
+});
+
+test('Amazon redemption badges infer storefront from claim slugs', () => {
+  assert.equal(Model.amazonRedeemFromSlug('doom-eternal-gog'), 'gog');
+  assert.equal(Model.amazonRedeemFromSlug('control-epic'), 'epic');
+  assert.equal(Model.amazonRedeemFromSlug('control-egs'), 'epic');
+  assert.equal(Model.amazonRedeemFromSlug('tomb-raider-aga'), 'amazon');
+  assert.equal(Model.amazonRedeemFromSlug('minecraft-microsoft'), 'microsoft');
+  assert.equal(Model.amazonRedeemFromSlug('puzzle-legacy'), 'legacy');
+  assert.equal(Model.amazonRedeemFromSlug('star-wars-ea'), 'ea');
+  assert.equal(Model.amazonRedeemFromSlug('assassins-ubisoft'), 'ubisoft');
+  assert.equal(Model.amazonRedeemFromSlug('plain-game'), '');
+  assert.equal(Model.redeemLabel('gog'), 'GOG');
+  assert.equal(Model.redeemLabel('microsoft'), 'MS');
+  assert.equal(Model.redeemLabel('unknown'), '');
+
+  const html = '<div data-a-target="offer-list-FGWP_FULL">'
+    + '<a data-a-target="learn-more-card" href="/claims/bioshock-gog/dp/amzn1.pg.item.abc123">'
+    + '<h3 title="BioShock">BioShock</h3></a></div>';
+  const parsed = Model.parseAmazon(html);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.games[0].redeem, 'gog');
+});
+
+test('acknowledgeAll marks all listed games across stores without duplicates', () => {
+  const perStore = {
+    steam: { games: [{ id: '100' }, { id: '200' }] },
+    epic: { games: [{ id: 'ep-1' }] },
+    gog: { games: [] },
+    amazon: { games: [{ id: 'amz-1' }] },
+  };
+  let state = Model.acknowledgeGame(Model.emptySeen(), 'steam', '100');
+  state = Model.acknowledgeAll(state, perStore);
+  assert.deepEqual(Model.acknowledgedOf(state, 'steam'), ['100', '200']);
+  assert.deepEqual(Model.acknowledgedOf(state, 'epic'), ['ep-1']);
+  assert.deepEqual(Model.acknowledgedOf(state, 'amazon'), ['amz-1']);
+  assert.equal(Model.hasUnseen(state, perStore), false);
+});
+
+test('endingSoonReminders fires once per unseen expiring game and persists reminded ids', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z');
+  const iso = hours => new Date(now + hours * 3600 * 1000).toISOString();
+  const perStore = {
+    steam: { games: [] },
+    epic: {
+      games: [
+        { store: 'epic', id: 'soon-unseen', title: 'Urgent Game', url: 'https://store.epicgames.com/p/urgent', endsAt: iso(6) },
+        { store: 'epic', id: 'soon-seen', title: 'Already Seen', url: '', endsAt: iso(6) },
+        { store: 'epic', id: 'later', title: 'Next Week', url: '', endsAt: iso(72) },
+        { store: 'epic', id: 'expired', title: 'Already Ended', url: '', endsAt: iso(-1) },
+      ],
+    },
+    gog: {
+      games: [
+        { store: 'gog', id: 'muted-gog', title: 'Muted Store', url: '', endsAt: iso(4) },
+      ],
+    },
+    amazon: { games: [] },
+  };
+  const storesOn = { steam: true, epic: true, gog: true, amazon: false };
+  const notifyOn = { steam: true, epic: true, gog: false, amazon: true };
+  let state = Model.acknowledgeGame(Model.emptySeen(), 'epic', 'soon-seen');
+
+  // Off by default: no reminders when remindEnabled is false.
+  const disabled = Model.endingSoonReminders(state, perStore, storesOn, notifyOn, false, now);
+  assert.equal(disabled.changed, false);
+  assert.deepEqual(disabled.alertsByStore, {});
+
+  // First pass fires only for soon-unseen on epic (gog is muted, soon-seen is acknowledged,
+  // later is >24h away, expired is already past).
+  const first = Model.endingSoonReminders(state, perStore, storesOn, notifyOn, true, now);
+  assert.equal(first.changed, true);
+  assert.deepEqual(Object.keys(first.alertsByStore), ['epic']);
+  assert.deepEqual(first.alertsByStore.epic.map(g => g.id), ['soon-unseen']);
+  assert.deepEqual(Model.remindedOf(first.state, 'epic'), ['soon-unseen']);
+
+  // Notification args format single reminder with countdown and IPC actions.
+  const argv = Model.endingSoonNotificationArgs('epic', first.alertsByStore.epic, now);
+  assert.ok(argv.includes('Ending Soon on Epic Games'));
+  assert.ok(argv.some(a => a.includes('Urgent Game') && a.includes('Ends in 6h')));
+  assert.ok(argv.includes('openGame'));
+  assert.ok(argv.includes('markSeen'));
+
+  // Survives serialize/parse round trip and does not re-fire on a second pass.
+  const reloaded = Model.parseSeen(Model.serializeSeen(first.state));
+  assert.deepEqual(Model.remindedOf(reloaded, 'epic'), ['soon-unseen']);
+  const second = Model.endingSoonReminders(reloaded, perStore, storesOn, notifyOn, true, now);
+  assert.equal(second.changed, false);
+  assert.deepEqual(second.alertsByStore, {});
+});
+
+test('shortTimeLeft, startsInLabel, and shortStartsIn format compact row copy', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z');
+  const iso = hours => new Date(now + hours * 3600 * 1000).toISOString();
+
+  assert.equal(Model.shortTimeLeft(iso(6), now), '6h');
+  assert.equal(Model.shortTimeLeft(iso(72), now), '3d');
+  assert.equal(Model.shortTimeLeft(iso(-1), now), 'Ended');
+  assert.equal(Model.shortTimeLeft('', now), '');
+
+  assert.equal(Model.startsInLabel(iso(48), now), 'Free in 2d');
+  assert.equal(Model.startsInLabel(iso(-1), now), 'Starting soon');
+  assert.equal(Model.startsInLabel('', now), 'Upcoming');
+
+  assert.equal(Model.shortStartsIn(iso(48), now), 'in 2d');
+  assert.equal(Model.shortStartsIn(iso(-1), now), 'Soon');
+  assert.equal(Model.shortStartsIn('', now), 'Soon');
+});
+
+test('new opt-in manifest settings default to false', () => {
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', root), 'utf8'));
+  const defaults = manifest.barWidget.defaults;
+  const schemaByKey = Object.fromEntries(manifest.barWidget.schema.map(entry => [entry.key, entry]));
+  for (const key of ['endingSoonNotify', 'steamUseClient', 'epicHideAddOns', 'epicShowUpcoming']) {
+    assert.equal(defaults[key], false, `${key} barWidget.defaults must be false`);
+    assert.equal(schemaByKey[key]?.defaultValue, false, `${key} schema defaultValue must be false`);
+  }
+});
+

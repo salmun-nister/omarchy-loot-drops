@@ -145,9 +145,37 @@ var MAX_GAMES = 40
 var MAX_TITLE = 120
 var MAX_BLOCK = 20000
 var MAX_ID = 64
-var MAX_SEEN_BYTES = 32768
+var MAX_SEEN_BYTES = 65536
 var MAX_SEEN_IDS = 120
 var USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+// Redemption storefront labels inferred from Amazon Luna claim URL slugs
+// (e.g. /claims/doom-gog/dp/... -> "gog"). Zero extra network requests.
+var REDEEM_LABELS = {
+  "gog": "GOG",
+  "epic": "Epic",
+  "amazon": "Amazon",
+  "microsoft": "MS",
+  "legacy": "Legacy",
+  "ea": "EA",
+  "ubisoft": "Ubisoft"
+}
+
+function redeemLabel(redeem) {
+  return REDEEM_LABELS[redeem] || ""
+}
+
+function amazonRedeemFromSlug(slug) {
+  var s = String(slug || "").toLowerCase()
+  if (s.endsWith("-gog")) return "gog"
+  if (s.endsWith("-epic") || s.endsWith("-egs")) return "epic"
+  if (s.endsWith("-aga") || s.endsWith("-amazon")) return "amazon"
+  if (s.endsWith("-microsoft") || s.endsWith("-ms")) return "microsoft"
+  if (s.endsWith("-legacy")) return "legacy"
+  if (s.endsWith("-ea")) return "ea"
+  if (s.endsWith("-ubisoft") || s.endsWith("-uplay")) return "ubisoft"
+  return ""
+}
 // The refresh interval bounds, shared with the manifest schema so the settings
 // slider and the normaliser cannot drift apart.
 var REFRESH_MIN = 30
@@ -246,6 +274,64 @@ function safeUrl(store, value) {
 function searchUrl(store, firstEnabled) {
   var target = HOSTS[store] ? store : (HOSTS[firstEnabled] ? firstEnabled : "")
   return target ? SEARCH_URLS[target] : ""
+}
+
+// Optional Steam desktop client URI for single-app Steam giveaways. Strictly
+// digits-only app ids; bundles and packages fall back to the HTTPS store URL.
+function steamClientUrl(game) {
+  if (!game || game.store !== "steam") return ""
+  var id = String(game.id == null ? "" : game.id).trim()
+  return STEAM_ID_RE.test(id) ? ("steam://store/" + id) : ""
+}
+
+// Classify a completed fetch command's exit status and stdout before parsing.
+// Separating process exit codes from HTTP status codes prevents network
+// failures, HTTP 5xx, or missing Chromium (exit 127) from being misreported as
+// "Store returned an unexpected response", and lets GOG's healthy 404 pass
+// without touching curl's exit code.
+function httpResultAction(store, exitCode, raw) {
+  var label = STORE_LABELS[store] || store
+  if (store === "amazon" && exitCode === 127) {
+    return {
+      ok: false,
+      empty: false,
+      body: "",
+      error: "Chromium is required but was not installed",
+      retryable: false
+    }
+  }
+  if (exitCode !== 0) {
+    return {
+      ok: false,
+      empty: false,
+      body: "",
+      error: "Could not reach " + label,
+      retryable: true
+    }
+  }
+  var text = String(raw == null ? "" : raw)
+  if (store === "amazon") {
+    return { ok: true, empty: false, body: text, error: "", retryable: false }
+  }
+  var split = text.lastIndexOf("\n")
+  if (split < 0) {
+    return { ok: true, empty: false, body: text, error: "", retryable: false }
+  }
+  var code = text.slice(split + 1).trim()
+  var body = text.slice(0, split)
+  if (code === "404" && store === "gog") {
+    return { ok: true, empty: true, body: "", error: "", retryable: false }
+  }
+  if (!/^2\d\d$/.test(code)) {
+    return {
+      ok: false,
+      empty: false,
+      body: "",
+      error: "Could not reach " + label,
+      retryable: true
+    }
+  }
+  return { ok: true, empty: false, body: body, error: "", retryable: false }
 }
 
 function enabled(settings) {
@@ -409,10 +495,24 @@ function parseSteamRows(html) {
 }
 
 function parseSteamRow(block) {
-  var id = firstId(matchAttr(block, "data-ds-appid"))
-    || firstId(matchAttr(block, "data-ds-bundleid"))
-    || firstId(matchAttr(block, "data-ds-packageid"))
-  if (!id) return null
+  var appId = firstId(matchAttr(block, "data-ds-appid"))
+  var bundleId = appId ? "" : firstId(matchAttr(block, "data-ds-bundleid"))
+  var pkgId = (appId || bundleId) ? "" : firstId(matchAttr(block, "data-ds-packageid"))
+
+  var id = ""
+  var url = ""
+  if (appId) {
+    id = appId
+    url = "https://" + HOSTS.steam + "/app/" + appId + "/"
+  } else if (bundleId) {
+    id = "bundle-" + bundleId
+    url = "https://" + HOSTS.steam + "/bundle/" + bundleId + "/"
+  } else if (pkgId) {
+    id = "sub-" + pkgId
+    url = "https://" + HOSTS.steam + "/sub/" + pkgId + "/"
+  } else {
+    return null
+  }
 
   // The href is dropped rather than validated: the canonical store URL is
   // rebuilt from a digits-only id, so there is nothing to allowlist.
@@ -420,7 +520,7 @@ function parseSteamRow(block) {
     store: "steam",
     id: id,
     title: matchSteamTitle(block) || ("Steam " + id),
-    url: "https://" + HOSTS.steam + "/app/" + id + "/"
+    url: url
   }
 }
 
@@ -456,8 +556,12 @@ function matchSteamTitle(text) {
 // developer-run 100%-off promotion never appears there. This catalog query asks
 // for everything currently on sale in the zero-price band; onSale is what keeps
 // permanently free-to-play titles out, since those have no sale window.
+// Upcoming free games are not on sale yet (so onSale:true + priceRange:[0,0]
+// omits them); the second alias queries Epic's weekly `freegames` pool in the
+// same GraphQL request so announced next-week titles appear with zero extra
+// round trips or hosts.
 // priceRange must travel as a variable: its brackets are rejected inline.
-var EPIC_QUERY = "query freeGames($country: String, $locale: String, $priceRange: String){Catalog{searchStore(country:$country,locale:$locale,onSale:true,priceRange:$priceRange,count:40){elements{title id offerType productSlug urlSlug catalogNs{mappings(pageType:\"productHome\"){pageSlug pageType}} promotions{promotionalOffers{promotionalOffers{startDate endDate discountSetting{discountType discountPercentage}}}}}}}}"
+var EPIC_QUERY = "query freeGames($country: String, $locale: String, $priceRange: String){Catalog{searchStore(country:$country,locale:$locale,onSale:true,priceRange:$priceRange,count:40){elements{title id offerType productSlug urlSlug catalogNs{mappings(pageType:\"productHome\"){pageSlug pageType}} promotions{promotionalOffers{promotionalOffers{startDate endDate discountSetting{discountType discountPercentage}}} upcomingPromotionalOffers{promotionalOffers{startDate endDate discountSetting{discountType discountPercentage}}}}}} upcoming:searchStore(country:$country,locale:$locale,category:\"freegames\",count:20){elements{title id offerType productSlug urlSlug catalogNs{mappings(pageType:\"productHome\"){pageSlug pageType}} promotions{upcomingPromotionalOffers{promotionalOffers{startDate endDate discountSetting{discountType discountPercentage}}}}}}}}"
 
 function epicQuery(country) {
   return JSON.stringify({
@@ -479,25 +583,61 @@ function parseEpic(text) {
   try {
     payload = JSON.parse(text)
   } catch (e) {
-    return { ok: false, games: [], error: "invalid-response" }
+    return { ok: false, games: [], upcoming: [], error: "invalid-response" }
   }
-  var elements = payload && payload.data && payload.data.Catalog
-    && payload.data.Catalog.searchStore
-    && payload.data.Catalog.searchStore.elements
+  var catalog = payload && payload.data && payload.data.Catalog
+  var elements = catalog && catalog.searchStore && catalog.searchStore.elements
   if (!Array.isArray(elements)) {
-    return { ok: false, games: [], error: "invalid-response" }
+    return { ok: false, games: [], upcoming: [], error: "invalid-response" }
   }
 
   var now = Date.now()
   var games = []
+  var upcoming = []
   var seen = {}
-  for (var i = 0; i < elements.length && games.length < MAX_GAMES; i++) {
-    var game = epicGame(elements[i], now)
-    if (!game || seen[game.id]) continue
-    seen[game.id] = true
-    games.push(game)
+  var seenUpcoming = {}
+  for (var i = 0; i < elements.length; i++) {
+    if (games.length < MAX_GAMES) {
+      var game = epicGame(elements[i], now)
+      if (game && !seen[game.id]) {
+        seen[game.id] = true
+        games.push(game)
+        continue
+      }
+    }
+    if (upcoming.length < MAX_GAMES) {
+      var next = epicUpcomingGame(elements[i], now)
+      if (next && !seen[next.id] && !seenUpcoming[next.id]) {
+        seenUpcoming[next.id] = true
+        upcoming.push(next)
+      }
+    }
   }
-  return { ok: true, games: games }
+  var upcomingElements = catalog && catalog.upcoming && catalog.upcoming.elements
+  if (Array.isArray(upcomingElements)) {
+    for (var u = 0; u < upcomingElements.length && upcoming.length < MAX_GAMES; u++) {
+      var nextOffer = epicUpcomingGame(upcomingElements[u], now)
+      if (nextOffer && !seen[nextOffer.id] && !seenUpcoming[nextOffer.id]) {
+        seenUpcoming[nextOffer.id] = true
+        upcoming.push(nextOffer)
+      }
+    }
+  }
+  return { ok: true, games: games, upcoming: upcoming }
+}
+
+function epicIsAddOn(offerType) {
+  return offerType === "ADD_ON" || offerType === "DLC" || offerType === "DEMO"
+}
+
+function filterEpicAddOns(games, hideAddOns) {
+  var list = Array.isArray(games) ? games : []
+  if (!hideAddOns) return list
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    if (!list[i] || list[i].isAddOn !== true) out.push(list[i])
+  }
+  return out
 }
 
 function epicGame(element, now) {
@@ -514,19 +654,63 @@ function epicGame(element, now) {
   }
   if (!free) return null
 
-  var id = scrubId(element.id) || scrubId(epicSlug(element))
+  var title = scrubTitle(element.title)
+  if (!title) return null
+
+  var slug = epicSlug(element)
+  var id = scrubId(element.id) || scrubId(slug)
   if (!id) return null
 
   // Epic's own `url` field comes back empty, so the link is built from the
   // catalog mapping and re-checked against the Epic host like every other URL.
-  var slug = epicSlug(element)
+  // An absent slug leaves url empty so callers fall back to the store listing
+  // instead of opening a broken /p/ page.
   var path = element.offerType === "BUNDLE" ? "bundles" : "p"
+  var url = slug ? safeUrl("epic", "https://" + HOSTS.epic + "/" + path + "/" + slug) : ""
   return {
     store: "epic",
     id: id,
-    title: scrubTitle(element.title),
-    url: safeUrl("epic", "https://" + HOSTS.epic + "/" + path + "/" + slug),
-    endsAt: free
+    title: title,
+    url: url,
+    endsAt: free,
+    offerType: scrubId(element.offerType) || "",
+    isAddOn: epicIsAddOn(element.offerType)
+  }
+}
+
+function epicUpcomingGame(element, now) {
+  if (!element || typeof element !== "object") return null
+  var promotions = element.promotions
+  if (!promotions || typeof promotions !== "object") return null
+
+  var offer = null
+  var upcoming = promotions.upcomingPromotionalOffers
+  if (Array.isArray(upcoming)) {
+    for (var i = 0; i < upcoming.length && !offer; i++) {
+      offer = upcomingFreeOffer(upcoming[i], now)
+    }
+  }
+  if (!offer) return null
+
+  var title = scrubTitle(element.title)
+  if (!title) return null
+
+  var slug = epicSlug(element)
+  var id = scrubId(element.id) || scrubId(slug)
+  if (!id) return null
+
+  var path = element.offerType === "BUNDLE" ? "bundles" : "p"
+  var url = slug ? safeUrl("epic", "https://" + HOSTS.epic + "/" + path + "/" + slug) : ""
+  return {
+    store: "epic",
+    id: id,
+    title: title,
+    url: url,
+    startsAt: offer.startDate,
+    endsAt: offer.endDate,
+    upcoming: true,
+    offerType: scrubId(element.offerType) || "",
+    isAddOn: epicIsAddOn(element.offerType)
   }
 }
 
@@ -536,7 +720,12 @@ function epicSlug(element) {
     var page = scrubId(mappings[0] && mappings[0].pageSlug)
     if (page) return page
   }
-  return scrubId(element.urlSlug) || scrubId(element.productSlug)
+  var urlSlug = scrubId(element.urlSlug)
+  if (urlSlug) return urlSlug
+  // Epic frequently appends "/home" to productSlug (e.g. "celeste/home").
+  var rawProduct = String(element.productSlug == null ? "" : element.productSlug).trim()
+  if (rawProduct.endsWith("/home")) rawProduct = rawProduct.slice(0, -5)
+  return scrubId(rawProduct)
 }
 
 // Returns the end timestamp of a zero-discount window that is still running,
@@ -558,6 +747,25 @@ function liveFreeOffer(group, now) {
     return offer.endDate
   }
   return ""
+}
+
+function upcomingFreeOffer(group, now) {
+  if (!group || typeof group !== "object") return null
+  var offers = group.promotionalOffers
+  if (!Array.isArray(offers)) return null
+  for (var i = 0; i < offers.length; i++) {
+    var offer = offers[i]
+    if (!offer || typeof offer !== "object") continue
+    var setting_ = offer.discountSetting
+    if (!setting_ || setting_.discountPercentage !== 0) continue
+    var start = parseTime(offer.startDate)
+    if (!start || start <= now) continue
+    return {
+      startDate: String(offer.startDate),
+      endDate: parseTime(offer.endDate) ? String(offer.endDate) : ""
+    }
+  }
+  return null
 }
 
 function parseTime(value) {
@@ -611,6 +819,9 @@ function epicMobileGame(offer, platform, now) {
   var free = liveFreeMobileOffer(content, now)
   if (!free) return null
 
+  var title = scrubTitle(content.title)
+  if (!title) return null
+
   var slug = content.mapping && scrubId(content.mapping.slug)
   if (!slug) return null
   var id = scrubId(content.catalogItemId)
@@ -623,7 +834,7 @@ function epicMobileGame(offer, platform, now) {
     store: "epic",
     platform: platform,
     id: id,
-    title: scrubTitle(content.title),
+    title: title,
     url: safeUrl("epic", "https://" + HOSTS.epic + "/p/" + slug),
     endsAt: free
   }
@@ -675,10 +886,11 @@ function mergeEpicGames(lists) {
 // Decide the Epic bucket outcome once every expected part has answered. The
 // widget fetches the PC catalog and each mobile platform as a separate process,
 // so this runs only after all of them have reported. Returns null while a part
-// is still outstanding, otherwise { games, mode } where mode is:
+// is still outstanding, otherwise { games, upcoming, mode, errorLabel } where
+// mode is:
 //   "ok"      — every wanted part answered.
 //   "partial" — some part failed but another answered; games carries what we
-//               have and the widget overlays the "Epic Mobile" error line.
+//               have and errorLabel names the missing part (PC vs Mobile).
 //   "fail"    — every wanted part failed; the store is unreachable.
 function epicAssemblyResult(parts) {
   if (!parts || typeof parts !== "object") return null
@@ -690,13 +902,20 @@ function epicAssemblyResult(parts) {
   if (done < parts.expected) return null
 
   var games = mergeEpicGames([parts.pc || [], parts.android || [], parts.ios || []])
+  var upcoming = Array.isArray(parts.upcoming) ? parts.upcoming : []
   if (parts.failed > 0 && parts.failed < parts.expected) {
-    return { games: games, mode: "partial" }
+    var failedParts = parts.failedParts || {}
+    var pcFailed = failedParts.pc === true
+    var mobileFailed = failedParts.android === true || failedParts.ios === true
+    var errorLabel = pcFailed && !mobileFailed
+      ? "Could not reach Epic PC"
+      : (pcFailed && mobileFailed ? "Could not reach some Epic feeds" : "Could not reach Epic Mobile")
+    return { games: games, upcoming: upcoming, mode: "partial", errorLabel: errorLabel }
   }
   if (games.length === 0 && parts.failed >= parts.expected && parts.expected > 0) {
-    return { games: games, mode: "fail" }
+    return { games: games, upcoming: [], mode: "fail", errorLabel: "Could not reach Epic" }
   }
-  return { games: games, mode: "ok" }
+  return { games: games, upcoming: upcoming, mode: "ok", errorLabel: "" }
 }
 
 // GOG answers 404 with no giveaway running. That is a healthy empty store, so
@@ -807,6 +1026,7 @@ function amazonCard(card) {
     store: "amazon",
     id: id,
     title: title,
+    redeem: amazonRedeemFromSlug(slug),
     url: safeUrl("amazon", "https://" + HOSTS.amazon + "/claims/" + slug + "/dp/" + id)
   }
 }
@@ -818,7 +1038,7 @@ function amazonCard(card) {
 function emptySeen() {
   var stores = {}
   for (var i = 0; i < STORES.length; i++) {
-    stores[STORES[i]] = { ids: [], acknowledged: [], primed: false }
+    stores[STORES[i]] = { ids: [], acknowledged: [], reminded: [], primed: false }
   }
   return { primed: false, stores: stores }
 }
@@ -838,9 +1058,22 @@ function acknowledgedOf(state, store) {
   return out
 }
 
+// The ids of games for which an ending-soon reminder notification has already
+// been sent, per store, so each giveaway fires at most one reminder.
+function remindedOf(state, store) {
+  var bucket = state && state.stores ? state.stores[store] : null
+  var list = bucket && Array.isArray(bucket.reminded) ? bucket.reminded : []
+  var out = []
+  for (var i = 0; i < list.length && out.length < MAX_SEEN_IDS; i++) {
+    var id = scrubId(list[i])
+    if (id) out.push(id)
+  }
+  return out
+}
+
 // Mark one game as looked at, so its per-row marker clears and the bar dot can
 // go out once nothing is left unseen. Called per game when it is launched, when
-// its marker is clicked, or with the h key; siblings and the notification
+// its marker is clicked, or with the s key; siblings and the notification
 // baseline are untouched. At the cap the oldest id is dropped rather than
 // refusing the new one, or a game could never be acknowledged once the list
 // filled.
@@ -853,11 +1086,45 @@ function acknowledgeGame(state, store, id) {
   if (acknowledged.indexOf(clean) >= 0) return next
   acknowledged.push(clean)
   while (acknowledged.length > MAX_SEEN_IDS) acknowledged.shift()
-  var previous = next.stores[store] || { ids: [], acknowledged: [], primed: false }
+  var previous = next.stores[store] || { ids: [], acknowledged: [], reminded: [], primed: false }
   next.stores[store] = {
     ids: previous.ids.slice(0, MAX_SEEN_IDS),
     acknowledged: acknowledged,
+    reminded: previous.reminded.slice(0, MAX_SEEN_IDS),
     primed: previous.primed === true
+  }
+  return next
+}
+
+// Mark every currently listed game across all stores in `perStore` as looked
+// at, preserving FIFO eviction order on each store's acknowledged list.
+function acknowledgeAll(state, perStore) {
+  var next = { primed: true, stores: copyStores(state && state.stores) }
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    var current = perStore && perStore[store]
+    var games = current && Array.isArray(current.games) ? current.games : []
+    if (games.length === 0) continue
+    var acknowledged = acknowledgedOf(next, store)
+    var seen = {}
+    for (var a = 0; a < acknowledged.length; a++) seen[acknowledged[a]] = true
+    var changed = false
+    for (var j = 0; j < games.length; j++) {
+      var id = games[j] ? scrubId(games[j].id) : ""
+      if (!id || seen[id]) continue
+      seen[id] = true
+      acknowledged.push(id)
+      changed = true
+    }
+    if (!changed) continue
+    while (acknowledged.length > MAX_SEEN_IDS) acknowledged.shift()
+    var previous = next.stores[store] || { ids: [], acknowledged: [], reminded: [], primed: false }
+    next.stores[store] = {
+      ids: previous.ids.slice(0, MAX_SEEN_IDS),
+      acknowledged: acknowledged,
+      reminded: previous.reminded.slice(0, MAX_SEEN_IDS),
+      primed: previous.primed === true
+    }
   }
   return next
 }
@@ -874,10 +1141,11 @@ function forgetGame(state, store, id) {
   var at = acknowledged.indexOf(clean)
   if (at < 0) return next
   acknowledged.splice(at, 1)
-  var previous = next.stores[store] || { ids: [], acknowledged: [], primed: false }
+  var previous = next.stores[store] || { ids: [], acknowledged: [], reminded: [], primed: false }
   next.stores[store] = {
     ids: previous.ids.slice(0, MAX_SEEN_IDS),
     acknowledged: acknowledged,
+    reminded: previous.reminded.slice(0, MAX_SEEN_IDS),
     primed: previous.primed === true
   }
   return next
@@ -980,11 +1248,22 @@ function parseSeen(raw) {
       ackedSeen[acked] = true
       acknowledged.push(acked)
     }
+    var reminded = []
+    var remindedSeen = {}
+    var remindedList = bucket && Array.isArray(bucket.reminded)
+      ? bucket.reminded : []
+    for (var r = 0; r < remindedList.length && reminded.length < MAX_SEEN_IDS; r++) {
+      var rem = scrubId(remindedList[r])
+      if (!rem || remindedSeen[rem]) continue
+      remindedSeen[rem] = true
+      reminded.push(rem)
+    }
     // A store with recorded ids has necessarily been fetched before, so its
     // primed flag is derived rather than trusted from the file.
     stores[store] = {
       ids: ids,
       acknowledged: acknowledged,
+      reminded: reminded,
       primed: !!(bucket && bucket.primed === true) || ids.length > 0
     }
   }
@@ -1004,6 +1283,8 @@ function serializeSeen(state) {
       if (id) ids.push(id)
     }
     ids.sort()
+    // acknowledged and reminded are FIFO queues evicted from the front at
+    // MAX_SEEN_IDS, so their insertion order must be preserved verbatim.
     var acknowledged = []
     var ackedSource = bucket && typeof bucket === "object"
       && Array.isArray(bucket.acknowledged) ? bucket.acknowledged : []
@@ -1011,10 +1292,17 @@ function serializeSeen(state) {
       var acked = scrubId(ackedSource[a])
       if (acked) acknowledged.push(acked)
     }
-    acknowledged.sort()
+    var reminded = []
+    var remindedSource = bucket && typeof bucket === "object"
+      && Array.isArray(bucket.reminded) ? bucket.reminded : []
+    for (var r = 0; r < remindedSource.length && reminded.length < MAX_SEEN_IDS; r++) {
+      var rem = scrubId(remindedSource[r])
+      if (rem) reminded.push(rem)
+    }
     stores[store] = {
       ids: ids,
       acknowledged: acknowledged,
+      reminded: reminded,
       primed: !!(bucket && bucket.primed === true)
     }
   }
@@ -1036,7 +1324,7 @@ function serializeSeen(state) {
 function diffStore(state, store, games, storeEnabled, notifyEnabled) {
   var current = state && typeof state === "object" && state.stores
     ? state : emptySeen()
-  var previous = current.stores[store] || { ids: [], acknowledged: [], primed: false }
+  var previous = current.stores[store] || { ids: [], acknowledged: [], reminded: [], primed: false }
 
   var known = {}
   for (var k = 0; k < previous.ids.length; k++) known[previous.ids[k]] = true
@@ -1068,12 +1356,15 @@ function diffStore(state, store, games, storeEnabled, notifyEnabled) {
   }
 
   var next = { primed: true, stores: copyStores(current.stores) }
+  var prevReminded = Array.isArray(previous.reminded)
+    ? previous.reminded.slice(0, MAX_SEEN_IDS) : []
   if (storeEnabled) {
     // The notification baseline moves; the record of what has been looked at
     // does not. Replacing the bucket wholesale would clear the latter.
     next.stores[store] = {
       ids: ids,
       acknowledged: previous.acknowledged.slice(0, MAX_SEEN_IDS),
+      reminded: prevReminded,
       primed: true
     }
   } else {
@@ -1082,11 +1373,73 @@ function diffStore(state, store, games, storeEnabled, notifyEnabled) {
     next.stores[store] = {
       ids: previous.ids.slice(0, MAX_SEEN_IDS),
       acknowledged: previous.acknowledged.slice(0, MAX_SEEN_IDS),
+      reminded: prevReminded,
       primed: false
     }
   }
 
   return { state: next, alerts: alerts }
+}
+
+// Compute one-shot ending-soon reminders for unseen giveaways whose end window
+// is still in the future and within ENDING_SOON_MS. Respects per-store enabled
+// and notify toggles, and records reminded ids so each game reminds at most
+// once.
+function endingSoonReminders(state, perStore, storesOn, notifyOn, remindEnabled, nowMs) {
+  var current = state && typeof state === "object" && state.stores
+    ? state : emptySeen()
+  if (!remindEnabled) return { state: current, alertsByStore: {}, changed: false }
+  var now = Number(nowMs)
+  if (!isFinite(now)) return { state: current, alertsByStore: {}, changed: false }
+
+  var next = { primed: !!(current && current.primed), stores: copyStores(current.stores) }
+  var alertsByStore = {}
+  var changed = false
+
+  for (var i = 0; i < STORES.length; i++) {
+    var store = STORES[i]
+    if (!storesOn || !storesOn[store]) continue
+    if (!notifyOn || !notifyOn[store]) continue
+    var bucket = perStore && perStore[store]
+    var games = bucket && Array.isArray(bucket.games) ? bucket.games : []
+    if (games.length === 0) continue
+
+    var acked = {}
+    var ackList = acknowledgedOf(next, store)
+    for (var a = 0; a < ackList.length; a++) acked[ackList[a]] = true
+
+    var reminded = remindedOf(next, store)
+    var remindedSet = {}
+    for (var r = 0; r < reminded.length; r++) remindedSet[reminded[r]] = true
+
+    var alerts = []
+    for (var j = 0; j < games.length; j++) {
+      var game = games[j]
+      var id = game ? scrubId(game.id) : ""
+      if (!id || acked[id] || remindedSet[id]) continue
+      var end = parseTime(game.endsAt)
+      if (!end || end <= now || end - now > ENDING_SOON_MS) continue
+      remindedSet[id] = true
+      reminded.push(id)
+      alerts.push({
+        store: store,
+        id: id,
+        title: scrubTitle(game.title),
+        platform: PLATFORMS.indexOf(game.platform) >= 0 ? game.platform : "",
+        url: safeUrl(store, game.url),
+        endsAt: String(game.endsAt || "")
+      })
+    }
+
+    if (alerts.length > 0) {
+      while (reminded.length > MAX_SEEN_IDS) reminded.shift()
+      next.stores[store].reminded = reminded
+      alertsByStore[store] = alerts
+      changed = true
+    }
+  }
+
+  return { state: next, alertsByStore: alertsByStore, changed: changed }
 }
 
 // Turning a store, or one of Epic's mobile platforms, back on must not replay
@@ -1119,6 +1472,8 @@ function copyStores(stores) {
       // bar dot for games they had already seen.
       acknowledged: bucket && Array.isArray(bucket.acknowledged)
         ? bucket.acknowledged.slice(0, MAX_SEEN_IDS) : [],
+      reminded: bucket && Array.isArray(bucket.reminded)
+        ? bucket.reminded.slice(0, MAX_SEEN_IDS) : [],
       primed: !!(bucket && bucket.primed === true)
     }
   }
@@ -1179,6 +1534,53 @@ function notificationArgs(store, alerts) {
   // URL or command rides in the notification. A bundled summary (more than one
   // game) keeps only the open-panel action, since there is no single page to
   // open.
+  if (alerts.length === 1) {
+    var id = scrubId(alerts[0].id)
+    if (id) {
+      argv = argv.concat([
+        "--action", "Open Game Store", "omarchy-shell", "-q", IPC_TARGET,
+        "openGame", store, id,
+        "--action", "Mark as seen", "omarchy-shell", "-q", IPC_TARGET,
+        "markSeen", store, id
+      ])
+    }
+  }
+
+  return argv
+}
+
+function endingSoonNotificationArgs(store, alerts, nowMs) {
+  if (!alerts || alerts.length === 0) return null
+  var label = STORE_LABELS[store] || "a store"
+  var headline = "Ending Soon on " + label
+  var body
+  if (alerts.length === 1) {
+    body = gameDisplayTitle(alerts[0])
+    if (alerts[0].endsAt && isFinite(Number(nowMs))) {
+      body += " \u00B7 " + endsInLabel(alerts[0].endsAt, nowMs)
+    }
+  } else {
+    var list = alerts.slice(0, 4)
+    var names = []
+    for (var i = 0; i < list.length; i++) {
+      names.push(gameDisplayTitle(list[i]))
+    }
+    var extra = alerts.length - names.length
+    body = names.join(", ")
+    if (extra > 0) body += " and " + extra + " more"
+  }
+
+  var argv = [
+    "omarchy-notification-send",
+    "--app-name", "Loot Drops",
+    "-g", BAR_ICON,
+    "-u", "normal",
+    "-t", "12000",
+    String(headline).replace(/^-+/, "").trim() || ("Ending Soon on " + label),
+    body,
+    "--action", "View All", "omarchy-shell", "-q", IPC_TARGET, "open"
+  ]
+
   if (alerts.length === 1) {
     var id = scrubId(alerts[0].id)
     if (id) {
@@ -1288,6 +1690,33 @@ function endsInLabel(endsAt, nowMs) {
   var left = end - Number(nowMs)
   if (left <= 0) return "Ended"
   return "Ends in " + ageLabel(left)
+}
+
+// Compact inline countdown for a game row's right margin: "6h", "3d", "Ended",
+// or "" when the store does not publish an end date.
+function shortTimeLeft(endsAt, nowMs) {
+  var end = parseTime(endsAt)
+  if (!end) return ""
+  var left = end - Number(nowMs)
+  if (left <= 0) return "Ended"
+  return ageLabel(left)
+}
+
+// "Free in 3d" / "Starting soon", for upcoming Epic giveaways.
+function startsInLabel(startsAt, nowMs) {
+  var start = parseTime(startsAt)
+  if (!start) return "Upcoming"
+  var left = start - Number(nowMs)
+  if (left <= 0) return "Starting soon"
+  return "Free in " + ageLabel(left)
+}
+
+function shortStartsIn(startsAt, nowMs) {
+  var start = parseTime(startsAt)
+  if (!start) return "Soon"
+  var left = start - Number(nowMs)
+  if (left <= 0) return "Soon"
+  return "in " + ageLabel(left)
 }
 
 
