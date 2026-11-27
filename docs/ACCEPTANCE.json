@@ -1,57 +1,41 @@
 {
   "status": "passed",
-  "input_commit": "a8c5f604a97cc39a5f29fd55e58daf401a9bcdca",
-  "date": "2026-11-18",
-  "platform": "Omarchy 4.5.0-3, Hyprland 0.56.2, kernel 7.2.15-1-omarchy, x86_64, Quickshell 0.3.2, Node v26.13.1",
-  "scope": "Administrative acceptance of the 0.4.8 candidate. It changes no runtime QML, JavaScript or helper: the delta is the provenance documents that scripts/release-docs.mjs now builds beside the source archive, plus the version bump. `git diff v0.4.7..HEAD` touches only VERSION, manifest.json, docs/RELEASE.md, scripts/ and tests/, so the archive ships the 0.4.7 runtime unchanged. The live checks below confirm that runtime still loads, answers IPC, installs from the repository URL, updates from 0.4.7 with the bar entry intact, and removes cleanly. The new documents are covered by their own tests and by the release preflight's asset audit, which was run against a complete asset set built from the published v0.4.7 tarball.",
-  "install": "The development symlink was unlinked (the repository untouched, git status clean) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `omarchy plugin add ... --enable --yes`, which cloned a8c5f60 (VERSION 0.4.8) and kept the user's existing right-hand bar entry at index 18 with amazonEnabled=true, hideSeen=false, both Epic mobile toggles, country and refreshMinutes=90 unchanged. The clone was checked out at v0.4.7 to stand in for the previous release, the shell was restarted and the widget still loaded, then `omarchy plugin update salmun-nister.loot-drops --yes` fast-forwarded the clone to a8c5f60 and the same entry kept every value. Removal deleted the clone and its entries while seen.json stayed in place; the first `omarchy plugin remove` ran while the shell was restarting, reported `omarchy-shell is not responding` after editing shell.json but before deleting the clone, and was repeated against a responsive shell, where it removed the directory. The development symlink was re-linked and the original shell.json and seen.json were restored byte-identically (sha256 2941bde5003151dbf0ae741cac0ab207101070d3a6f707632763141138d84cf2 and 7d2698629704bccb66abc5e57581e133488854b60121f3c56e3439060f9411b1), then the shell was restarted; the plugin loaded again with the original bar entry at index 18.",
+  "input_commit": "7ada8666d9cca9a7e71beeba2ff1bfaccd0cdc83",
+  "date": "2026-11-27",
+  "platform": "Omarchy 4.5.0-3, Hyprland 0.56.2, kernel 7.2.15-4-omarchy, x86_64, Quickshell 0.3.2, Node v26.13.1",
+  "scope": "0.5.0 feature, hardening, and UI-extraction release. Extracts CommandRunner.qml (shared Process + StdioCollector wrapper) and SettingsPage.qml (in-panel settings page with draft cancellation); adds endingSoonNotify reminders, steamUseClient single-app launch with Steam bundle/package support, epicHideAddOns and epicShowUpcoming, Amazon Luna claim-slug redemption badges, inline countdowns, Shift+S mark-all-seen, y write-only clipboard link copy, read-only list and markAllSeen IPC actions, per-store exponential backoff retries, lib/seen-state empty-payload refusal, and synchronized paste completion and Escape cancellation in EntryField.qml.",
+  "install": "The development symlink was unlinked (the repository untouched, git status clean) and the plugin installed from https://github.com/salmun-nister/omarchy-loot-drops with `OMARCHY_SHELL_IPC_TIMEOUT=10s omarchy plugin add ... --enable --yes`, which cloned 7ada8666d9cca9a7e71beeba2ff1bfaccd0cdc83 (VERSION 0.5.0) and preserved the user's existing bar.layout.right entry at index 18 (amazonEnabled=true, hideSeen=true, epicMobileAndroid=true, epicMobileIos=true, country='', refreshMinutes=90, epicShowUpcoming=true, endingSoonNotify=true). An earlier `add` attempt without an extended IPC timeout hit `omarchy-shell is not responding` on the default 2s `rescanPlugins` IPC wait and was retried cleanly with `OMARCHY_SHELL_IPC_TIMEOUT=10s`. The clone was checked out at v0.4.8 (34b6a75) and `omarchy restart shell` loaded 0.4.8; `omarchy plugin update salmun-nister.loot-drops --yes` then fast-forwarded back to 7ada866 (VERSION 0.5.0) with every setting preserved, and after `omarchy restart shell` the `list` IPC reported Epic (4 live + 1 upcoming) and Amazon (11). `omarchy plugin remove salmun-nister.loot-drops --yes` deleted the clone and removed its `shell.json` entry while `seen.json` remained intact. The development symlink, `shell.json` loot-drops configuration, and `seen.json` (sha256 f3ae1f57216fc87e19754da1d9066875be4ab2f3ae55e776eec3bd2a6a630221) were restored and verified with `omarchy restart shell`.",
   "commands": [
     "./tests/run",
     "./tests/harness/run",
     "omarchy plugin validate .",
-    "python3 /home/kevin/.agents/skills/omarchy-plugin-test/scripts/validate_plugin.py --json --security .",
-    "python3 /home/kevin/.agents/skills/omarchy-plugin-release/scripts/release_preflight.py .",
-    "node --test tests/release-docs.test.mjs",
-    "node /tmp/opencode/make-proof.mjs; python3 /tmp/opencode/audit-proof.py",
-    "python3 /tmp/opencode/audit-tamper.py",
-    "omarchy restart shell",
-    "omarchy-shell shell listPlugins",
-    "omarchy-shell -q salmun-nister.loot-drops markSeen amazon test-id-048",
-    "omarchy-shell -q salmun-nister.loot-drops openGame notastore x",
-    "omarchy-shell -q salmun-nister.loot-drops openGame steam 'bad id'",
-    "omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
-    "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.4.7",
-    "omarchy plugin update salmun-nister.loot-drops --yes",
-    "omarchy plugin remove salmun-nister.loot-drops --yes",
-    "ln -s /home/kevin/Projects/Omarchy-Loot-Drops ~/.config/omarchy/plugins/salmun-nister.loot-drops; omarchy-shell shell rescanPlugins",
-    "restore the original shell.json and seen.json; omarchy restart shell"
+    "python3 .../omarchy-plugin-test/scripts/validate_plugin.py --json --security .",
+    "omarchy-shell salmun-nister.loot-drops list",
+    "omarchy-shell salmun-nister.loot-drops markSeen amazon test-id-050",
+    "omarchy-shell salmun-nister.loot-drops openGame notastore x",
+    "omarchy-shell salmun-nister.loot-drops openGame steam 'bad id'",
+    "OMARCHY_SHELL_IPC_TIMEOUT=10s omarchy plugin add https://github.com/salmun-nister/omarchy-loot-drops --enable --yes",
+    "git -C ~/.config/omarchy/plugins/salmun-nister.loot-drops checkout v0.4.8 && omarchy restart shell",
+    "OMARCHY_SHELL_IPC_TIMEOUT=10s omarchy plugin update salmun-nister.loot-drops --yes && omarchy restart shell",
+    "OMARCHY_SHELL_IPC_TIMEOUT=10s omarchy plugin remove salmun-nister.loot-drops --yes",
+    "restore development symlink, shell.json loot-drops entry, and seen.json; omarchy restart shell"
   ],
   "results": [
     {
       "check": "Portable, schema and security checks",
       "result": "pass",
-      "detail": "./tests/run passed 93 tests \u2014 the 85 that shipped with 0.4.7 plus 8 for the document contract \u2014 the real Qt qmllint pass and the helper checks, from both the repository and the installed clone at a8c5f60. omarchy plugin validate . exited 0. validate_plugin.py reports valid with no errors and the same advisory review-required capabilities as 0.4.7. release_preflight.py reports READY. These are limited scans, not a security audit."
+      "detail": "./tests/run passed scripts/check.mjs, 103/103 unit, QML-surface, and release-doc tests, real Qt qmllint on all 4 QML files (BarWidget.qml, CommandRunner.qml, EntryField.qml, SettingsPage.qml) with 0 errors, and 33 helper assertions (including empty-payload refusal in seen-state). `omarchy plugin validate .` exited 0. `validate_plugin.py --json --security .` returned valid=true, errors=[], findings=[], and outcome='review-required' (limited deterministic scan, not a security audit)."
     },
     {
-      "check": "Provenance documents and the asset audit",
+      "check": "Live Quickshell harness and IPC",
       "result": "pass",
-      "detail": "tests/release-docs.test.mjs pins the four documents, the version/repository/commit/tree binding in both manifests, the single SPDX 2.3 package that names the commit, checksum coverage of the archive and all three documents, byte-identical rebuilds, and each refusal. The release preflight's own validate_release_directory was then run against a complete asset set built for the published v0.4.7 identity from the real uploaded tarball (commit 774402b, tree 93c6f21): no findings. Appending one byte to that tarball produced release-file-integrity and checksums-coverage, so the audit is not passing vacuously."
+      "detail": "./tests/harness/run passed with 4 rendered rows (laidOut=true, settingsRows=18, gameRows=2, headers=['epic','amazon']), Epic returning 2 live games plus 1 upcoming (Strange Antiquities), and paste checks overflow=DE timeout=DE success=GB (Amazon timed out inside the harness's 12s cold-profile window and showed its retryable error state). On the running shell, `omarchy-shell salmun-nister.loot-drops list` resolved all four stores (Steam 0, Epic 4 live + 1 upcoming, GOG 0, Amazon 11 with redemption badges), `markSeen amazon test-id-050` persisted to seen.json (then restored byte-identically), and invalid `openGame` calls exited 0 without opening anything."
     },
     {
-      "check": "Live shell, IPC and the panel",
+      "check": "Fresh install, update from 0.4.8 and removal",
       "result": "pass",
-      "detail": "After `omarchy restart shell` the widget was listed and enabled. `markSeen amazon test-id-048` exited 0 and the id appeared in the Amazon acknowledged set in seen.json; `openGame notastore x` and `openGame steam 'bad id'` exited 0 without opening anything, confirming the validation path. tests/harness/run against the live stores reported 14 rows with Epic and Amazon headers only (Steam and GOG were empty, so they correctly had no section), a laid-out panel, 14 settings rows and the paste regression overflow=DE timeout=DE success=GB, with no QML errors."
-    },
-    {
-      "check": "Fresh install, update from 0.4.7 and removal",
-      "result": "pass",
-      "detail": "Installed from the repository URL at a8c5f60 and enabled, then checked out at v0.4.7 with the user's entry retained, and `omarchy plugin update ... --yes` fast-forwarded to a8c5f60. The bar-slot entry kept amazonEnabled=true, hideSeen=false, both Epic mobile toggles, country and refreshMinutes=90 across install, checkout and update. Removal deleted the clone, unloaded the widget and removed its entries while seen.json stayed; the development symlink and both original state files were restored byte-identically and the shell restarted."
-    },
-    {
-      "check": "Runtime unchanged from 0.4.7",
-      "result": "pass",
-      "detail": "`git diff --name-only v0.4.7..HEAD` lists VERSION, docs/RELEASE.md, manifest.json, scripts/archive.mjs, scripts/release-docs.mjs and tests/release-docs.test.mjs. No QML, Model.js or lib/ helper changed, so the runtime behaviour accepted for 0.4.7 carries over; the bump exists so the documents can ship without moving the published v0.4.7 tag."
+      "detail": "Installed from GitHub at 7ada866 with --enable --yes while preserving the existing bar.layout.right settings at index 18, checked out v0.4.8 and restarted the shell, updated back to 7ada866 (0.5.0) via `omarchy plugin update` and verified live IPC after `omarchy restart shell`, then removed cleanly via `omarchy plugin remove` leaving seen.json intact. Desktop symlink, shell.json, and seen.json were restored and verified."
     }
   ],
-  "limitations": "The agent cannot click the live panel, so the typing, the two-letter country rule and both paste routes were not re-driven by hand in this run; they were driven by the owner on the tree that became 0.4.6 and 0.4.8 changes no runtime file. No notification was observed live; that path is unchanged and covered by the model tests. Live store contents vary \u2014 Steam and GOG returned nothing here, and GOG's success path stays fixture-only because no giveaway was live. The provenance documents are verified by unit tests and by the preflight's audit against a locally built asset set; the real release assets are produced by the tag workflow, so the audit of the downloaded draft is the first end-to-end confirmation and is recorded with the release rather than here. The first removal attempt ran during a shell restart and needed a second one. No security audit is claimed; the validators are limited scans."
+  "limitations": "Interactive pointer/keyboard driving of the live panel and live ending-soon desktop notifications were not triggered by hand in this run; those paths are covered by the model/QML-surface tests and live Quickshell harness. Live store results depend on active promotions: Steam and GOG had zero active giveaways during live verification, so GOG's success path remains fixture-only, and Amazon Luna was tested signed out and timed out within the harness's 12s cold-profile window (resolving all 11 games against the warm live-shell profile). A vertical bar remains untested. Scripted install/update/remove used OMARCHY_SHELL_IPC_TIMEOUT=10s after a 2s IPC ping timeout during `rescanPlugins`, and `omarchy restart shell` was needed after `omarchy plugin update` so the running shell loaded updated QML IPC handlers. Validators and baseline checks are limited deterministic scans, not a security audit."
 }
