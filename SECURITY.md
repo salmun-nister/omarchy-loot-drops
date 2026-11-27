@@ -15,13 +15,13 @@ and explicit.
 | --- | --- |
 | Network | Five store hosts. One GET each per refresh for Steam, GOG and each enabled Epic mobile platform, one POST for Epic's PC catalogue; Amazon Luna is one signed-out page render in headless Chromium, whose page loads its own assets. No credentials, no accounts, no `sudo`. |
 | Process | `omarchy-shell` (including the notification actions that call back into the widget), `omarchy-notification-send`, `xdg-open` (via `Qt.openUrlExternally`, for panel rows and the widget's store-page action), and — only on an explicit paste in a Settings field — `wl-paste` under `lib/capped-run` and `timeout`. All named with resolved paths and argv, never a shell string. |
-| Clipboard | Read only when you paste with Ctrl+V or Shift+Insert into a Settings field, out of process under a two-second deadline and a 4096-byte cap. It is never read when another application changes it. Copying from a field writes the clipboard and never reads it. |
+| Clipboard | Read only when you paste with Ctrl+V or Shift+Insert into a Settings field, out of process under a two-second deadline and a 4096-byte cap. It is never read when another application changes it. Copying from a field or pressing `y` on a game row writes the allowlisted URL/text to the clipboard and never reads it. |
 | Files | `seen.json`, written atomically through a no-follow helper; plus an anonymous Chromium profile (Amazon Luna only) under the same directory. Settings are written through the shell's own widget-entry API, not by this plugin. |
 | Privileged operations | None. |
 | Credentials read | None. |
 
 Nothing is sent anywhere except to the store endpoints and the assets their pages
-load, and, when you click, your own browser.
+load, and, when you click, your own browser (or the Steam client via `steam://store/<id>` when `steamUseClient` is enabled).
 
 ## The trust boundary
 
@@ -31,9 +31,10 @@ are enforced in `Model.js` so no call site can skip them:
 
 **Links.** A URL is never launched because the network said so.
 
-- Steam URLs are rebuilt from a digits-only app id and Amazon's from the claim
-  path's slug and item id; the response's host and query string are discarded
-  rather than validated.
+- Steam URLs are rebuilt from digits-only app, bundle, or package ids (and
+  `steam://store/<id>` for single apps when `steamUseClient` is enabled uses the
+  same digits-only check) and Amazon's from the claim path's slug and item id;
+  the response's host and query string are discarded rather than validated.
 - Epic and GOG links pass `safeUrl`, which requires `https`, the store's exact
   host, an authority with no credentials and no port, and a bounded length. The
   check compares the whole authority, so `store.steampowered.com.evil.test` and
@@ -47,7 +48,8 @@ are enforced in `Model.js` so no call site can skip them:
 **Notification actions.** `openGame` and `markSeen` arrive over IPC with a store
 and a game id. The id is scrubbed and matched against the current list, and the
 URL is re-derived from the allowlisted record, so an IPC caller can neither open
-an arbitrary URL nor acknowledge anything outside the configured stores.
+an arbitrary URL nor acknowledge anything outside the configured stores. `list`
+is read-only and returns allowlisted URLs and scrubbed titles.
 
 **Titles.** A title is rendered as plain text, never markup. Tags are stripped,
 HTML entities are decoded, then angle brackets, C0/C1 control characters and
@@ -71,7 +73,8 @@ instantiate a Qt text input. The only read is an explicit paste, out of process,
 through `lib/capped-run` with a two-second `timeout` and a 4096-byte cap; an
 oversized read is refused rather than truncated. `tests/qml-surface.test.mjs`
 fails if runtime QML reintroduces a `TextField`, `TextInput`, `TextEdit` or
-`TextArea`, or reaches the clipboard outside that one path. A field keeps the
+`TextArea`, or reads `Quickshell.clipboardText` or reaches the clipboard outside
+that one bounded paste path. A field keeps the
 keyboard when it loses the focus, including when another window takes it, so
 the clipboard picker still pastes through that one bounded path instead of
 reaching a Qt text input somewhere else. A read that did not finish normally
@@ -79,10 +82,11 @@ changes nothing: the field keeps its value and its selection, so a rejected
 or truncated transfer cannot empty a setting.
 
 **State file.** `lib/seen-state` opens the directory and file with
-`O_NOFOLLOW`, refuses anything that is not a regular file owned by you, caps the
-read, and replaces the file by rename so a reader never sees a partial write.
-`tests/helpers` asserts that a planted FIFO and a planted symlink are both
-refused, and that a failed write leaves the previous file whole.
+`O_NOFOLLOW`, refuses anything that is not a regular file owned by you, rejects
+empty or oversized payloads, caps the read, and replaces the file by rename so a
+reader never sees a partial write. `tests/helpers` asserts that a planted FIFO,
+planted symlink, and empty write are all refused, and that a failed write leaves
+the previous file whole.
 
 ## What is deliberately absent
 

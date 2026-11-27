@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { releaseDocuments } from '../scripts/release-docs.mjs';
 
-const ARCHIVE = 'loot-drops-v0.4.8-source.tar.gz';
+const ARCHIVE = 'loot-drops-v0.5.0-source.tar.gz';
 const digestOf = text => crypto.createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
 
 const fixture = () => ({
   slug: 'loot-drops',
-  version: '0.4.8',
-  tag: 'v0.4.8',
+  version: '0.5.0',
+  tag: 'v0.5.0',
   repository: 'https://github.com/salmun-nister/omarchy-loot-drops',
   commit: 'a'.repeat(40),
   tree: 'b'.repeat(40),
@@ -39,7 +39,7 @@ test('both manifests bind one version, repository, commit and tree', () => {
   for (const name of ['SOURCE-MANIFEST.json', 'RELEASE-MANIFEST.json']) {
     const document = JSON.parse(text[name]);
     assert.equal(document.schemaVersion, 1);
-    assert.equal(document.version, '0.4.8');
+    assert.equal(document.version, '0.5.0');
     assert.deepEqual(document.source, expected);
     assert.deepEqual(document.artifacts, [{ name: ARCHIVE, bytes: 4096, sha256: 'c'.repeat(64) }]);
   }
@@ -60,14 +60,14 @@ test('the SBOM is one SPDX 2.3 package bound to the version and commit', () => {
   const sbom = JSON.parse(text['SBOM.spdx.json']);
   assert.equal(sbom.spdxVersion, 'SPDX-2.3');
   assert.equal(sbom.dataLicense, 'CC0-1.0');
-  assert.equal(sbom.name, 'loot-drops-0.4.8');
+  assert.equal(sbom.name, 'loot-drops-0.5.0');
   assert.equal(sbom.documentNamespace,
-    `https://github.com/salmun-nister/omarchy-loot-drops/spdx/0.4.8-${'a'.repeat(40)}`);
+    `https://github.com/salmun-nister/omarchy-loot-drops/spdx/0.5.0-${'a'.repeat(40)}`);
   assert.equal(sbom.creationInfo.created, '2026-11-20T10:00:00Z');
   assert.equal(sbom.packages.length, 1);
   const [pkg] = sbom.packages;
   assert.equal(pkg.name, 'loot-drops');
-  assert.equal(pkg.versionInfo, '0.4.8');
+  assert.equal(pkg.versionInfo, '0.5.0');
   assert.ok(pkg.downloadLocation.endsWith(`@${'a'.repeat(40)}`), 'package must name the commit');
   assert.equal(pkg.filesAnalyzed, false);
   assert.equal(pkg.licenseDeclared, 'MIT');

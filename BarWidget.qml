@@ -100,48 +100,22 @@ Panel {
     })
   }
 
-  // Local overrides so footer toggles answer on the click itself. Going
-  // through persist() alone leaves the UI waiting for the shell to echo the
-  // written shell.json back, which reads as a ~1s lag on the eye and mobile
-  // buttons. The override is what the panel reads; persist() still writes
-  // the value for the next start, and onSettingsChanged clears the override
-  // once the echo lands (it carries the same value, so nothing flickers).
-  // Store watches and bells get the same treatment so enabling a store
-  // flips its switch (and its section) on the click, not a second later.
-  property bool hideSeenOverride: false
-  property bool hideSeenOverrideValue: false
-  property var epicMobileOverride: ({})
-  property var storesOverride: ({})
-  property var notifyOverride: ({})
-
-  readonly property var storesOn: {
-    var base = Model.enabled({
-      "steamEnabled": setting("steamEnabled", true),
-      "epicEnabled": setting("epicEnabled", true),
-      "gogEnabled": setting("gogEnabled", true),
-      "amazonEnabled": setting("amazonEnabled", false)
-    })
-    for (var s in storesOverride) base[s] = storesOverride[s]
-    return base
-  }
-  readonly property var notifyOn: {
-    var base = Model.notifyFor({
-      "steamNotify": setting("steamNotify", true),
-      "epicNotify": setting("epicNotify", true),
-      "gogNotify": setting("gogNotify", true),
-      "amazonNotify": setting("amazonNotify", true)
-    })
-    for (var n in notifyOverride) base[n] = notifyOverride[n]
-    return base
-  }
+  readonly property var storesOn: Model.enabled({
+    "steamEnabled": setting("steamEnabled", true),
+    "epicEnabled": setting("epicEnabled", true),
+    "gogEnabled": setting("gogEnabled", true),
+    "amazonEnabled": setting("amazonEnabled", false)
+  })
+  readonly property var notifyOn: Model.notifyFor({
+    "steamNotify": setting("steamNotify", true),
+    "epicNotify": setting("epicNotify", true),
+    "gogNotify": setting("gogNotify", true),
+    "amazonNotify": setting("amazonNotify", true)
+  })
 
   readonly property var epicMobileOn: ({
-    "android": epicMobileOverride.android !== undefined
-      ? epicMobileOverride.android
-      : setting("epicMobileAndroid", false),
-    "ios": epicMobileOverride.ios !== undefined
-      ? epicMobileOverride.ios
-      : setting("epicMobileIos", false)
+    "android": setting("epicMobileAndroid", false),
+    "ios": setting("epicMobileIos", false)
   })
   readonly property int refreshMinutes:
     // undefined, not 0: an absent setting must land on the default, and 0 would
@@ -154,12 +128,14 @@ Panel {
   readonly property string country: Model.countrySetting(root.settings)
   // Whether the panel hides games already marked seen. This is a view filter,
   // not a second baseline: the seen state itself is untouched.
-  readonly property bool hideSeen: hideSeenOverride
-    ? hideSeenOverrideValue
-    : setting("hideSeen", false)
+  readonly property bool hideSeen: setting("hideSeen", false)
+  readonly property bool endingSoonNotify: setting("endingSoonNotify", false)
+  readonly property bool steamUseClient: setting("steamUseClient", false)
+  readonly property bool epicHideAddOns: setting("epicHideAddOns", false)
+  readonly property bool epicShowUpcoming: setting("epicShowUpcoming", false)
 
-  // Per-store results. Each bucket keeps its own games, error and timestamp so
-  // one store failing never blanks the others.
+  // Per-store results. Each bucket keeps its own games, error, retry schedule,
+  // and timestamp so one store failing never blanks or delays the others.
   property var buckets: ({
     "steam": newBucket(),
     "epic": newBucket(),
@@ -169,15 +145,16 @@ Panel {
 
   property var seenState: Model.emptySeen()
   property bool seenLoaded: false
+  property bool seenSavePending: false
   property bool anyBusy: false
   // Epic assembly buffer: the PC catalog and the Android/iOS discover feeds
   // are fetched by separate processes so one slow or failing feed cannot
   // delay or blank the others. Parts are stashed here and only merged by
-  // finalizeEpic() once every expected part has answered.
+  // checkEpicAssembly() once every expected part has answered.
   property var epicParts: null
+  property bool epicRefetchPending: false
   property double lastSuccessAt: 0
   property double nowMs: Date.now()
-  property int retryDelayMs: 30000
   property bool cursorActive: false
   property int selectedIndex: 0
   // The game row the pointer is over, as a flat list index, or -1 when the
@@ -189,9 +166,10 @@ Panel {
   // still pointer reports the same scene point; only a changed point means the
   // mouse itself moved.
   property point lastPointerScene: Qt.point(-1, -1)
-  // Which store the pointer or cursor last touched. Kept for future use;
-  // there is no longer a per-store keybind acting on it.
+  // Which store the pointer or cursor last touched.
   property string targetStore: ""
+  // Temporary footer feedback shown after copying a game link.
+  property string copyFeedbackText: ""
   // One-line summary of disabled stores, for the footer. Empty when all
   // stores are on or every store is off (the all-off message stands alone).
   readonly property string disabledSummary: {
@@ -216,9 +194,7 @@ Panel {
   // Whether the panel is currently showing the keyboard shortcuts.
   property bool showShortcuts: false
   // Whether the panel is showing the in-panel settings page instead of the
-  // store list. The gear in the footer toggles it; it hosts every setting
-  // that used to be config-only (refresh interval, notification limit,
-  // store country) plus the Epic mobile platform switches.
+  // store list.
   property bool showSettings: false
   // Hover claims are suppressed briefly after a toggle reshapes the list,
   // so a row sliding under a still pointer cannot steal the highlight for
@@ -230,7 +206,7 @@ Panel {
   readonly property int staleAfter: Model.staleAfterMs(refreshMinutes)
   readonly property bool stale: lastSuccessAt > 0
     && nowMs - lastSuccessAt >= staleAfter
-  // The footer's ink, shared by the freshness text and both buttons so the two
+  // The footer's ink, shared by the freshness text and buttons so the two
   // cannot drift apart. The text drops to `dim` once the data is stale; the
   // buttons deliberately hold this colour, so they stay equally usable when the
   // numbers behind them are old.
@@ -239,21 +215,19 @@ Panel {
     lastSuccessAt, nowMs, anyBusy, staleAfter)
   readonly property var activeStores: Model.activeStores(storesOn)
   readonly property var visibleGames: visibleGameList()
-  // How many rows the panel's Repeater actually instantiated. This is not the
-  // same as visibleGames.length: a Repeater bound to a property that does not
-  // exist renders nothing while the array behind it stays perfectly correct, so
-  // the harness asserts on this instead.
+  // How many rows the panel's ListView actually instantiated.
   readonly property int renderedRows: panelList.count
 
-  // Rows must be laid out, not merely built. The previous Column-of-Repeater
-  // rendered a blank panel while reporting a correct row count and a model of
-  // seven, because a Repeater builds delegates but positions none of them. The
-  // measure that actually distinguishes the two is the view's contentHeight:
-  // it is zero when every row has no height, and it grows with each positioned
-  // row.
-  //
-  // A function rather than a binding, because reading an item's geometry
-  // creates no dependency and a property bound to it goes stale after one read.
+  // Whether any enabled store currently has a retry scheduled. Drives the 5s
+  // retry tick timer so it stays idle when all stores are healthy.
+  readonly property bool hasPendingRetries: {
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var s = Model.STORES[i]
+      if (storesOn[s] === true && bucket(s).retryAt > 0) return true
+    }
+    return false
+  }
+
   function listMetrics() {
     return {
       count: panelList.count,
@@ -286,7 +260,16 @@ Panel {
   readonly property bool hasUnseen: Model.hasUnseen(seenState, enabledBuckets())
 
   function newBucket() {
-    return { games: [], error: "", busy: false, neverChecked: true, lastSuccessAt: 0 }
+    return {
+      games: [],
+      upcoming: [],
+      error: "",
+      busy: false,
+      neverChecked: true,
+      lastSuccessAt: 0,
+      retryDelayMs: 30000,
+      retryAt: 0
+    }
   }
 
   function setBucket(store, fields) {
@@ -349,8 +332,6 @@ Panel {
 
   // True when the hover position differs enough from the previous one to be the
   // pointer moving, rather than a row scrolling underneath a still pointer.
-  // Both arrive as position changes, so the scene point is what tells them
-  // apart: scrolling changes the row's position, not the pointer's.
   function pointerMoved(scenePoint) {
     var threshold = Style.space(4)
     var moved = lastPointerScene.x < 0
@@ -360,14 +341,10 @@ Panel {
     return moved
   }
 
-  // Flat, store-ordered list for the single cursor. Reordered on every change
-  // so the highlighted row stays on the same game when a refresh lands.
-  // Flat list of row entries: a header ahead of every store, then that store's
-  // games when it is being watched. Headers share the index space with games so
-  // The cursor is a plain index and a row can be fetched by position to scroll
-  // it into view.
-  //
-  // A switched-off store is never listed; see the disabled line at the end.
+  // Flat, store-ordered list of row entries. Deliberately does NOT read
+  // `nowMs` so the 30-second clock tick never rebuilds the ListView model or
+  // resets the user's scroll position; time-sensitive labels read `root.nowMs`
+  // inside each delegate instead.
   function visibleGameList() {
     var list = []
     var anyEnabled = false
@@ -397,10 +374,12 @@ Panel {
         shown = split.shown
         hidden = split.hidden
       }
-      // A store only gets a section when it is watched and has something
-      // to show: game rows, or a hidden-seen count in hide-seen mode. A
-      // switched-off store never appears, however many games it last had.
-      var hasEntries = on && (shown.length > 0 || hidden > 0 || current.busy)
+      var upcoming = (store === "epic" && epicShowUpcoming && Array.isArray(current.upcoming))
+        ? (epicHideAddOns ? Model.filterEpicAddOns(current.upcoming, true) : current.upcoming)
+        : []
+      // A store gets a section when it is watched and has games, hidden-seen
+      // rows, upcoming rows, a fetch in flight, or an error to report.
+      var hasEntries = on && (shown.length > 0 || hidden > 0 || upcoming.length > 0 || current.busy)
       var failed = on && !!current.error
       if (!hasEntries && !failed) continue
       list.push({
@@ -410,19 +389,23 @@ Panel {
       })
       // A store with nothing yet but a fetch in flight says so, instead
       // of sitting empty while the network catches up.
-      if (shown.length === 0 && hidden === 0 && current.busy) {
+      if (shown.length === 0 && hidden === 0 && upcoming.length === 0 && current.busy) {
         list.push({ kind: "checking", store: store })
       }
       for (var j = 0; j < shown.length; j++) {
         list.push({ kind: "game", store: store, game: shown[j] })
       }
-      // The summary is the store's last entry, so every unseen game reads first.
+      // The summary follows the live games; its ending-soon count is evaluated
+      // against root.nowMs in the delegate from hiddenEndsAt.
       if (hidden > 0) {
-        var soon = 0
+        var hiddenEndsAt = []
         for (var s = 0; s < seenGames.length; s++) {
-          if (Model.endingSoon(seenGames[s] && seenGames[s].endsAt, nowMs)) soon++
+          if (seenGames[s] && seenGames[s].endsAt) hiddenEndsAt.push(seenGames[s].endsAt)
         }
-        list.push({ kind: "hidden", store: store, count: hidden, endingSoon: soon })
+        list.push({ kind: "hidden", store: store, count: hidden, hiddenEndsAt: hiddenEndsAt })
+      }
+      for (var u = 0; u < upcoming.length; u++) {
+        list.push({ kind: "upcoming", store: store, game: upcoming[u] })
       }
     }
     if (anyEnabled && list.length === 0 && !anyBusy) list.push({ kind: "empty" })
@@ -430,11 +413,8 @@ Panel {
   }
 
   // Write a setting change back to this widget's entry in shell.json. Applied
-  // locally first so the switch moves on the click itself, then persisted; the
-  // bar feeds the same value back through settings a moment later. This is the
-  // same pattern Omarchy's own Tray and Clock widgets use. The shell write is
-  // deferred to the next event loop turn so the click paints before the
-  // file I/O (and any bar reload it triggers) can stall it.
+  // locally first via root.settings so controls respond on the click itself,
+  // then flushed when the panel closes (or after the debounce safety net).
   function persist(patch) {
     var entry = { id: root.moduleName }
     var current = root.settings
@@ -445,10 +425,6 @@ Panel {
     }
     for (var p in patch) entry[p] = patch[p]
     root.settings = entry
-    // Shell writes are flushed when the panel closes, not per toggle:
-    // updateEntryInline makes the shell reload its config and rebuild
-    // the bar, which stalls the panel ~1s on the first toggle of a
-    // session. Local state answers instantly either way.
     pendingEntry = entry
     persistDebounce.restart()
   }
@@ -465,20 +441,9 @@ Panel {
     }
   }
 
-  // One-time copy of the pre-Epic country key. Fires on either injection order:
-  // `bar` supplies the write path, `settings` the values, and the patch check
-  // makes a second call harmless.
+  // One-time copy of the pre-Epic country key.
   onBarChanged: migrateCountry()
-  onSettingsChanged: {
-    // The shell echo after a footer toggle carries the same value the local
-    // override already shows, so dropping the override changes nothing
-    // visually while letting future external edits through.
-    hideSeenOverride = false
-    epicMobileOverride = ({})
-    storesOverride = ({})
-    notifyOverride = ({})
-    migrateCountry()
-  }
+  onSettingsChanged: migrateCountry()
 
   function migrateCountry() {
     var patch = Model.countryPatch(root.settings)
@@ -486,6 +451,11 @@ Panel {
     if (!root.bar || !root.bar.shell
         || typeof root.bar.shell.updateEntryInline !== "function") return
     persist(patch)
+  }
+
+  function exitSettings() {
+    root.showSettings = false
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function enabledKey(store) { return store + "Enabled" }
@@ -504,47 +474,97 @@ Panel {
     var games = bucket(store).games || []
     var out = []
     for (var i = 0; i < games.length; i++) {
-      if (!platformHidden(games[i] && games[i].platform)) out.push(games[i])
+      var game = games[i]
+      if (!game) continue
+      if (platformHidden(game.platform)) continue
+      if (store === "epic" && epicHideAddOns && game.isAddOn === true) continue
+      out.push(game)
     }
     return out
   }
 
   // The settings page as a flat row model: a heading then switch rows per
-  // store, then a general section. Grouped by store because that is how
-  // the watch/notify preferences are thought about.
+  // store, then a general section.
   function settingsRows() {
     var rows = []
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
       rows.push({ kind: "heading", label: Model.STORE_LABELS[store] || store, store: store })
       rows.push({ kind: "store", label: "", store: store })
-      if (store === "epic") {
+      if (store === "steam") {
+        rows.push({ kind: "toggle", label: "Open in Steam client",
+                    setting: "steamUseClient", store: store, what: "steamUseClient" })
+      } else if (store === "epic") {
         rows.push({ kind: "platforms", label: "", store: store })
+        rows.push({ kind: "toggle", label: "Hide add-ons / DLC",
+                    setting: "epicHideAddOns", store: store, what: "epicHideAddOns" })
+        rows.push({ kind: "toggle", label: "Show upcoming games",
+                    setting: "epicShowUpcoming", store: store, what: "epicShowUpcoming" })
       }
     }
     rows.push({ kind: "heading", label: "General" })
     rows.push({ kind: "toggle", label: "Hide seen games",
                 setting: "hideSeen", store: "", what: "hideSeen" })
+    rows.push({ kind: "toggle", label: "Ending soon reminders",
+                setting: "endingSoonNotify", store: "", what: "endingSoonNotify" })
     rows.push({ kind: "sliderRefresh", label: "Refresh interval" })
     rows.push({ kind: "sliderNotify", label: "Store notification limit" })
     rows.push({ kind: "country", label: "Store country" })
     return rows
   }
 
-  // Only the lone "Hide seen games" toggle routes through these; every store
-  // and platform switch binds its state directly.
   function settingsToggleChecked(entry) {
-    return !!entry && entry.what === "hideSeen" && hideSeen
+    if (!entry) return false
+    if (entry.what === "hideSeen") return hideSeen
+    if (entry.what === "endingSoonNotify") return endingSoonNotify
+    if (entry.what === "steamUseClient") return steamUseClient
+    if (entry.what === "epicHideAddOns") return epicHideAddOns
+    if (entry.what === "epicShowUpcoming") return epicShowUpcoming
+    return false
   }
 
   function settingsToggleFlip(entry) {
-    if (entry && entry.what === "hideSeen") toggleHideSeen()
+    if (!entry) return
+    if (entry.what === "hideSeen") {
+      toggleHideSeen()
+    } else if (entry.what === "endingSoonNotify") {
+      var next = !endingSoonNotify
+      persist({ endingSoonNotify: next })
+      if (next) checkEndingSoonReminders()
+    } else if (entry.what === "steamUseClient") {
+      persist({ steamUseClient: !steamUseClient })
+    } else if (entry.what === "epicHideAddOns") {
+      snapPanelHeight()
+      persist({ epicHideAddOns: !epicHideAddOns })
+      resetSelectionAfterToggle()
+    } else if (entry.what === "epicShowUpcoming") {
+      snapPanelHeight()
+      persist({ epicShowUpcoming: !epicShowUpcoming })
+      resetSelectionAfterToggle()
+    }
   }
 
-  // Buckets as the panel actually reads them: only watched stores, and
-  // only their visible games. The hero count, tooltip, bar dot and store
-  // error all read this, so a switched-off store cannot inflate any of
-  // them.
+  // Country changes affect Steam and Epic listings; re-prime them silently and
+  // re-fetch immediately so regional offers update without spurious alerts.
+  function onCountryUpdated() {
+    if (!seenLoaded) return
+    var unprimed = false
+    if (storesOn.steam === true) {
+      seenState = Model.unprimeStore(seenState, "steam")
+      unprimed = true
+    }
+    if (storesOn.epic === true) {
+      seenState = Model.unprimeStore(seenState, "epic")
+      unprimed = true
+    }
+    if (unprimed) persistSeen()
+    if (storesOn.steam === true && !bucket("steam").busy) startFetch("steam")
+    if (storesOn.epic === true) {
+      if (bucket("epic").busy) epicRefetchPending = true
+      else startFetch("epic")
+    }
+  }
+
   function displayBuckets() {
     return enabledBuckets()
   }
@@ -555,30 +575,21 @@ Panel {
     targetStore = store
     suppressHover()
     var turningOn = storesOn[store] !== true
-    var next = {}
-    for (var s in storesOn) next[s] = storesOn[s]
-    next[store] = turningOn
-    storesOverride = next
     persist({ [enabledKey(store)]: turningOn })
-    // Re-enabling re-records silently: the baseline and the seen marks stay,
-    // but priming is dropped so nothing from the off period is announced.
+    if (!turningOn) {
+      setBucket(store, { retryAt: 0, retryDelayMs: 30000 })
+    }
     if (turningOn && seenLoaded) {
       seenState = Model.unprimeStore(seenState, store)
       persistSeen()
     }
     reanchorCursor()
-    // Fetch just this store now (stale rows if it has them are already
-    // visible), instead of the slowest store on a full refresh.
     if (turningOn && !bucket(store).busy) startFetch(store)
   }
 
   function toggleBell(store) {
     targetStore = store
-    var next = {}
-    for (var n in notifyOn) next[n] = notifyOn[n]
-    next[store] = notifyOn[store] !== true
-    notifyOverride = next
-    persist({ [notifyKey(store)]: next[store] })
+    persist({ [notifyKey(store)]: notifyOn[store] !== true })
   }
 
   function suppressHover() {
@@ -589,16 +600,10 @@ Panel {
     lastPointerScene = Qt.point(-1, -1)
   }
 
-  // A toggle that reshapes the list clears any selection outright instead
-  // of re-anchoring it: clamp-and-rehighlight picks whichever row now
-  // happens to sit at the old index and flashes it for a frame.
   function resetSelectionAfterToggle() {
     suppressHover()
   }
 
-  // Epic mobile sub-platform switches, toggled from the panel footer. The
-  // settings keys are epicMobileAndroid / epicMobileIos; map a platform to
-  // the one it owns so a click never writes the other platform's key.
   function epicMobileKey(platform) {
     return platform === "ios" ? "epicMobileIos" : "epicMobileAndroid"
   }
@@ -608,10 +613,6 @@ Panel {
     var turningOn = epicMobileOn[platform] !== true
     snapPanelHeight()
     suppressHover()
-    var next = { "android": epicMobileOn.android === true,
-                 "ios": epicMobileOn.ios === true }
-    next[platform] = turningOn
-    epicMobileOverride = next
     persist({ [epicMobileKey(platform)]: turningOn })
     // Epic's mobile feeds share the epic baseline, so enabling one has to
     // re-prime that store as well; otherwise its currently free games would
@@ -621,26 +622,21 @@ Panel {
       persistSeen()
     }
     resetSelectionAfterToggle()
-    // Enabling a platform fetches it immediately rather than waiting for
-    // the next scheduled refresh, so the rows appear without a manual r.
-    if (turningOn && storesOn.epic === true && !bucket("epic").busy) startFetch("epic")
+    if (turningOn && storesOn.epic === true) {
+      if (bucket("epic").busy) epicRefetchPending = true
+      else startFetch("epic")
+    }
   }
 
-  // The eye hides games the user has already marked seen. Persisted like the
-  // switches and bells so it survives a restart.
+  // The eye hides games the user has already marked seen.
   function toggleHideSeen() {
     snapPanelHeight()
-    var next = !hideSeen
-    hideSeenOverrideValue = next
-    hideSeenOverride = true
-    persist({ hideSeen: next })
+    persist({ hideSeen: !hideSeen })
     resetSelectionAfterToggle()
   }
 
   // KeyboardPanel animates drawnHeight whenever it changes while live
   // (200ms), even for a deliberate show/hide toggle that should be instant.
-  // Snapping it off here makes the next size change land in one step; the
-  // panel re-arms the animation on its next open.
   function snapPanelHeight() {
     if (panel) panel.heightLive = false
   }
@@ -655,8 +651,6 @@ Panel {
     return out
   }
 
-  // Whether any store currently carries an error, so the hero can turn urgent
-  // without naming each store in the binding.
   function hasStoreError() {
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
@@ -666,20 +660,28 @@ Panel {
   }
 
   // Acknowledge one game, clearing its marker and letting the bar dot go out
-  // once every new game has been marked.
+  // once every new game has been marked. Only moves/scrolls the keyboard cursor
+  // when the keyboard cursor is actually active.
   function markSeen(store, id) {
     if (!seenLoaded) return
     var key = store + ":" + id
+    var prevPos = cursorActive ? gameRowIndexes().indexOf(selectedIndex) : -1
     seenState = Model.acknowledgeGame(seenState, store, id)
     persistSeen()
-    // The reorder (unseen first) moves the marked row to the bottom of
-    // its store, so follow it by id rather than leaving the cursor on
-    // whichever game now sits at the old index.
-    setCursorById(key)
+    if (cursorActive) setCursorById(key, prevPos)
   }
 
-  // The game the highlight is on, keyboard or pointer, so h marks whichever row
-  // is showing as selected.
+  // Mark every currently visible game across enabled stores as seen.
+  function markAllSeen() {
+    if (!seenLoaded || !hasUnseen) return
+    var key = cursorActive ? keepSelectedId() : ""
+    seenState = Model.acknowledgeAll(seenState, enabledBuckets())
+    persistSeen()
+    if (hideSeen) resetSelectionAfterToggle()
+    else if (cursorActive) setCursorById(key)
+  }
+
+  // The game the highlight is on, keyboard or pointer.
   function highlightedGame() {
     if (cursorActive) return selectedGame()
     if (pointerIndex >= 0 && pointerIndex < visibleGames.length) {
@@ -694,18 +696,29 @@ Panel {
   function toggleSeen(store, id) {
     if (!seenLoaded) return
     var key = store + ":" + id
+    var prevPos = cursorActive ? gameRowIndexes().indexOf(selectedIndex) : -1
     seenState = gameUnseen(store, id)
       ? Model.acknowledgeGame(seenState, store, id)
       : Model.forgetGame(seenState, store, id)
     persistSeen()
-    // Follow the toggled game by id: the unseen-first reorder moves it
-    // across the store block, and pressing s again must hit the same game.
-    setCursorById(key)
+    if (cursorActive) setCursorById(key, prevPos)
   }
 
   function toggleHighlighted() {
     var row = highlightedGame()
     if (row) toggleSeen(row.store, row.game.id)
+  }
+
+  // Copy the highlighted game's allowlisted HTTPS store link (write-only
+  // clipboard update; never reads the clipboard).
+  function copyHighlightedUrl() {
+    var row = highlightedGame()
+    if (!row) return
+    var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
+    if (!url) return
+    Quickshell.clipboardText = url
+    copyFeedbackText = "Copied link"
+    copyFeedbackTimer.restart()
   }
 
   function ingestSeen(raw) {
@@ -714,8 +727,15 @@ Panel {
     seenLoaded = true
   }
 
+  // Serialize and persist seen.json atomically. If a save is already running,
+  // mark dirty so saveSeenProc.onExited immediately flushes the latest state.
   function persistSeen() {
-    if (!seenLoaded || saveSeenProc.running) return
+    if (!seenLoaded) return
+    if (saveSeenProc.running) {
+      seenSavePending = true
+      return
+    }
+    seenSavePending = false
     saveSeenProc.payload = Model.serializeSeen(seenState) + "\n"
     saveSeenProc.running = true
   }
@@ -727,7 +747,7 @@ Panel {
     for (var i = 0; i < Model.STORES.length; i++) {
       var store = Model.STORES[i]
       if (!storesOn[store]) {
-        setBucket(store, { busy: false })
+        setBucket(store, { busy: false, retryAt: 0 })
         continue
       }
       if (bucket(store).busy) continue
@@ -737,23 +757,30 @@ Panel {
   }
 
   function startFetch(store) {
-    setBucket(store, { busy: true })
+    setBucket(store, { busy: true, retryAt: 0 })
     if (store === "epic") {
       beginEpicAssembly()
       return
     }
     var proc = fetchProcs[store]
-    proc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
-      .concat(fetchArgs(store))
-    proc.running = true
+    proc.start([root.python, root.cappedRun, String(Model.MAX_BYTES)]
+      .concat(fetchArgs(store)))
     updateBusy()
   }
 
   // Start the PC catalog fetch plus whichever mobile platform feeds are
-  // switched on. finalizeEpic() runs only after every expected part answers,
-  // so a partial result is never shown as the whole Epic list.
+  // switched on. checkEpicAssembly() runs only after every expected part
+  // answers, so a partial result is never shown as the whole Epic list.
   function beginEpicAssembly() {
-    var parts = { pc: null, android: null, ios: null, failed: 0, expected: 0 }
+    var parts = {
+      pc: null,
+      upcoming: [],
+      android: null,
+      ios: null,
+      failed: 0,
+      failedParts: { pc: false, android: false, ios: false },
+      expected: 0
+    }
     epicParts = parts
     var wanted = ["pc"]
     if (epicMobileOn.android === true) wanted.push("android")
@@ -762,29 +789,23 @@ Panel {
     for (var i = 0; i < wanted.length; i++) {
       var which = wanted[i]
       if (which === "pc") {
-        epicProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
-          .concat(fetchArgs("epic"))
-        epicProc.running = true
+        epicProc.start([root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgs("epic")))
       } else if (which === "android") {
-        epicMobileAndroidProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
-          .concat(fetchArgsMobile("android"))
-        epicMobileAndroidProc.running = true
+        epicMobileAndroidProc.start([root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgsMobile("android")))
       } else {
-        epicMobileIosProc.command = [root.python, root.cappedRun, String(Model.MAX_BYTES)]
-          .concat(fetchArgsMobile("ios"))
-        epicMobileIosProc.running = true
+        epicMobileIosProc.start([root.python, root.cappedRun, String(Model.MAX_BYTES)]
+          .concat(fetchArgsMobile("ios")))
       }
     }
     updateBusy()
   }
 
-  function finishEpicPart(which, games) {
-    // A part answers through both its stream and its exit, so only the first
-    // to arrive is recorded; the second is a no-op. Otherwise a failing feed
-    // counts its failure twice (once per handler) and flips a partial failure
-    // into a total one.
+  function finishEpicPart(which, games, upcoming) {
     if (!epicParts || epicParts[which] !== null) return
     epicParts[which] = games || []
+    if (which === "pc") epicParts.upcoming = upcoming || []
     checkEpicAssembly()
   }
 
@@ -792,6 +813,7 @@ Panel {
     if (!epicParts || epicParts[which] !== null) return
     epicParts[which] = []
     epicParts.failed++
+    if (epicParts.failedParts) epicParts.failedParts[which] = true
     checkEpicAssembly()
   }
 
@@ -800,32 +822,32 @@ Panel {
     var result = Model.epicAssemblyResult(epicParts)
     if (!result) return
     epicParts = null
-    // A feed that failed does not fail the store while another part still
-    // answered: the user sees what we have and the error line names what is
-    // missing. Only a total failure is an unreachable store.
     if (result.mode === "partial") {
       // Show what answered, but do not move the baseline: the feed that failed
       // still has its ids recorded, so its games are not re-announced when it
-      // comes back. The next complete assembly records everything normally.
-      succeed("epic", result.games, false)
-      setBucket("epic", { error: "Could not reach Epic Mobile" })
+      // comes back. Schedule a retry for Epic so the missing feed recovers.
+      succeed("epic", result.games, false, result.upcoming)
+      scheduleRetry("epic", result.errorLabel || "Could not reach some Epic feeds", true)
     } else if (result.mode === "fail") {
-      fail("epic", "Could not reach Epic")
+      fail("epic", result.errorLabel || "Could not reach Epic", true)
     } else {
-      succeed("epic", result.games)
+      succeed("epic", result.games, true, result.upcoming)
+    }
+    if (epicRefetchPending) {
+      epicRefetchPending = false
+      if (storesOn.epic === true && !bucket("epic").busy) startFetch("epic")
     }
   }
-
-  // Bridge between the generic publish() and the assembly buffer: the PC
-  // catalog answers through publish(), mobile through publishEpicMobile().
-  // publish() is called with "epic" for PC; see publishEpicMobile.
 
   function fetchArgs(store) {
     // Amazon is rendered rather than requested, so a browser is its transport.
     if (store === "amazon") return amazonArgs()
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     var args = [
-      "curl", "-fsS", "--max-time", String(deadlineSeconds),
+      // Drop -f so HTTP 4xx/5xx deliver their status code via --write-out and
+      // are classified cleanly by Model.httpResultAction without masking GOG's
+      // healthy 404 or turning 5xx into a parse error.
+      "curl", "-sS", "--max-time", String(deadlineSeconds),
       // --max-filesize is only honoured against a declared Content-Length, so
       // capped-run is what actually bounds a response that streams.
       "--max-filesize", String(Model.MAX_BYTES),
@@ -833,12 +855,8 @@ Panel {
       "-H", "Accept: application/json,text/html;q=0.9",
       // Steam's search endpoint only answers with JSON for an XHR.
       "-H", "X-Requested-With: XMLHttpRequest",
-      // The status code is appended so GOG's 404 can be told apart from a
-      // network failure; curl -f alone would make both a non-zero exit.
       "--write-out", "\n%{http_code}"
     ]
-    // Epic is the only store queried with a POST. The GraphQL body is one argv
-    // element handed straight to curl, so no shell quoting is involved.
     if (store === "epic") {
       args.push("-H", "Content-Type: application/json",
         "--data", Model.epicQuery(country))
@@ -847,14 +865,6 @@ Panel {
     return args
   }
 
-  // Luna's claims grid exists only after its scripts run, and the GraphQL
-  // behind it rejects clients that do not look like a browser, so this store is
-  // fetched by rendering the signed-out page in Chromium — a base Omarchy
-  // package. Both the browser and `timeout`, which supplies the deadline curl
-  // gives itself, are named absolutely so PATH cannot shadow them; capped-run
-  // still bounds the DOM printed to stdout.
-  // shortcut: no sign-in-wall detection; a wall requires a session this store
-  // does not have, and it surfaces as the generic unexpected-response error.
   function amazonArgs() {
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     return [
@@ -869,8 +879,6 @@ Panel {
 
   function sourceUrl(store) {
     if (store === "steam") {
-      // maxprice=free&specials=1 lists 100%-off specials, so free-to-play
-      // titles are excluded without a second filter.
       var filters = "sort_by=_ASC&hwtype=0&maxprice=free&category1=998"
         + "&supportedlang=english&specials=1"
       var url = "https://store.steampowered.com/search/results/?" + filters
@@ -886,7 +894,7 @@ Panel {
   function fetchArgsMobile(platform) {
     var deadlineSeconds = Math.ceil(fetchDeadlineMs / 1000)
     return [
-      "curl", "-fsS", "--max-time", String(deadlineSeconds),
+      "curl", "-sS", "--max-time", String(deadlineSeconds),
       "--max-filesize", String(Model.MAX_BYTES),
       "-A", Model.USER_AGENT,
       "-H", "Accept: application/json",
@@ -895,36 +903,32 @@ Panel {
     ]
   }
 
-  // curl's -f makes a 404 an error exit, but GOG's 404 means "no giveaway
-  // running" rather than a failure. The body is empty in that case, so the
-  // store is reported healthy and empty.
-  function publish(store, raw) {
-    var body = String(raw || "")
-    var code = "200"
-    // curl appends its status code; the Amazon render is raw DOM, whose last
-    // line is markup rather than a status.
-    if (store !== "amazon") {
-      var split = body.lastIndexOf("\n")
-      if (split >= 0) {
-        code = body.slice(split + 1).trim()
-        body = body.slice(0, split)
+  // Unified completion handler for Steam, Epic PC, GOG, and Amazon fetches.
+  // Called only after CommandRunner confirms both process exit and full stdout.
+  function handleFetchFinished(store, exitCode, output) {
+    var action = Model.httpResultAction(store, exitCode, output)
+    if (!action.ok) {
+      if (store === "epic") {
+        failEpicPart("pc")
+        return
       }
+      fail(store, action.error, action.retryable)
+      return
     }
-
-    if (code === "404" && store === "gog") {
+    if (action.empty) {
       succeed(store, [])
       return
     }
 
-    // A parser that throws must not leave the store busy forever. refresh()
-    // skips a store whose bucket is busy, so an exception escaping this callback
-    // would strand that store with no error shown and no way to retry. Turn any
-    // throw into the same store error a bad response gets.
     var parsed
     try {
-      parsed = Model.parseStore(store, body)
+      parsed = Model.parseStore(store, action.body)
     } catch (e) {
-      fail(store, "Store returned an unexpected response")
+      if (store === "epic") {
+        failEpicPart("pc")
+        return
+      }
+      fail(store, "Store returned an unexpected response", true)
       return
     }
     if (!parsed.ok) {
@@ -932,25 +936,25 @@ Panel {
         failEpicPart("pc")
         return
       }
-      fail(store, "Store returned an unexpected response")
+      fail(store, "Store returned an unexpected response", true)
       return
     }
     if (store === "epic") {
-      finishEpicPart("pc", parsed.games)
+      finishEpicPart("pc", parsed.games, parsed.upcoming || [])
       return
     }
     succeed(store, parsed.games)
   }
 
-  // Mobile discover feeds answer into the Epic assembly, not straight to the
-  // bucket, so the PC snapshot and both platforms merge in one succeed().
-  function publishEpicMobile(platform, raw) {
-    var body = String(raw || "")
-    var split = body.lastIndexOf("\n")
-    if (split >= 0) body = body.slice(0, split)
+  function handleEpicMobileFinished(platform, exitCode, output) {
+    var action = Model.httpResultAction("epic", exitCode, output)
+    if (!action.ok) {
+      failEpicPart(platform)
+      return
+    }
     var parsed
     try {
-      parsed = Model.parseEpicMobile(body, platform)
+      parsed = Model.parseEpicMobile(action.body, platform)
     } catch (e) {
       failEpicPart(platform)
       return
@@ -962,61 +966,126 @@ Panel {
     finishEpicPart(platform, parsed.games)
   }
 
+  // Send desktop notifications for a store, bundling when the batch exceeds
+  // maxStoreNotifications.
+  function dispatchAlerts(store, alerts, makeArgs) {
+    if (!alerts || alerts.length === 0) return
+    if (maxStoreNotifications >= 1 && alerts.length > maxStoreNotifications) {
+      var summary = makeArgs(store, alerts)
+      if (summary) Quickshell.execDetached(summary)
+    } else {
+      for (var a = 0; a < alerts.length; a++) {
+        var argv = makeArgs(store, [alerts[a]])
+        if (argv) Quickshell.execDetached(argv)
+      }
+    }
+  }
+
   // `recordBaseline` is false for a partial Epic result: the missing feed must
   // keep its recorded ids, or every game it had would look new when it returns.
-  function succeed(store, games, recordBaseline) {
+  function succeed(store, games, recordBaseline, upcoming) {
     var now = Date.now()
-    setBucket(store, {
+    var fields = {
       games: games,
       error: "",
       busy: false,
       neverChecked: false,
-      lastSuccessAt: now
-    })
-    if (recordBaseline === false) return
+      lastSuccessAt: now,
+      retryDelayMs: 30000,
+      retryAt: 0
+    }
+    if (upcoming !== undefined) fields.upcoming = upcoming
+    setBucket(store, fields)
+    nowMs = now
+
+    if (recordBaseline === false) {
+      if (cursorActive) setCursorById(keepSelectedId())
+      updateBusy()
+      return
+    }
 
     var transition = Model.diffStore(seenState, store, games,
       storesOn[store], notifyOn[store])
     seenState = transition.state
     persistSeen()
 
-    // Bundle a store's new games into one summary once they pass the per-store
-    // cap, so a sudden batch does not become a wall of cards. A cap of 0 means
-    // no limit; below the cap each game gets its own notification with its own
-    // store-page and mark-seen buttons.
-    if (maxStoreNotifications >= 1
-        && transition.alerts.length > maxStoreNotifications) {
-      var summary = Model.notificationArgs(store, transition.alerts)
-      if (summary) Quickshell.execDetached(summary)
-    } else {
-      for (var a = 0; a < transition.alerts.length; a++) {
-        var argv = Model.notificationArgs(store, [transition.alerts[a]])
-        if (argv) Quickshell.execDetached(argv)
+    var alerts = transition.alerts
+    if (store === "epic" && epicHideAddOns && alerts.length > 0) {
+      var addOnIds = {}
+      for (var i = 0; i < games.length; i++) {
+        if (games[i] && games[i].isAddOn === true) addOnIds[games[i].id] = true
       }
+      var kept = []
+      for (var j = 0; j < alerts.length; j++) {
+        if (!addOnIds[alerts[j].id]) kept.push(alerts[j])
+      }
+      alerts = kept
     }
+    dispatchAlerts(store, alerts, Model.notificationArgs)
 
-    nowMs = now
     lastSuccessAt = now
-    retryTimer.stop()
-    retryDelayMs = 30000
-    setCursorById(keepSelectedId())
+    if (cursorActive) setCursorById(keepSelectedId())
     updateBusy()
+    checkEndingSoonReminders()
+  }
+
+  // Schedule a per-store backoff retry with +/- 5% jitter, keeping existing
+  // games visible until a later fetch succeeds.
+  function scheduleRetry(store, message, retryable) {
+    var b = bucket(store)
+    var delay = b.retryDelayMs || 30000
+    var jitter = 0.95 + Math.random() * 0.1
+    var retryAt = retryable === false ? 0 : (Date.now() + Math.round(delay * jitter))
+    var nextDelay = retryable === false ? delay : Math.min(60 * 60 * 1000, delay * 2)
+    setBucket(store, {
+      error: message,
+      retryDelayMs: nextDelay,
+      retryAt: retryAt
+    })
   }
 
   // A failed fetch never overwrites the last good list: the bucket keeps its
   // games and simply gains an error, so the panel shows stale-with-error.
-  function fail(store, message) {
-    var bucketNow = bucket(store)
+  function fail(store, message, retryable) {
+    var b = bucket(store)
     setBucket(store, {
-      games: bucketNow.games,
-      error: message,
+      games: b.games,
       busy: false,
-      neverChecked: bucketNow.neverChecked
+      neverChecked: b.neverChecked
     })
-    retryTimer.interval = retryDelayMs
-    retryTimer.restart()
-    retryDelayMs = Math.min(60 * 60 * 1000, retryDelayMs * 2)
+    scheduleRetry(store, message, retryable)
     updateBusy()
+  }
+
+  function runDueRetries() {
+    if (!seenLoaded) return
+    var now = Date.now()
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var store = Model.STORES[i]
+      if (storesOn[store] !== true) continue
+      var b = bucket(store)
+      if (!b.busy && b.retryAt > 0 && now >= b.retryAt) {
+        startFetch(store)
+      }
+    }
+  }
+
+  function checkEndingSoonReminders() {
+    if (!seenLoaded || !endingSoonNotify) return
+    var now = Date.now()
+    var res = Model.endingSoonReminders(
+      seenState, enabledBuckets(), storesOn, notifyOn, endingSoonNotify, now)
+    if (!res.changed) return
+    seenState = res.state
+    persistSeen()
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var store = Model.STORES[i]
+      var alerts = res.alertsByStore[store]
+      if (!alerts || alerts.length === 0) continue
+      dispatchAlerts(store, alerts, function(st, list) {
+        return Model.endingSoonNotificationArgs(st, list, now)
+      })
+    }
   }
 
   function keepSelectedId() {
@@ -1025,22 +1094,26 @@ Panel {
     return current.store + ":" + current.game.id
   }
 
-  // Re-find the highlighted game by id after a refresh, so an incoming list
-  // does not move the cursor onto a different row.
-  function setCursorById(key) {
-    if (!key) {
-      setCursor(0)
+  // Re-find the highlighted game by id after a refresh or seen toggle, falling
+  // back to the nearest surviving game row when hideSeen removes it.
+  function setCursorById(key, fallbackPos) {
+    var allowed = gameRowIndexes()
+    if (allowed.length === 0) {
+      selectedIndex = -1
       return
     }
-    var allowed = gameRowIndexes()
-    for (var a = 0; a < allowed.length; a++) {
-      var row = visibleGames[allowed[a]]
-      if (row.store + ":" + row.game.id === key) {
-        setCursor(a)
-        return
+    if (key) {
+      for (var a = 0; a < allowed.length; a++) {
+        var row = visibleGames[allowed[a]]
+        if (row.store + ":" + row.game.id === key) {
+          setCursor(a)
+          return
+        }
       }
     }
-    setCursor(0)
+    var target = (fallbackPos !== undefined && fallbackPos >= 0)
+      ? Math.min(fallbackPos, allowed.length - 1) : 0
+    setCursor(target)
   }
 
   function updateBusy() {
@@ -1051,9 +1124,8 @@ Panel {
     anyBusy = busy
   }
 
-  // The cursor walks game rows only, skipping headers and the hidden summary,
-  // and never leaves the viewport: the selected row is fetched from the
-  // Repeater and scrolled to.
+  // The cursor walks live game rows only, skipping headers, hidden summaries,
+  // and upcoming previews.
   function gameRowIndexes() {
     var out = []
     for (var i = 0; i < visibleGames.length; i++) {
@@ -1072,11 +1144,6 @@ Panel {
     Qt.callLater(function() { scrollCursorIntoView() })
   }
 
-  // Move by a step in games, not rows, so a header between two stores does not
-  // consume a keypress. The cursor position is a row index while the step is an
-  // offset in games, so the two are converted rather than mixed: doing that
-  // loosely left the cursor on whichever store happened to slide into the freed
-  // slot, which is why e and n appeared to only ever act on one store.
   function moveCursor(step) {
     var allowed = gameRowIndexes()
     if (allowed.length === 0) return
@@ -1084,8 +1151,6 @@ Panel {
     var next = at < 0 ? (step > 0 ? 0 : allowed.length - 1) : at + step
     next = Math.max(0, Math.min(allowed.length - 1, next))
     setCursor(next)
-    // Moving the cursor retargets the keyboard. Re-anchoring must not, or
-    // switching a store off would immediately retarget it elsewhere.
     targetStore = visibleGames[allowed[next]].store
   }
 
@@ -1095,43 +1160,45 @@ Panel {
     return row && row.kind === "game" ? row : null
   }
 
-  // Re-anchor the cursor after the row list changes underneath it.
   function reanchorCursor() {
+    if (!cursorActive) return
     var allowed = gameRowIndexes()
     if (allowed.indexOf(selectedIndex) < 0) {
       setCursor(allowed.length > 0 ? 0 : -1)
     }
   }
 
-  // Keep the highlighted row inside the visible area. ListView does the
-  // measuring, which is why the panel is a ListView and not a Column of
-  // Repeater rows.
   function scrollCursorIntoView() {
     if (!panelList || selectedIndex < 0) return
     panelList.positionViewAtIndex(selectedIndex, ListView.Contain)
   }
 
+  function launchUrlFor(store, game) {
+    if (store === "steam" && steamUseClient && game) {
+      var client = Model.steamClientUrl(game)
+      if (client) return client
+    }
+    return (game && Model.safeUrl(store, game.url)) || Model.searchUrl(store)
+  }
+
   function openGame(row) {
     if (!row || row.kind !== "game") return
     targetStore = row.store
-    // Launching is one of the ways a game is acknowledged. The panel is about
-    // to close, so the marker would not be seen to clear, but the bar dot and
-    // the next open reflect it.
     markSeen(row.store, row.game.id)
-    // safeUrl refuses anything off the store's own host, and the search page is
-    // the fallback, so a row always opens somewhere legitimate.
-    var url = Model.safeUrl(row.store, row.game.url) || Model.searchUrl(row.store)
-    // Handed to xdg-open rather than launched directly: the browser then picks
-    // its own last-used window, instead of being second-guessed by
-    // omarchy-launch-browser's focus step.
+    var url = launchUrlFor(row.store, row.game)
     Qt.openUrlExternally(url)
     close()
   }
 
-  // Open a game from its store and id, for a notification action. The store and
-  // id arrive over IPC, so treat them as untrusted: an unknown store or a
-  // missing/invalid id does nothing, and the URL is re-derived from the
-  // allowlisted game record (or the store listing), never passed in.
+  function openUpcoming(row) {
+    if (!row || row.kind !== "upcoming") return
+    var url = (row.game && Model.safeUrl(row.store, row.game.url))
+      || Model.searchUrl(row.store)
+    Qt.openUrlExternally(url)
+    close()
+  }
+
+  // Open a game from its store and id, for a notification action.
   function openGameById(store, id) {
     if (Model.STORES.indexOf(store) < 0) return
     var clean = Model.scrubId(id)
@@ -1142,15 +1209,67 @@ Panel {
       if (games[i] && games[i].id === clean) { game = games[i]; break }
     }
     markSeen(store, clean)
-    var url = game
-      ? (Model.safeUrl(store, game.url) || Model.searchUrl(store))
-      : Model.searchUrl(store)
+    var url = launchUrlFor(store, game)
     Qt.openUrlExternally(url)
     close()
   }
 
   function openSelected() {
     openGame(selectedGame())
+  }
+
+  // Read-only JSON export for IPC scripting (omarchy-shell ... list).
+  function exportListJson() {
+    var stores = {}
+    for (var i = 0; i < Model.STORES.length; i++) {
+      var s = Model.STORES[i]
+      if (storesOn[s] !== true) continue
+      var b = bucket(s)
+      var games = visibleGamesFor(s)
+      var items = []
+      for (var j = 0; j < games.length; j++) {
+        var g = games[j]
+        items.push({
+          id: g.id,
+          title: g.title,
+          url: Model.safeUrl(s, g.url) || Model.searchUrl(s),
+          platform: g.platform || "",
+          redeem: g.redeem || "",
+          isAddOn: g.isAddOn === true,
+          endsAt: g.endsAt || "",
+          seen: !gameUnseen(s, g.id)
+        })
+      }
+      var entry = {
+        games: items,
+        error: b.error || "",
+        lastSuccessAt: b.lastSuccessAt || 0
+      }
+      if (s === "epic" && epicShowUpcoming) {
+        var rawUp = Array.isArray(b.upcoming) ? b.upcoming : []
+        var filteredUp = epicHideAddOns ? Model.filterEpicAddOns(rawUp, true) : rawUp
+        var upItems = []
+        for (var u = 0; u < filteredUp.length; u++) {
+          var ug = filteredUp[u]
+          if (!ug) continue
+          upItems.push({
+            id: ug.id,
+            title: ug.title,
+            url: Model.safeUrl("epic", ug.url) || Model.searchUrl("epic"),
+            isAddOn: ug.isAddOn === true,
+            startsAt: ug.startsAt || "",
+            endsAt: ug.endsAt || ""
+          })
+        }
+        entry.upcoming = upItems
+      }
+      stores[s] = entry
+    }
+    return JSON.stringify({
+      updatedAt: lastSuccessAt,
+      stale: stale,
+      stores: stores
+    })
   }
 
   // --- IPC ---------------------------------------------------------------
@@ -1161,6 +1280,8 @@ Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { root.refresh(); return "ok" }
+    function list(): string { return root.exportListJson() }
+    function markAllSeen(): void { root.markAllSeen() }
     // Notification actions. Both take the store and game id as separate string
     // arguments; the widget validates them before touching state or a URL.
     function markSeen(store: string, id: string): void { root.markSeen(store, id) }
@@ -1169,18 +1290,14 @@ Panel {
 
   // --- Processes ---------------------------------------------------------
 
-  Process {
+  CommandRunner {
     id: loadSeenProc
     command: [root.python, root.seenStatePath, "load", root.stateDir]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.ingestSeen(text)
-    }
-    onExited: function(exitCode) {
+    Component.onCompleted: start()
+    onFinished: function(exitCode, output) {
       // A missing or unreadable seen.json is not primed, so the first fetch
       // records silently rather than announcing everything.
-      root.ingestSeen("")
+      root.ingestSeen(exitCode === 0 ? output : "")
       root.refresh()
     }
   }
@@ -1191,84 +1308,44 @@ Panel {
     command: [root.python, root.seenStatePath, "save", root.stateDir]
     stdinEnabled: true
     onStarted: write(payload)
+    onExited: {
+      if (root.seenSavePending) {
+        root.seenSavePending = false
+        root.persistSeen()
+      }
+    }
   }
 
-  // One fetch process per store, so a slow store cannot hold up the others.
-  Process {
+  // One synchronized runner per store, so a slow store cannot hold up the
+  // others and stdout is guaranteed flushed before parsing runs.
+  CommandRunner {
     id: steamProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publish("steam", text)
-    }
-    onExited: function(exitCode) {
-      if (exitCode !== 0 && root.bucket("steam").busy)
-        root.fail("steam", "Could not reach Steam")
-    }
+    onFinished: function(exitCode, output) { root.handleFetchFinished("steam", exitCode, output) }
   }
 
-  Process {
+  CommandRunner {
     id: epicProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publish("epic", text)
-    }
-    onExited: function(exitCode) {
-      if (exitCode !== 0 && root.bucket("epic").busy)
-        root.failEpicPart("pc")
-    }
+    onFinished: function(exitCode, output) { root.handleFetchFinished("epic", exitCode, output) }
   }
 
-  Process {
+  CommandRunner {
     id: epicMobileAndroidProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publishEpicMobile("android", text)
-    }
-    onExited: function(exitCode) {
-      if (exitCode !== 0 && root.bucket("epic").busy)
-        root.failEpicPart("android")
-    }
+    onFinished: function(exitCode, output) { root.handleEpicMobileFinished("android", exitCode, output) }
   }
 
-  Process {
+  CommandRunner {
     id: epicMobileIosProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publishEpicMobile("ios", text)
-    }
-    onExited: function(exitCode) {
-      if (exitCode !== 0 && root.bucket("epic").busy)
-        root.failEpicPart("ios")
-    }
+    onFinished: function(exitCode, output) { root.handleEpicMobileFinished("ios", exitCode, output) }
   }
 
-  Process {
+  CommandRunner {
     id: gogProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publish("gog", text)
-    }
-    onExited: function(exitCode) {
-      // curl -f exits non-zero on GOG's 404, which is the empty-giveaway
-      // answer, so only a genuinely unreachable store reports an error.
-      if (exitCode !== 0 && root.bucket("gog").busy)
-        root.fail("gog", "Could not reach GOG")
-    }
+    onFinished: function(exitCode, output) { root.handleFetchFinished("gog", exitCode, output) }
   }
 
-  Process {
+  CommandRunner {
     id: amazonProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.publish("amazon", text)
-    }
-    onExited: function(exitCode) {
-      // 127 is "command not found": the browser this store needs is absent.
-      if (exitCode === 127 && root.bucket("amazon").busy)
-        root.fail("amazon", "Chromium is required but was not installed")
-      else if (exitCode !== 0 && root.bucket("amazon").busy)
-        root.fail("amazon", "Could not reach Amazon Luna")
-    }
+    onFinished: function(exitCode, output) { root.handleFetchFinished("amazon", exitCode, output) }
   }
 
   readonly property var fetchProcs: ({
@@ -1297,16 +1374,28 @@ Panel {
   }
 
   Timer {
-    id: retryTimer
-    interval: 30000
-    onTriggered: root.refresh()
+    id: retryTickTimer
+    interval: 5000
+    running: root.hasPendingRetries
+    repeat: true
+    onTriggered: root.runDueRetries()
+  }
+
+  Timer {
+    id: copyFeedbackTimer
+    interval: 2000
+    repeat: false
+    onTriggered: root.copyFeedbackText = ""
   }
 
   Timer {
     interval: 30000
     running: true
     repeat: true
-    onTriggered: root.nowMs = Date.now()
+    onTriggered: {
+      root.nowMs = Date.now()
+      root.checkEndingSoonReminders()
+    }
   }
 
   // --- Bar mark ----------------------------------------------------------
@@ -1320,9 +1409,12 @@ Panel {
     bar: root.bar
     text: Model.BAR_ICON
     dimmed: !root.hasGames || root.stale
-    tooltipText: Model.statusTitle(root.displayBuckets(), root.storesOn, root.anyBusy)
-      + "\n" + Model.tooltipDetail(root.displayBuckets(), root.storesOn)
-      + "\n" + root.freshness
+    tooltipText: {
+      var title = Model.statusTitle(root.displayBuckets(), root.storesOn, root.anyBusy)
+      var detail = Model.tooltipDetail(root.displayBuckets(), root.storesOn)
+      return detail ? (title + "\n" + detail + "\n" + root.freshness)
+                    : (title + "\n" + root.freshness)
+    }
 
     onPressed: function(buttonCode) {
       // Left opens the panel, middle refreshes. Right-click is deliberately
@@ -1358,16 +1450,12 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    // The hero and the pinned footer are no longer part of the list's content,
-    // so both are added back in to keep the card tall enough to hold them.
-    // In the settings page the settings column stands in for the list.
     contentHeight: panel.fittedContentHeight(pinned.height
                                              + (root.showSettings
-                                                 ? settingsPage.contentHeight
-                                                 : panelList.contentHeight)
-                                             + (root.showSettings
-                                                 ? settingsFooter.implicitHeight
-                                                 : panelFooter.implicitHeight),
+                                                 ? settingsView.listContentHeight
+                                                   + settingsView.footerImplicitHeight
+                                                 : panelList.contentHeight
+                                                   + panelFooter.implicitHeight),
                                              root.showSettings ? Style.space(900) : Style.space(620))
 
     PanelKeyCatcher {
@@ -1379,16 +1467,8 @@ Panel {
       blocked: root.activeEditor !== null
 
       onMoveRequested: function(dx, dy) {
-        // In Settings the list is not on screen, so its cursor must not
-        // move (or highlight an invisible row).
         if (root.showSettings) return
         if (!root.cursorActive) {
-          // The first move engages the cursor. When the pointer is highlighting
-          // a game, that game is the base position and the step moves from it,
-          // so shifting from the mouse to the keyboard continues where the
-          // pointer left off. With no pointer, it lands on the edge of the list
-          // in that direction, so j selects the first game rather than leaving
-          // the highlight wherever the last refresh happened to pin it.
           root.cursorActive = true
           var allowed = root.gameRowIndexes()
           var at = allowed.indexOf(root.pointerIndex)
@@ -1404,11 +1484,6 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
 
-      // Enter and Space activate whatever the keyboard cursor is on. They must
-      // stay silent until the cursor exists: selectedIndex is pinned to a game
-      // on every fetch, but no row is shown as selected until the user presses
-      // j/k or an arrow, so activating before then opened an arbitrary game
-      // that had never been presented as the selection.
       onActivateRequested: if (!root.showSettings && root.cursorActive) root.openSelected()
       onCloseRequested: {
         // Esc backs out one level at a time rather than dumping the user
@@ -1420,7 +1495,6 @@ Panel {
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
         var key = text.toLowerCase()
-        // Game keys are inert in Settings; only r/v and the settings key act.
         if (key === ",") {
           root.showSettings = !root.showSettings
           Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -1431,8 +1505,13 @@ Panel {
           else if (key === "v") root.toggleHideSeen()
           return
         }
+        if (text === "S") {
+          root.markAllSeen()
+          return
+        }
         if (key === "r") root.refresh()
         else if (key === "s") root.toggleHighlighted()
+        else if (key === "y") root.copyHighlightedUrl()
         else if (key === "v") root.toggleHideSeen()
         else if (key === "?") root.showShortcuts = !root.showShortcuts
       }
@@ -1547,7 +1626,7 @@ Panel {
           policy: ScrollBar.AsNeeded
         }
 
-        // --- One row: a store header, or a game --------------------------
+        // --- One row: a store header, a game, upcoming preview, or note ---
         delegate: Item {
           id: row
           required property var modelData
@@ -1555,31 +1634,39 @@ Panel {
           width: panelList.width
 
           readonly property bool isHeader: modelData.kind === "header"
+          readonly property bool isGame: modelData.kind === "game"
+          readonly property bool isUpcoming: modelData.kind === "upcoming"
           readonly property bool isHidden: modelData.kind === "hidden"
           readonly property bool isEmpty: modelData.kind === "empty"
           readonly property bool isChecking: modelData.kind === "checking"
 
-          // Whether this row's game has not been acknowledged, and whether its
-          // giveaway is within a day of ending (or past its end but still
-          // listed). Both guarded, so a header or a row without a game is
-          // neither. endingSoon reads root.nowMs, so the always-on 30s tick
-          // re-evaluates it without a timer of its own.
-          readonly property bool unseen: !isHeader && !!modelData.game
+          // Evaluated against root.nowMs here rather than in visibleGameList()
+          // so the 30s tick never rebuilds the ListView model or drops scroll.
+          readonly property bool unseen: isGame && !!modelData.game
             && root.gameUnseen(modelData.store, modelData.game.id)
-          readonly property bool endingSoon: !isHeader && !!modelData.game
+          readonly property bool endingSoon: isGame && !!modelData.game
             && Model.endingSoon(modelData.game.endsAt, root.nowMs)
+          readonly property int hiddenEndingSoon: {
+            if (!isHidden || !modelData || !Array.isArray(modelData.hiddenEndsAt)) return 0
+            var count = 0
+            for (var i = 0; i < modelData.hiddenEndsAt.length; i++) {
+              if (Model.endingSoon(modelData.hiddenEndsAt[i], root.nowMs)) count++
+            }
+            return count
+          }
+          readonly property string redeemText: isGame && modelData.game && modelData.game.redeem
+            ? Model.redeemLabel(modelData.game.redeem) : ""
+          readonly property bool isAddOn: (isGame || isUpcoming) && !!modelData.game
+            && modelData.game.isAddOn === true
+          readonly property bool hasPlatform: isGame && !!modelData.game
+            && !!modelData.game.platform
+          readonly property string timeText: isGame && modelData.game && modelData.game.endsAt
+            ? Model.shortTimeLeft(modelData.game.endsAt, root.nowMs)
+            : (isUpcoming && modelData.game && modelData.game.startsAt
+              ? Model.shortStartsIn(modelData.game.startsAt, root.nowMs) : "")
 
-          // The switch draws its hover ring a few pixels outside its track, so
-          // the header row must be at least as tall as the switch or the ring
-          // is clipped — and the first store's ring, sitting at the top of the
-          // list, had its top cut off by a flat 30px row. Deriving the height
-          // from the switch keeps it whole without hard-coding a size that a
-          // larger theme font would invalidate.
           readonly property int headerRowHeight: Style.space(30)
 
-          // The empty-store note needs air below it. Without it the note
-          // ended flush with its row and sat right on the list's trailing
-          // spacing, which put it against the rule at the bottom.
           implicitHeight: isHeader
             ? headerRowHeight
               + (modelData && modelData.errorLabel
@@ -1592,13 +1679,11 @@ Panel {
                   ? checkingNote.implicitHeight + Style.spacing.sm
                   : titleRow.implicitHeight + Style.spacing.sm
 
-          // Store header: mark, name and accent rule.
+          // Store header: mark, name and flanking rules.
           Item {
             anchors.fill: parent
             visible: row.isHeader
 
-            // Behind the controls, and accepting no buttons, so hovering the
-            // header retargets the keyboard without eating the bell's clicks.
             MouseArea {
               anchors.fill: parent
               acceptedButtons: Qt.NoButton
@@ -1606,9 +1691,6 @@ Panel {
               onEntered: root.targetStore = row.modelData.store
             }
 
-            // The store's mark, in a fixed box so every header starts its label
-            // at the same inset. Epic has no Nerd Font glyph, so it uses the
-            // bundled logo, colorized to the theme; the rest are glyphs.
             Item {
               id: headerMark
               anchors.left: parent.left
@@ -1619,7 +1701,7 @@ Panel {
 
               Text {
                 anchors.centerIn: parent
-                visible: row.modelData.store !== "epic"
+                visible: row.isHeader && row.modelData.store !== "epic"
                 textFormat: Text.PlainText
                 text: Model.STORE_GLYPHS[row.modelData.store] || ""
                 color: root.dim
@@ -1630,24 +1712,21 @@ Panel {
               Image {
                 id: epicLogo
                 anchors.fill: parent
-                // Only the Epic header loads the asset; the same delegate is
-                // reused for game rows, which must not read it.
-                source: row.modelData.store === "epic"
+                // Only the Epic header loads the asset and allocates an
+                // offscreen layer; reused game rows must not trigger it.
+                source: row.isHeader && row.modelData.store === "epic"
                   ? root.pluginFile("assets/epic.svg") : ""
                 fillMode: Image.PreserveAspectFit
-                // Decode at physical pixels, as the shell's tray icons do, so
-                // the small mark stays crisp on a scaled display.
                 sourceSize.width: Math.round(width * Screen.devicePixelRatio)
                 sourceSize.height: Math.round(height * Screen.devicePixelRatio)
-                // Hidden but layered, so the effect can sample it as a texture.
                 visible: false
-                layer.enabled: row.modelData.store === "epic"
+                layer.enabled: row.isHeader && row.modelData.store === "epic"
               }
 
               MultiEffect {
                 anchors.fill: epicLogo
                 source: epicLogo
-                visible: row.modelData.store === "epic"
+                visible: row.isHeader && row.modelData.store === "epic"
                 colorization: 1.0
                 colorizationColor: root.dim
               }
@@ -1660,8 +1739,6 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: (Model.STORE_LABELS[row.modelData.store] || "").toUpperCase()
-              // Regular text colour, bold, so the store pops above the
-              // muted seen rows without competing with the accent markers.
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -1670,9 +1747,6 @@ Panel {
               elide: Text.ElideRight
             }
 
-            // Rules flanking the mark and name, centred on the row: one
-            // from the window's left padding to the mark, one from the
-            // name's right edge to the window's right padding.
             PanelSeparator {
               anchors.verticalCenter: parent.verticalCenter
               anchors.left: parent.left
@@ -1693,8 +1767,7 @@ Panel {
             }
           }
 
-          // Only a failure earns a line of its own. A store with no games just
-          // shows its name, which is all the toggle needs.
+          // Store error message below the header.
           Text {
             id: storeError
             anchors.top: parent.top
@@ -1711,27 +1784,22 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          // A game.
+          // A live game or upcoming Epic preview row.
           Rectangle {
             anchors.top: parent.top
-            anchors.topMargin: row.isHeader ? Style.space(30) : 0
             anchors.left: parent.left
             anchors.right: parent.right
             height: titleRow.implicitHeight + Style.spacing.sm
-            visible: row.modelData.kind === "game"
+            visible: row.isGame || row.isUpcoming
             radius: Style.cornerRadius
-            // One highlight, owned by whichever input was used last: the
-            // keyboard cursor while it is active, the pointer otherwise. They
-            // never stack.
-            color: (root.cursorActive ? root.selectedIndex === row.index
-                                      : root.pointerIndex === row.index)
+            color: row.isGame && (root.cursorActive ? root.selectedIndex === row.index
+                                                    : root.pointerIndex === row.index)
               ? (root.bar ? Style.selectedFillFor(root.bar.foreground, Commons.Color.accent)
                           : "transparent")
               : "transparent"
 
-            // The marker for a game the user has not acknowledged, or one whose
-            // giveaway is ending soon. Centred in the same mark-sized box
-            // as the header mark, so the gutter reads as one column.
+            // Left gutter marker: unseen coin, ending-soon hourglass, or
+            // muted clock glyph for upcoming Epic rows.
             Text {
               id: gameMark
               width: root.markSize
@@ -1739,58 +1807,68 @@ Panel {
               anchors.left: parent.left
               anchors.leftMargin: Style.spacing.sm
               anchors.verticalCenter: parent.verticalCenter
-              visible: row.unseen || row.endingSoon
+              visible: row.unseen || row.endingSoon || row.isUpcoming
               textFormat: Text.PlainText
-              text: row.endingSoon ? Model.HOURGLASS_GLYPH : Model.NEW_GAME_GLYPH
-              color: row.endingSoon ? root.urgent : Commons.Color.accent
+              text: row.isUpcoming
+                ? "\u{F017}"
+                : (row.endingSoon ? Model.HOURGLASS_GLYPH : Model.NEW_GAME_GLYPH)
+              color: row.isUpcoming
+                ? root.dim
+                : (row.endingSoon ? root.urgent : Commons.Color.accent)
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
 
-              // Declared inside the marker so the tooltip anchors over the glyph
-              // rather than over the whole row. A row that is both ending and
-              // unseen names both states, and the click clears the unseen one.
               PanelToolTip {
                 visible: gameMouse.containsMouse && gameMouse.overGlyph
-                text: row.endingSoon
-                  ? (Model.endsInLabel(row.modelData.game.endsAt, root.nowMs)
-                      + (row.unseen ? ". Mark as seen" : ""))
-                  : "Mark as seen"
+                text: row.isUpcoming
+                  ? Model.startsInLabel(row.modelData.game && row.modelData.game.startsAt, root.nowMs)
+                  : (row.endingSoon
+                    ? (Model.endsInLabel(row.modelData.game && row.modelData.game.endsAt, root.nowMs)
+                        + (row.unseen ? ". Mark as seen" : ""))
+                    : "Mark as seen")
                 fontFamily: root.fontFamily
               }
             }
 
-            // Title plus, on Epic mobile rows, an interpunct and a larger
-            // platform glyph immediately to its right. The glyph is scaled
-            // up rather than set in a bigger font, so it reads bigger
-            // without growing the row, and it sits in its own Text so it
-            // cannot clip into the title.
+            // Right-aligned subtle countdown ("3d", "6h", "Ended", or "in 3d").
+            Text {
+              id: timeLabel
+              anchors.right: parent.right
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              visible: row.timeText !== ""
+              textFormat: Text.PlainText
+              text: row.timeText
+              color: row.endingSoon ? root.urgent : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            // Title plus optional inline badges (DLC, Amazon redemption
+            // storefront, or Epic mobile platform glyph).
             Row {
               id: titleRow
               anchors.left: parent.left
-              anchors.right: parent.right
+              anchors.right: timeLabel.visible ? timeLabel.left : parent.right
               anchors.verticalCenter: parent.verticalCenter
               anchors.leftMargin: root.storeIndent
-              anchors.rightMargin: Style.spacing.sm
+              anchors.rightMargin: timeLabel.visible ? Style.space(8) : Style.spacing.sm
               spacing: Style.space(4)
 
-              // Titles from the network are plain text, never markup. A header
-              // row has no `game`, and hiding a row does not stop this binding
-              // being evaluated, so it is guarded rather than made invisible.
-              // Width leaves room for the separator and glyph when shown, so
-              // a long title elides in front of them instead of pushing
-              // them off.
+              readonly property real badgeWidth:
+                (dlcBadge.visible ? dlcBadge.implicitWidth + spacing : 0)
+                + (redeemBadge.visible ? redeemBadge.implicitWidth + spacing : 0)
+                + (platformGroup.visible
+                    ? separatorDot.implicitWidth + platformGroup.implicitWidth * 1.4
+                      + spacing * 2 : 0)
+
               Text {
                 id: gameTitle
-                width: Math.min(implicitWidth, parent.width
-                  - (platformGroup.visible
-                      ? separatorDot.implicitWidth
-                        + platformGroup.implicitWidth * 1.4
-                        + titleRow.spacing * 2 : 0))
+                width: Math.max(0, Math.min(implicitWidth, parent.width - titleRow.badgeWidth))
                 textFormat: Text.PlainText
-                text: row.modelData.kind === "game" && row.modelData.game
+                text: (row.isGame || row.isUpcoming) && row.modelData.game
                   ? row.modelData.game.title : ""
-                // Seen games read muted next to the unseen ones, so the
-                // eye can scan what is actually new.
+                // Unseen live games stand out; seen and upcoming rows stay muted.
                 color: row.unseen ? root.foreground : root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -1798,10 +1876,31 @@ Panel {
               }
 
               Text {
+                id: dlcBadge
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.isAddOn
+                textFormat: Text.PlainText
+                text: "\u00B7 DLC"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                id: redeemBadge
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.redeemText !== ""
+                textFormat: Text.PlainText
+                text: row.redeemText !== "" ? ("\u00B7 " + row.redeemText) : ""
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
                 id: separatorDot
                 anchors.verticalCenter: parent.verticalCenter
-                visible: row.modelData.kind === "game" && !!row.modelData.game
-                  && !!row.modelData.game.platform
+                visible: row.hasPlatform
                 textFormat: Text.PlainText
                 text: "\u00B7"
                 color: root.dim
@@ -1813,11 +1912,9 @@ Panel {
               Text {
                 id: platformGroup
                 anchors.verticalCenter: parent.verticalCenter
-                visible: row.modelData.kind === "game" && !!row.modelData.game
-                  && !!row.modelData.game.platform
+                visible: row.hasPlatform
                 textFormat: Text.PlainText
-                text: row.modelData.kind === "game" && row.modelData.game
-                  && row.modelData.game.platform
+                text: row.hasPlatform
                   ? Model.platformGlyph(row.modelData.game.platform) : ""
                 color: root.dim
                 font.family: root.fontFamily
@@ -1832,44 +1929,26 @@ Panel {
               anchors.fill: parent
               hoverEnabled: true
               cursorShape: Qt.PointingHandCursor
-              // Whether the pointer is over the marker glyph. This drives the
-              // tooltip whoever the glyph belongs to; the click uses it together
-              // with `row.unseen`, so an already-seen game still explains its
-              // hourglass on hover while its click falls through to launching.
               readonly property bool overGlyph: gameMark.visible
                 && mouseX >= gameMark.x && mouseX <= gameMark.x + gameMark.width
-              // The pointer picks the store the keyboard acts on, so e and n do
-              // not depend on where the keyboard cursor happens to be.
-              // Entering only records the pointer row: a row can enter under a
-              // stationary pointer when a keypress scrolls the list, and
-              // claiming the highlight there would yank the cursor back to
-              // wherever the scroll left the pointer.
               onEntered: {
-                if (Date.now() < root.hoverSuppressUntil) return
+                if (!row.isGame || Date.now() < root.hoverSuppressUntil) return
                 root.pointerIndex = row.index
                 root.targetStore = row.modelData.store
               }
-              // Real pointer movement claims the highlight, dismissing the
-              // keyboard cursor so the two do not both draw, and becomes the
-              // base for the next j/k move. A row scrolling under a still
-              // pointer also reports a position change, so only a change in the
-              // pointer's scene point counts as movement.
               onPositionChanged: function(mouse) {
-                if (Date.now() < root.hoverSuppressUntil) return
+                if (!row.isGame || Date.now() < root.hoverSuppressUntil) return
                 if (!root.pointerMoved(mapToItem(null, mouse.x, mouse.y))) return
                 root.pointerIndex = row.index
                 root.cursorActive = false
                 root.targetStore = row.modelData.store
               }
-              // Leaving the rows clears the highlight: the pointer took it from
-              // the keyboard, so the keyboard's position does not come back.
               onExited: if (root.pointerIndex === row.index) root.pointerIndex = -1
-              // One MouseArea covers the whole row, including the marker, so
-              // moving onto the glyph cannot exit-and-clear the highlight. A
-              // click on the marker of an unseen game marks it seen; anywhere
-              // else launches it. Marking an already-seen game would be a no-op,
-              // so there the hourglass click launches instead.
               onClicked: {
+                if (row.isUpcoming) {
+                  root.openUpcoming(row.modelData)
+                  return
+                }
                 if (overGlyph && row.unseen)
                   root.markSeen(row.modelData.store, row.modelData.game.id)
                 else root.openGame(row.modelData)
@@ -1877,8 +1956,7 @@ Panel {
             }
           }
 
-          // Where seen games are hidden, the summary stands in for them, so a
-          // store whose games are all seen still says why its list is short.
+          // Summary row when seen games are hidden.
           Text {
             id: hiddenNote
             anchors.left: parent.left
@@ -1889,7 +1967,7 @@ Panel {
             textFormat: Text.PlainText
             visible: row.isHidden
             text: row.isHidden && row.modelData
-              ? Model.hiddenSeenLabel(row.modelData.count, row.modelData.endingSoon) : ""
+              ? Model.hiddenSeenLabel(row.modelData.count, row.hiddenEndingSoon) : ""
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -1903,8 +1981,6 @@ Panel {
             }
           }
 
-          // A freshly enabled store that is still fetching says so, so
-          // the wait reads as progress rather than lag.
           Text {
             id: checkingNote
             anchors.left: parent.left
@@ -1920,8 +1996,6 @@ Panel {
             font.pixelSize: Style.font.bodySmall
           }
 
-          // No free giveaways anywhere: a sad glyph and the plain message,
-          // so an empty panel is a statement rather than a blank card.
           Row {
             id: emptyNote
             anchors.horizontalCenter: parent.horizontalCenter
@@ -1932,9 +2006,6 @@ Panel {
             Text {
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              // U+F119 (fa-face-frown in Nerd Fonts 3.5.1): a plain
-              // downturned mouth that reads as sad at row size. The
-              // crying-face marks look like the Android robot down here.
               text: "\u{F119}"
               color: root.dim
               font.family: root.fontFamily
@@ -1953,434 +2024,19 @@ Panel {
         }
       }
 
-      // Settings page: every preference in one place, grouped by store.
-      // Shares the list's slot; the hero and footer stay pinned.
-      ListView {
-        id: settingsPage
+      // Extracted in-panel Settings view.
+      SettingsPage {
+        id: settingsView
         visible: root.showSettings
         anchors.top: pinned.bottom
-        anchors.bottom: settingsFooter.top
+        anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Style.spacing.sm
-        anchors.rightMargin: Style.spacing.sm
-        clip: true
-        model: root.settingsRows()
-        boundsBehavior: Flickable.StopAtBounds
-        spacing: Style.spacing.sm
-        flickableDirection: Flickable.VerticalFlick
-        interactive: contentHeight > height
-
-        ScrollBar.vertical: ScrollBar {
-          policy: ScrollBar.AsNeeded
-        }
-
-        delegate: Item {
-          id: settingRow
-          required property var modelData
-          required property int index
-          width: settingsPage.width
-          readonly property bool isHeading: modelData.kind === "heading"
-          // Layout height per kind, so contentHeight is real before layout.
-          // Every non-heading row uses the control height, giving the
-          // General section the same tight rhythm as the store sections
-          // while still clearing a dropdown's hover border.
-          height: isHeading ? Style.font.caption + Style.space(24)
-            : Style.spacing.controlHeight
-
-          Text {
-            id: settingLabel
-            anchors.left: parent.left
-            // Setting rows sit indented under their store heading, the
-            // same way game rows sit under a store header. Headings sit
-            // clear of their mark.
-            anchors.leftMargin: settingRow.isHeading
-              ? Style.space(24) + root.markSize + Style.space(8) : root.storeIndent
-            anchors.verticalCenter: parent.verticalCenter
-            visible: settingRow.isHeading || modelData.kind === "country"
-            // A country label sizes to its text so the field sits
-            // directly beside it instead of at the row's far edge.
-            // Labels size to their text so the flanking rule on the right
-            // starts right after the name; the country label fills the
-            // shared column so its field starts on the same x as every
-            // other control.
-            width: modelData.kind === "country"
-              ? root.settingsLabelColumn : implicitWidth
-            textFormat: Text.PlainText
-            text: settingRow.isHeading
-              ? (modelData.label || "").toUpperCase()
-              : ((modelData.label || "") + ":")
-            // Headings carry the same treatment as the store names in the
-            // main list: regular text colour, bold, at body size.
-            color: settingRow.isHeading ? root.foreground : root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: settingRow.isHeading ? Style.font.body : Style.font.bodySmall
-            font.bold: settingRow.isHeading
-            font.letterSpacing: settingRow.isHeading ? 1.0 : 0
-            elide: Text.ElideRight
-          }
-
-          // The store's mark beside its Settings heading, matching the
-          // main list (Epic uses its bundled logo).
-          Item {
-            id: settingMark
-            anchors.left: parent.left
-            anchors.leftMargin: Style.space(24)
-            anchors.verticalCenter: parent.verticalCenter
-            width: root.markSize
-            height: root.markSize
-            visible: settingRow.isHeading
-
-            Text {
-              anchors.centerIn: parent
-              visible: !!modelData.store && modelData.store !== "epic"
-              textFormat: Text.PlainText
-              text: Model.STORE_GLYPHS[modelData.store] || ""
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: root.markSize
-            }
-
-            Text {
-              anchors.centerIn: parent
-              visible: !modelData.store
-              textFormat: Text.PlainText
-              text: "\u{F0AD}"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: root.markSize
-            }
-
-            Image {
-              id: settingEpicLogo
-              anchors.fill: parent
-              source: modelData.store === "epic"
-                ? root.pluginFile("assets/epic.svg") : ""
-              fillMode: Image.PreserveAspectFit
-              sourceSize.width: Math.round(width * Screen.devicePixelRatio)
-              sourceSize.height: Math.round(height * Screen.devicePixelRatio)
-              visible: false
-              layer.enabled: modelData.store === "epic"
-            }
-
-            MultiEffect {
-              anchors.fill: settingEpicLogo
-              source: settingEpicLogo
-              visible: modelData.store === "epic"
-              colorization: 1.0
-              colorizationColor: root.dim
-            }
-          }
-
-          // The same flanking rules as the main list: one from the window's
-          // left padding to the mark, one from the name's right edge to the
-          // right padding.
-          PanelSeparator {
-            visible: settingRow.isHeading
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.leftMargin: Style.spacing.sm
-            anchors.right: settingMark.left
-            anchors.rightMargin: Style.space(8)
-            foreground: root.foreground
-            height: Style.space(2)
-          }
-          PanelSeparator {
-            visible: settingRow.isHeading
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.left: settingLabel.right
-            anchors.leftMargin: Style.space(8)
-            anchors.right: parent.right
-            foreground: root.foreground
-            height: Style.space(2)
-          }
-
-          // A lone toggle (Hide seen games) sits with its switch at the
-          // same left edge as the store switches, so every toggle, dropdown
-          // and input in the page lines up in one column.
-          Row {
-            anchors.left: parent.left
-            anchors.leftMargin: root.storeIndent
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: root.settingsGap
-            visible: modelData.kind === "toggle"
-
-            Text {
-              width: root.settingsLabelColumn
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: (modelData.label || "") + ":"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            // Wrapped so the switch's cursor-ring inset does not push the
-            // visible track right of the dropdown/input column below it.
-            Item {
-              width: generalToggle.implicitWidth - root.settingsTogglePad
-              height: generalToggle.implicitHeight
-              anchors.verticalCenter: parent.verticalCenter
-
-              ToggleSwitch {
-                id: generalToggle
-                x: -root.settingsTogglePad
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.settingsToggleChecked(modelData)
-                foreground: root.foreground
-                accent: Commons.Color.accent
-                onToggled: root.settingsToggleFlip(modelData)
-              }
-            }
-          }
-
-          // Condensed store row: Enabled and Notifications on one line,
-          // each control at a fixed column so the two switch stacks line
-          // up down the whole page.
-          Row {
-            anchors.left: parent.left
-            anchors.leftMargin: root.storeIndent
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: root.settingsGap
-            visible: modelData.kind === "store"
-
-            Text {
-              width: root.settingsStoreLabel1
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: "Enabled:"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.storesOn[modelData.store] === true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              onToggled: root.toggleStore(modelData.store)
-            }
-            Item {
-              width: root.settingsCol2X
-                - root.settingsStoreLabel1 - root.settingsGap
-                - root.settingsToggleWidth - root.settingsGap
-            }
-            Text {
-              width: root.settingsStoreLabel2
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: "Notifications:"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.notifyOn[modelData.store] === true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              onToggled: root.toggleBell(modelData.store)
-            }
-          }
-
-          // Epic platforms row: Android and iOS on one line, in the same
-          // two columns as Enabled and Notifications above it.
-          Row {
-            anchors.left: parent.left
-            anchors.leftMargin: root.storeIndent
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: root.settingsGap
-            visible: modelData.kind === "platforms"
-
-            Text {
-              width: root.settingsStoreLabel1
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: "Android:"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.epicMobileOn.android === true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              onToggled: root.toggleEpicMobile("android")
-            }
-            Item {
-              width: root.settingsCol2X
-                - root.settingsStoreLabel1 - root.settingsGap
-                - root.settingsToggleWidth - root.settingsGap
-            }
-            Text {
-              width: root.settingsStoreLabel2
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: "iOS:"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.epicMobileOn.ios === true
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              onToggled: root.toggleEpicMobile("ios")
-            }
-          }
-          // Sensible dropdown for both ranged settings, with a Custom
-          // entry that reveals a numeric-only input for schema-valid
-          // values between the presets. The current value always shows:
-          // if it is not a preset, Custom is selected and the input
-          // carries it.
-          Row {
-            id: rangeRow
-            anchors.left: parent.left
-            anchors.leftMargin: root.storeIndent
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: root.settingsGap
-            visible: modelData.kind === "sliderRefresh" || modelData.kind === "sliderNotify"
-
-            Text {
-              width: root.settingsLabelColumn
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: modelData.kind === "sliderRefresh"
-                ? "Refresh interval (min):" : "Store notification limit:"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-            }
-            Dropdown {
-              id: rangeDropdown
-              width: root.settingsControlWidth
-              label: ""
-              showLabel: false
-              value: {
-                var cur = modelData.kind === "sliderRefresh"
-                  ? root.refreshMinutes : root.maxStoreNotifications
-                var presets = modelData.kind === "sliderRefresh"
-                  ? [30, 45, 60, 90, 120, 240, 360]
-                  : [0, 1, 2, 3, 4, 5]
-                return presets.indexOf(cur) >= 0 ? String(cur) : "custom"
-              }
-              options: modelData.kind === "sliderRefresh"
-                ? [{ value: "30", label: "30m" }, { value: "45", label: "45m" },
-                   { value: "60", label: "1h" }, { value: "90", label: "1.5h" },
-                   { value: "120", label: "2h" }, { value: "240", label: "4h" },
-                   { value: "360", label: "6h" },
-                   { value: "custom", label: "Custom" }]
-                : [{ value: "0", label: "No limit" }, { value: "1", label: "1" },
-                   { value: "2", label: "2" }, { value: "3", label: "3" },
-                   { value: "4", label: "4" }, { value: "5", label: "5" },
-                   { value: "custom", label: "Custom" }]
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              // Shown as text, never the raw value, so a non-preset
-              // current value still reads as Custom in the trigger.
-              property bool customSelected: false
-              onChanged: {
-                rangeDropdown.customSelected = value === "custom"
-                if (value !== "custom") {
-                  if (modelData.kind === "sliderRefresh")
-                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(Number(value)) })
-                  else
-                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(Number(value)) })
-                }
-              }
-              Component.onCompleted: rangeDropdown.customSelected =
-                (modelData.kind === "sliderRefresh"
-                  ? [30, 45, 60, 90, 120, 240, 360]
-                  : [0, 1, 2, 3, 4, 5]).indexOf(
-                    modelData.kind === "sliderRefresh"
-                      ? root.refreshMinutes : root.maxStoreNotifications) < 0
-            }
-
-            EntryField {
-              id: customField
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(52)
-              height: Style.spacing.controlHeight
-              verticalPadding: Style.spacing.controlPaddingY
-              visible: rangeDropdown.customSelected
-              text: String(modelData.kind === "sliderRefresh"
-                ? root.refreshMinutes : root.maxStoreNotifications)
-              fontFamily: root.fontFamily
-              foreground: root.foreground
-              accent: Commons.Color.accent
-              python: root.python
-              cappedRun: root.cappedRun
-              // Three digits cover the highest preset and the schema maximum.
-              maximumLength: 3
-              placeholderText: modelData.kind === "sliderRefresh" ? "30–720" : "0–20"
-              // A whole number of minutes or games: a letter never enters the
-              // field, so there is nothing to reject on commit.
-              acceptInput: function(value) { return /^[0-9]*$/.test(value) }
-              onActiveFocusChanged: root.noteEditor(customField, activeFocus)
-              onEditingFinished: function(explicit) {
-                var raw = String(text).trim()
-                if (/^\d+$/.test(raw)) {
-                  var n = Number(raw)
-                  if (modelData.kind === "sliderRefresh")
-                    root.persist({ refreshMinutes: Model.normalizeRefreshMinutes(n) })
-                  else
-                    root.persist({ maxStoreNotifications: Model.normalizeMaxStoreNotifications(n) })
-                }
-                text = Qt.binding(function() {
-                  return String(modelData.kind === "sliderRefresh"
-                    ? root.refreshMinutes : root.maxStoreNotifications)
-                })
-                // Only an explicit finish hands the keyboard back to the
-                // panel. Losing the focus to something else, or another
-                // window taking the keyboard, leaves the field holding it.
-                if (explicit) root.leaveEditor(customField)
-              }
-            }
-          }
-
-          EntryField {
-            id: countryField
-            anchors.left: parent.left
-            anchors.leftMargin: root.storeIndent + root.settingsLabelColumn
-              + root.settingsGap
-            anchors.verticalCenter: parent.verticalCenter
-            // The same width as the dropdowns above it, so the controls in the
-            // page share one column.
-            width: root.settingsControlWidth
-            height: Style.spacing.controlHeight
-            visible: modelData.kind === "country"
-            text: root.country
-            placeholderText: "e.g. US"
-            fontFamily: root.fontFamily
-            foreground: root.foreground
-            accent: Commons.Color.accent
-            python: root.python
-            cappedRun: root.cappedRun
-            // ISO 3166-1 alpha-2 is two letters. Anything else is dropped as
-            // it is typed or pasted, so a stray digit never reaches the
-            // setting and the value is upper-cased on the way in.
-            maximumLength: 2
-            sanitize: function(value) { return Model.countryInput(value) }
-            acceptInput: function(value) { return /^[A-Z]*$/.test(value) }
-            onActiveFocusChanged: root.noteEditor(countryField, activeFocus)
-            onEditingFinished: function(explicit) {
-              var clean = Model.normalizeCountry(text)
-              if (clean !== root.country) root.persist({ country: clean })
-              text = Qt.binding(function() { return root.country })
-              // Only an explicit finish hands the keyboard back to the
-              // panel; see the note on the other field.
-              if (explicit) root.leaveEditor(countryField)
-            }
-          }
-        }
+        widget: root
+        footerButtonHeight: refreshButton.implicitHeight
       }
 
-      // The scrollbar auto-hides, so a fade and a chevron at an edge say there
-      // is more content in that direction. The fade uses the surface colour and
-      // fades to the same RGB at zero alpha, so it works over rows and
-      // highlights alike; the chevron keeps the hint visible even when a gap
-      // between rows leaves nothing behind the fade to darken.
+      // Scroll edge hints for the main store list.
       Rectangle {
         id: topFade
         anchors.top: panelList.top
@@ -2388,39 +2044,6 @@ Panel {
         anchors.right: panelList.right
         height: Style.space(30)
         visible: !root.showSettings && panelList.interactive && !panelList.atYBeginning
-        gradient: Gradient {
-          GradientStop { position: 0.0; color: Commons.Color.popups.background }
-          GradientStop {
-            position: 1.0
-            color: Qt.rgba(Commons.Color.popups.background.r,
-                           Commons.Color.popups.background.g,
-                           Commons.Color.popups.background.b, 0)
-          }
-        }
-
-        Text {
-          anchors.horizontalCenter: parent.horizontalCenter
-          anchors.top: parent.top
-          anchors.topMargin: Style.space(2)
-          text: "\u{F077}"
-          textFormat: Text.PlainText
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-      }
-
-      // The settings list gets the same edge hints, but only once it is
-      // actually tall enough to scroll — the store list's fades belong to
-      // the store list.
-      Rectangle {
-        id: settingsTopFade
-        anchors.top: settingsPage.top
-        anchors.left: settingsPage.left
-        anchors.right: settingsPage.right
-        height: Style.space(30)
-        visible: root.showSettings && settingsPage.interactive && !settingsPage.atYBeginning
-        z: 2
         gradient: Gradient {
           GradientStop { position: 0.0; color: Commons.Color.popups.background }
           GradientStop {
@@ -2472,53 +2095,16 @@ Panel {
         }
       }
 
-      Rectangle {
-        id: settingsBottomFade
-        anchors.bottom: settingsPage.bottom
-        anchors.left: settingsPage.left
-        anchors.right: settingsPage.right
-        height: Style.space(30)
-        visible: root.showSettings && settingsPage.interactive && !settingsPage.atYEnd
-        z: 2
-        gradient: Gradient {
-          GradientStop {
-            position: 0.0
-            color: Qt.rgba(Commons.Color.popups.background.r,
-                           Commons.Color.popups.background.g,
-                           Commons.Color.popups.background.b, 0)
-          }
-          GradientStop { position: 1.0; color: Commons.Color.popups.background }
-        }
-
-        Text {
-          anchors.horizontalCenter: parent.horizontalCenter
-          anchors.bottom: parent.bottom
-          anchors.bottomMargin: Style.space(2)
-          text: "\u{F078}"
-          textFormat: Text.PlainText
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-      }
-
       // --- Pinned footer -----------------------------------------------
-      // Outside the list, so the games scroll between the hero's rule and this
-      // one instead of carrying the controls off-screen.
       Column {
         id: panelFooter
         visible: !root.showSettings
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        // Tighter than the panel's usual gap: the footer is a block of small
-        // controls, and panelGap left a visible hole between them.
         spacing: Style.space(6)
-        // Clearance above the rule, matching the gap under the hero's rule, so
-        // the last game row is not flush against the footer.
         topPadding: Style.space(8)
 
-        // When nothing is watched, this one centred line stands alone.
         Text {
           width: parent.width
           textFormat: Text.PlainText
@@ -2538,10 +2124,6 @@ Panel {
           }
         }
 
-        // A rule between the list and the controls, so the buttons are not
-        // read as part of a store's rows. The gap above it is the footer's
-        // own topPadding, and the gap below the hero's rule is the same size,
-        // so both sides of the rule match.
         PanelSeparator {
           id: footerRule
           width: parent.width
@@ -2554,39 +2136,33 @@ Panel {
           visible: root.showShortcuts
           wrapMode: Text.WordWrap
           horizontalAlignment: Text.AlignHCenter
-          text: "r refresh · s toggle seen · v hide/show seen · , settings · j/k scroll · enter open"
+          text: "r refresh · s seen · S all seen · y copy url · v hide seen · , settings · j/k move · enter open"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }
 
-        // The very last row: refresh and the seen-eye in the near corner,
-        // the settings gear and help in the far one, and the freshness
-        // centred between them.
-        //
-        // The text is centred with anchors rather than by filling the row and
-        // centring within it, so no button can shift it off centre. Its width
-        // is capped at whatever is left between them, which keeps a long
-        // freshness string from running under a button.
         Item {
+          id: footerControls
           width: parent.width
+          readonly property real leftSpan: refreshButton.implicitWidth
+            + Style.spacing.xs + seenButton.implicitWidth
+            + (markAllButton.visible ? Style.spacing.xs + markAllButton.width : 0)
+          readonly property real rightSpan: gearButton.width
+            + Style.spacing.xs + helpButton.width
           implicitHeight: Math.max(centerColumn.implicitHeight,
                                    refreshButton.implicitHeight,
                                    seenButton.implicitHeight,
                                    gearButton.implicitHeight,
                                    helpButton.implicitHeight)
 
-          // Centre stack between the button clusters: disabled-store
-          // summary above the freshness, both centred.
           Column {
             id: centerColumn
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-              - refreshButton.implicitWidth
-              - seenButton.implicitWidth
-              - gearButton.implicitWidth
-              - helpButton.implicitWidth - Style.space(20)
+            width: Math.max(0, parent.width
+              - 2 * Math.max(footerControls.leftSpan, footerControls.rightSpan)
+              - Style.space(12))
             spacing: Style.space(2)
 
             Text {
@@ -2614,8 +2190,10 @@ Panel {
               textFormat: Text.PlainText
               horizontalAlignment: Text.AlignHCenter
               elide: Text.ElideRight
-              text: root.freshness
-              color: root.stale ? root.dim : root.footerInk
+              text: root.copyFeedbackText !== "" ? root.copyFeedbackText : root.freshness
+              color: root.copyFeedbackText !== ""
+                ? Commons.Color.accent
+                : (root.stale ? root.dim : root.footerInk)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
@@ -2634,10 +2212,6 @@ Panel {
             onClicked: root.refresh()
           }
 
-          // Eye: hide or show the games already marked seen. Like the bell it
-          // swaps glyph and tooltip with the state it is in. Fixed to the
-          // same size as Refresh, so the whole footer reads as one row of
-          // equal boxes.
           Button {
             id: seenButton
             anchors.left: refreshButton.right
@@ -2655,7 +2229,24 @@ Panel {
             onClicked: root.toggleHideSeen()
           }
 
-          // Gear: open the in-panel settings page.
+          // Mark all visible games as seen; appears only when unseen games exist.
+          Button {
+            id: markAllButton
+            visible: root.hasUnseen
+            anchors.left: seenButton.right
+            anchors.leftMargin: Style.spacing.xs
+            anchors.verticalCenter: parent.verticalCenter
+            width: refreshButton.implicitWidth
+            height: refreshButton.implicitHeight
+            text: "\u{F00C}"
+            bordered: true
+            foreground: root.footerInk
+            accent: Commons.Color.accent
+            fontFamily: root.fontFamily
+            tooltipText: "Mark all as seen (Shift+S)"
+            onClicked: root.markAllSeen()
+          }
+
           Button {
             id: gearButton
             anchors.right: helpButton.left
@@ -2688,48 +2279,6 @@ Panel {
             fontFamily: root.fontFamily
             tooltipText: "Shortcuts"
             onClicked: root.showShortcuts = !root.showShortcuts
-          }
-        }
-      }
-
-      // In Settings the store-list footer does not apply (Refresh acts on
-      // stores, the eye on the list), so it is swapped for a single
-      // centred way back.
-      Column {
-        id: settingsFooter
-        visible: root.showSettings
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.leftMargin: Style.spacing.sm
-        anchors.rightMargin: Style.spacing.sm
-        spacing: Style.space(6)
-        topPadding: Style.space(8)
-
-        PanelSeparator {
-          id: settingsFooterRule
-          width: parent.width
-          foreground: root.foreground
-        }
-
-        Item {
-          width: parent.width
-          implicitHeight: refreshButton.implicitHeight
-
-          Button {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Exit Settings"
-            bordered: true
-            foreground: root.footerInk
-            accent: Commons.Color.accent
-            fontFamily: root.fontFamily
-            fontSize: Style.font.caption
-            tooltipText: "Back to the store list"
-            onClicked: {
-              root.showSettings = false
-              Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-            }
           }
         }
       }

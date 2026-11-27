@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "salmun-nister.loot-drops",
   "name": "Loot Drops",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "author": "salmun-nister",
   "license": "MIT",
   "description": "Watch Steam, Epic, GOG, and Amazon Luna for games that are free to keep, and get a desktop notification the moment a limited-time giveaway appears.",
@@ -18,10 +18,14 @@
       "refreshMinutes": 90,
       "maxStoreNotifications": 3,
       "hideSeen": false,
+      "endingSoonNotify": false,
       "steamEnabled": true,
+      "steamUseClient": false,
       "epicEnabled": true,
       "epicMobileAndroid": false,
       "epicMobileIos": false,
+      "epicHideAddOns": false,
+      "epicShowUpcoming": false,
       "gogEnabled": true,
       "amazonEnabled": false,
       "steamNotify": true,
@@ -59,11 +63,25 @@
         "description": "Keep each store's list to the games you have not marked seen, followed by a line saying how many were hidden. The footer's eye button toggles the same setting. The headline count still includes the hidden games."
       },
       {
+        "key": "endingSoonNotify",
+        "type": "boolean",
+        "label": "Ending soon reminders",
+        "defaultValue": false,
+        "description": "Send a one-time desktop notification when an unseen giveaway enters its final 24 hours. Respects each store's notification toggle."
+      },
+      {
         "key": "steamEnabled",
         "type": "boolean",
         "label": "Steam",
         "defaultValue": true,
         "description": "Watch Steam. A disabled store is not fetched at all, is hidden from the panel and does not notify."
+      },
+      {
+        "key": "steamUseClient",
+        "type": "boolean",
+        "label": "Open Steam games in client",
+        "defaultValue": false,
+        "description": "Launch single-app Steam giveaways via steam://store/<id> instead of the web browser. Bundles and packages still open in the browser."
       },
       {
         "key": "epicEnabled",
@@ -85,6 +103,20 @@
         "label": "Epic mobile (iOS)",
         "defaultValue": false,
         "description": "Also list Epic's iOS weekly free games under the Epic Games heading, marked with an iOS glyph. One extra public request per refresh, no account needed. Claiming is in the Epic Games app on a phone."
+      },
+      {
+        "key": "epicHideAddOns",
+        "type": "boolean",
+        "label": "Hide Epic add-ons / DLC",
+        "defaultValue": false,
+        "description": "Hide Epic DLC and add-on giveaways from the panel list, unseen indicator, and notifications."
+      },
+      {
+        "key": "epicShowUpcoming",
+        "type": "boolean",
+        "label": "Show upcoming Epic games",
+        "defaultValue": false,
+        "description": "Show next week's announced Epic free games muted under Epic Games. Upcoming titles do not count toward the bar dot or notifications."
       },
       {
         "key": "gogEnabled",
